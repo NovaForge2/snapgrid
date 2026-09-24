@@ -1,0 +1,18 @@
+# your plugins live here and are never committed
+plugins/*
+!plugins/.gitkeep
+
+# runtime data and secrets
+data/
+.env
+*.db
+*.db-wal
+*.db-shm
+
+__pycache__/
+*.py[cod]
+.DS_Store
+
+
+# runtime data, wherever a plugins folder lives
+.snapgrid/

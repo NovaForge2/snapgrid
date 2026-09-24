@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snapgrid</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%232f6f4e'/><g fill='white'><rect x='3' y='4' width='10' height='1.6'/><rect x='3' y='7.2' width='10' height='1.6'/><rect x='3' y='10.4' width='10' height='1.6'/></g></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="banner" hidden></div>
+<div id="layout">
+  <aside id="sidebar">
+    <div id="brand">snapgrid</div>
+    <div id="plugin-list"></div>
+    <div id="sidebar-foot"><span id="server-note"></span></div>
+  </aside>
+
+  <main id="main">
+    <div id="empty" class="placeholder">
+      <h2 id="empty-title">No plugin selected</h2>
+      <p id="empty-text">Pick one on the left.</p>
+      <pre id="empty-command" hidden></pre>
+    </div>
+
+    <section id="panel" hidden>
+      <header id="panel-head">
+        <div>
+          <h1 id="p-name"></h1>
+          <p id="p-desc"></p>
+        </div>
+        <div id="p-meta"></div>
+      </header>
+
+      <div id="toolbar">
+        <button id="btn-refresh" type="button">Refresh</button>
+        <button id="btn-cancel" type="button" hidden>Cancel</button>
+        <select id="snapshot-picker" hidden aria-label="Which result to show"></select>
+        <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
+        <span id="spacer"></span>
+        <span id="row-note"></span>
+        <button id="btn-clear" type="button" hidden>Clear filters</button>
+        <a id="btn-export" href="#">Export CSV</a>
+        <button id="btn-log" type="button">Log</button>
+        <button id="btn-config" type="button">Config</button>
+      </div>
+
+      <div id="message" hidden></div>
+      <div id="table-wrap"></div>
+
+      <aside id="side" hidden>
+        <header id="side-head">
+          <button id="side-log" type="button" class="side-tab">Log</button>
+          <button id="side-config" type="button" class="side-tab">Config</button>
+          <span class="grow"></span>
+          <button id="side-close" type="button" title="Close" aria-label="Close">&#215;</button>
+        </header>
+        <pre id="log-text" hidden></pre>
+        <div id="config-body" hidden></div>
+      </aside>
+    </section>
+  </main>
+</div>
+
+<div id="filter-popup" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

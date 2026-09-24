@@ -1,0 +1,18 @@
+# A plugin is a folder with this file and something to run.
+# Copy this folder into your plugins folder and edit it.
+
+[plugin]
+name        = "Service inventory"
+description = "Reads data.json next to it and prints it as a table"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = 30
+every   = "1h"
+
+# Optional. Leave it out and the header line of the output decides the columns.
+# When it is here, the header must match it exactly, which catches a script
+# that quietly changed its output.
+[table]
+columns = ["service", "team", "environment", "version", "instances", "cpu_percent", "last_deploy"]
