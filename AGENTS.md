@@ -28,6 +28,8 @@ plugin fail.
 
 1. **Standard output is the table, and nothing else.** CSV, starting with a
    header line. No progress messages, no banners, no blank leading lines.
+   Unless you set `[output] file`, in which case the table comes from that file
+   and stdout is free for anything - see below.
 2. **Standard error is the log.** Progress, warnings, diagnostics go here. It is
    shown in the UI and stored with the run.
 3. **The exit code decides.** `0` means success. Anything else marks the run
@@ -71,6 +73,9 @@ keep = 20
 | `run.timeout` | int seconds | `300` | the process and its children are killed at this point |
 | `run.every` | string | `"15m"` | `"30s"`, `"15m"`, `"2h"`, or `"off"` for manual only. Measured from the end of the previous run |
 | `table.columns` | list of strings | none | when present, the header line must match it exactly. Omit it and the header defines the columns |
+| `output.file` | string | none | read the table from this file instead of stdout. Anything printed then becomes log. `.xlsx` is read as a spreadsheet |
+| `output.sheet` | string | first sheet | which sheet of a workbook to read |
+| `run.command` | | | not required when `output.file` is set - a folder with a manifest and a file is a valid plugin |
 | `history.keep` | int | `0` | how many *differing* results to keep. Omit for latest only |
 
 Choose `every` by how fast the underlying data really changes. A plugin hitting
@@ -104,6 +109,33 @@ ENV2,payments-api,2.15.0-SNAPSHOT
 - **One table per plugin.** If you have two unrelated shapes of data, that is two
   plugins.
 - Zero rows is valid: print the header and exit `0`.
+
+### If the script already writes a file
+
+Plenty of scripts write a CSV file and print progress as they go. Rather than
+rewriting them, name the file and snapgrid reads that instead of stdout:
+
+```toml
+[output]
+file = "report.csv"
+```
+
+With this set, **anything the script prints - to stdout or stderr - becomes the
+log**, and only the file is the table. It is the easier option for an existing
+script, and the rule about keeping stdout clean no longer applies.
+
+The file must be inside the plugin folder, and it must be written by the run
+that is happening: a file left over from an earlier run is refused rather than
+shown as if it were current.
+
+An `.xlsx` is read as a spreadsheet rather than as text - first sheet unless
+`[output] sheet` names another, with dates and formula results handled. The old
+binary `.xls` is not supported.
+
+**A plugin may have no program at all.** Leave out `[run] command`, and a folder
+holding a manifest and a file is a plugin; the file is re-read on each run. Use
+this when the data is a file somebody maintains rather than something to
+compute.
 
 ## Secrets
 
@@ -208,7 +240,7 @@ cd my-plugin && python3 main.py
 
 Check every line:
 
-- [ ] first line of stdout is the header
+- [ ] first line of stdout is the header (or `[output] file` was written afresh)
 - [ ] every other stdout line is a data row, and nothing else is on stdout
 - [ ] progress and warnings went to stderr
 - [ ] `echo $?` is `0` on success, non-zero when it fails
@@ -232,6 +264,8 @@ worse than one that fails.
 | `the header line does not match [table] columns` | the script's header changed, or `columns` is wrong |
 | `line 4 has 5 values but there are 4 columns` | an unquoted comma in a value — use a CSV writer |
 | `the script printed nothing on standard output` | everything went to stderr, or the script produced nothing |
+| `the plugin finished but did not write 'x.csv'` | `[output] file` names a file the script never wrote |
+| `'x.csv' was last written at ... before this run started` | the file is from an earlier run; write it every time |
 | `the plugin exited with code 1` | the script failed; its last stderr line is shown |
 | `the plugin was stopped after N seconds` | exceeded `run.timeout` |
 | `cannot decrypt value` | wrong or missing key for an `enc:` value in `.env` |

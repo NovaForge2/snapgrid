@@ -36,6 +36,7 @@ from . import store as store_module
 from .config import Config, LOG_LINES
 from .manifest import Plugin, load_plugin
 from .secrets_store import SecretError, load_env, mask
+from .spreadsheet import SpreadsheetError, read_xlsx
 from .store import Store
 
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
@@ -96,6 +97,74 @@ def resolve_command(command: list[str]) -> list[str]:
     if command and command[0] in ("python", "python3"):
         return [sys.executable] + list(command[1:])
     return list(command)
+
+
+def parse_table(raw: bytes, plugin: Plugin) -> tuple[list[str], list[list[str]]]:
+    """Turn the bytes a plugin produced into columns and rows.
+
+    A spreadsheet is read as a spreadsheet and anything else as CSV, decided by
+    the file's extension, because that is what the person naming the file meant.
+    """
+    if plugin.output_file.lower().endswith((".xlsx", ".xlsm", ".xls")):
+        rows = read_xlsx(plugin.dir / plugin.output_file, plugin.output_sheet or None)
+        if not rows:
+            raise OutputError(f"{plugin.output_file} has no rows in it")
+        header = [str(value).strip() for value in rows[0]]
+        if not any(header):
+            raise OutputError("the first row of the sheet should be the column names")
+        if plugin.columns is not None and header != plugin.columns:
+            raise OutputError(
+                "the first row does not match [table] columns in plugin.toml.\n"
+                f"  plugin.toml says: {plugin.columns}\n"
+                f"  the sheet has:    {header}"
+            )
+        width = len(header)
+        body = []
+        for row in rows[1:]:
+            if all(str(value).strip() == "" for value in row):
+                continue
+            body.append([str(value) for value in row[:width]] + [""] * (width - len(row)))
+        return header, body
+
+    text = raw.decode("utf-8", "replace")
+    return parse_csv(text, plugin.columns)
+
+
+def read_output_file(plugin: Plugin, started_at: float) -> bytes:
+    """Read the table from the file a plugin was told to write.
+
+    A plugin that writes a file rather than printing is a perfectly ordinary
+    thing - most reporting scripts already do it, and asking them to keep
+    stdout clean means editing code that works.
+
+    The risk is staleness: if a run produces nothing, the file from the last
+    run is still sitting there, and reading it would present old data as
+    current. So a file that was not written during this run is refused.
+    """
+    target = (plugin.dir / plugin.output_file).resolve()
+    folder = plugin.dir.resolve()
+    if not str(target).startswith(str(folder)):
+        raise OutputError(f"[output] file {plugin.output_file!r} is outside the plugin folder")
+
+    if not target.is_file():
+        raise OutputError(
+            f"the plugin finished but did not write {plugin.output_file!r}. "
+            f"[output] file names the file it is expected to produce."
+        )
+
+    modified = target.stat().st_mtime
+    if modified < started_at - 2:      # a couple of seconds for clock coarseness
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(modified))
+        raise OutputError(
+            f"{plugin.output_file!r} was last written at {when}, before this run "
+            f"started, so it is left over from an earlier one. Refusing to show "
+            f"stale data as if it were current."
+        )
+
+    try:
+        return target.read_bytes()
+    except OSError as exc:
+        raise OutputError(f"cannot read {plugin.output_file!r}: {exc}") from exc
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -247,6 +316,23 @@ class Runner:
             finally:
                 self._queue.task_done()
 
+    def _read_only_run(self, run_id: int, plugin: Plugin) -> None:
+        """A plugin that is a file and a manifest, with no program to run."""
+        try:
+            raw = read_output_file(plugin, started_at=0.0)   # nothing wrote it, so no staleness check
+            columns, rows = parse_table(raw, plugin)
+        except (OutputError, SpreadsheetError) as exc:
+            self.store.finish_run(run_id, plugin.id, store_module.FAILED, error=str(exc))
+            return
+
+        snapshot_id, changed = self.store.save_snapshot(
+            plugin.id, columns, rows, plugin.history_keep or 1)
+        self.store.finish_run(
+            run_id, plugin.id, store_module.OK, exit_code=0,
+            log=f"read {plugin.output_file} ({len(rows)} rows)",
+            snapshot_id=snapshot_id, row_count=len(rows), changed=changed)
+        self.store.prune_runs(plugin.id, keep=200)
+
     def _execute(self, plugin_id: str, active: _Active) -> None:
         run_id = active.run_id
         base = self.registry.get(plugin_id)
@@ -261,6 +347,12 @@ class Runner:
             return
 
         self.store.mark_running(run_id)
+
+        if not plugin.command:
+            # Nothing to run: the folder holds a file and a manifest, and the
+            # file is the table. Re-read on each run so edits show up.
+            self._read_only_run(run_id, plugin)
+            return
 
         try:
             env_values, secret_values = load_env(plugin.env_file)
@@ -326,7 +418,8 @@ class Runner:
         out_thread.start()
         err_thread.start()
 
-        deadline = time.time() + plugin.timeout
+        started_at = time.time()
+        deadline = started_at + plugin.timeout
         status = store_module.OK
         while proc.poll() is None:
             if active.cancelled:
@@ -384,6 +477,20 @@ class Runner:
             return
 
         raw = stdout_chunks[0] if stdout_chunks else b""
+
+        if plugin.output_file:
+            # The table comes from a file, so anything the plugin printed is
+            # log - including whatever it sent to stdout.
+            printed = mask(raw.decode("utf-8", "replace"), secret_values).strip()
+            if printed:
+                log = f"{log}\n{printed}" if log else printed
+            try:
+                raw = read_output_file(plugin, started_at)
+            except OutputError as exc:
+                self.store.finish_run(run_id, plugin_id, store_module.FAILED,
+                                      exit_code=exit_code, error=str(exc), log=log)
+                return
+
         if len(raw) > MAX_OUTPUT_BYTES:
             self.store.finish_run(
                 run_id, plugin_id, store_module.FAILED, exit_code=exit_code,
@@ -391,10 +498,11 @@ class Runner:
             )
             return
 
-        text = mask(raw.decode("utf-8", "replace"), secret_values)
         try:
-            columns, rows = parse_csv(text, plugin.columns)
-        except OutputError as exc:
+            columns, rows = parse_table(raw, plugin)
+            columns = [mask(value, secret_values) for value in columns]
+            rows = [[mask(value, secret_values) for value in row] for row in rows]
+        except (OutputError, SpreadsheetError) as exc:
             self.store.finish_run(
                 run_id, plugin_id, store_module.FAILED, exit_code=exit_code, error=str(exc), log=log
             )

@@ -223,7 +223,7 @@ plugin is right.
 ## plugin.toml
 
 <details>
-<summary><b>Every setting</b> - name, group, command, timeout, schedule, columns, history</summary>
+<summary><b>Every setting</b> - name, group, command, timeout, schedule, columns, output file, history</summary>
 
 Only `[plugin] name` and `[run] command` are required.
 
@@ -241,6 +241,9 @@ every   = "15m"                            # default 15m; "off" for manual only
 
 [table]
 columns = ["environment", "image", "version"]
+
+[output]
+file = "report.csv"                        # optional: read the table from a file
 
 [history]
 keep = 20
@@ -272,6 +275,54 @@ When it is present, the header line must match it **exactly**, in names and
 order. A mismatch fails the run and shows both lists. That is the point: it
 catches a script that quietly changed its output, instead of silently putting
 your data under the wrong headings.
+
+### `[output] file`
+
+If your script already writes a file and prints progress while it works, point
+snapgrid at the file instead of making the script keep stdout clean:
+
+```toml
+[output]
+file = "report.csv"
+```
+
+Everything the script prints then becomes the run log, to either stream, and
+the file is the table. Nothing else about the plugin changes.
+
+**A spreadsheet works too.** Name an `.xlsx` and it is read as one - text,
+numbers, dates, booleans and formula results, from the first sheet or the one
+you name:
+
+```toml
+[output]
+file  = "report.xlsx"
+sheet = "Summary"        # optional, the first sheet otherwise
+```
+
+No library is needed for this: an `.xlsx` is a zip of XML, and Python can read
+both. The old binary `.xls` format is not supported - save it as `.xlsx` or
+`.csv`.
+
+**A plugin need not run anything at all.** With no `[run] command`, a folder
+containing a manifest and a file is a plugin: snapgrid re-reads the file on
+each run, so editing it updates the table, and an unchanged file does not
+count as a change.
+
+```toml
+[plugin]
+name = "Contact list"
+
+[run]
+every = "1h"
+
+[output]
+file = "contacts.xlsx"
+```
+
+The file has to live inside the plugin folder, and it has to be written by the
+run in progress. A file left from an earlier run is refused with a message
+saying when it was written - showing yesterday's numbers as though they were
+current is worse than showing an error.
 
 ### `[run] every`
 
@@ -341,6 +392,8 @@ scrolling past.
 | `the header line does not match [table] columns` | the script's output changed, or `columns` is wrong |
 | `line 4 has 5 values but there are 4 columns` | a value contains a comma and is not quoted |
 | `the script printed nothing on standard output` | the script wrote only to stderr, or produced nothing |
+| `the plugin finished but did not write 'report.csv'` | `[output] file` names a file the script never produced |
+| `'report.csv' was last written at ... before this run started` | the file is left over from an earlier run |
 | `the plugin exited with code 1` | your script failed; the log shows its last line |
 | `cannot decrypt value` | wrong key, or the encrypted value was edited |
 

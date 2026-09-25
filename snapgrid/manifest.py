@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import sys
+from pathlib import PurePosixPath
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,6 +49,8 @@ class Plugin:
     timeout: int = 300
     every: int | None = None          # seconds between runs, None means manual only
     columns: list[str] | None = None  # expected header, None means take it from the output
+    output_file: str = ""             # read the table from this file instead of stdout
+    output_sheet: str = ""            # which sheet of a workbook, if not the first
     history_keep: int = 0             # how many different snapshots to keep
     mtime: float = 0.0
     error: str = ""                   # set when the manifest could not be read
@@ -85,6 +88,23 @@ def parse_duration(value: object, field_name: str) -> int | None:
     return seconds
 
 
+def _output_file(output_table: dict) -> str:
+    value = output_table.get("file", "")
+    if not isinstance(value, str):
+        raise ManifestError('[output] file must be text, for example file = "report.csv"')
+    value = value.strip()
+    if value:
+        # The plugin folder is the plugin's world; reading outside it would let
+        # a manifest reach anywhere on the machine.
+        candidate = PurePosixPath(value.replace("\\", "/"))
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise ManifestError(
+                "[output] file must be inside the plugin folder, "
+                "so it cannot start with / or contain .."
+            )
+    return value
+
+
 def _table(data: dict, name: str) -> dict:
     value = data.get(name, {})
     if not isinstance(value, dict):
@@ -107,6 +127,7 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
     plugin_table = _table(data, "plugin")
     run_table = _table(data, "run")
     table_table = _table(data, "table")
+    output_table = _table(data, "output")
     history_table = _table(data, "history")
 
     name = plugin_table.get("name", plugin_id)
@@ -121,11 +142,20 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
     if not isinstance(enabled, bool):
         raise ManifestError("[plugin] enabled must be true or false")
 
-    if "command" not in run_table:
-        raise ManifestError('[run] command is required, for example command = ["python", "main.py"]')
-    command = _string_list(run_table["command"], "[run] command")
-    if not command:
-        raise ManifestError("[run] command cannot be empty")
+    # A plugin normally runs something. One that only reads a file does not
+    # need to, so the command is optional when [output] file says where to look.
+    output_file = _output_file(output_table)
+    if "command" in run_table:
+        command = _string_list(run_table["command"], "[run] command")
+        if not command:
+            raise ManifestError("[run] command cannot be empty")
+    elif output_file:
+        command = []
+    else:
+        raise ManifestError(
+            '[run] command is required, for example command = ["python", "main.py"] - '
+            'unless [output] file names a file to read instead'
+        )
 
     timeout = run_table.get("timeout", 300)
     if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
@@ -138,6 +168,10 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         columns = _string_list(table_table["columns"], "[table] columns")
         if not columns:
             raise ManifestError("[table] columns cannot be an empty list")
+
+    output_sheet = output_table.get("sheet", "")
+    if not isinstance(output_sheet, str):
+        raise ManifestError('[output] sheet must be text, for example sheet = "Summary"')
 
     history_keep = history_table.get("keep", 0)
     if not isinstance(history_keep, int) or isinstance(history_keep, bool) or history_keep < 0:
@@ -154,6 +188,8 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         timeout=timeout,
         every=every,
         columns=columns,
+        output_file=output_file,
+        output_sheet=output_sheet.strip(),
         history_keep=history_keep,
         mtime=mtime,
     )
