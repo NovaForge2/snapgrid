@@ -32,6 +32,14 @@ afterwards. Where a setting accepts a fixed set of values, list all of them and
 what each one means. A README that trails the code is worse than no README,
 because people trust it.
 
+## The animation in the README
+
+`docs/demo.gif` is built from screenshots with `tools/make-gif.py`, which joins
+PNG frames into an animated GIF using only the standard library - no ffmpeg, no
+ImageMagick, no Pillow. A GIF rather than an animated PNG because plenty of
+locked down machines will not animate the latter, and those machines are the
+audience.
+
 ## Tests
 
 ```bash

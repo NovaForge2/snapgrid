@@ -3,7 +3,10 @@
 """snapgrid.toml, and what happens when it is wrong."""
 
 import tempfile
+import os
 import unittest
+
+from snapgrid.__main__ import check_host_is_safe
 from pathlib import Path
 
 from snapgrid import settings as settings_module
@@ -86,3 +89,29 @@ class Settings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RefusingToListenWide(unittest.TestCase):
+    """--host is the one flag that can turn a local tool into an open one."""
+
+    def setUp(self):
+        self.original = os.environ.pop("SNAPGRID_ALLOW_ANY_HOST", None)
+        if self.original is not None:
+            self.addCleanup(os.environ.__setitem__, "SNAPGRID_ALLOW_ANY_HOST", self.original)
+
+    def test_loopback_is_fine(self):
+        for host in (None, "127.0.0.1", "localhost", "::1"):
+            check_host_is_safe(host)          # must not raise
+
+    def test_anything_else_is_refused_with_a_reason(self):
+        for host in ("0.0.0.0", "10.1.2.3", "my-laptop.local"):
+            with self.assertRaises(SystemExit) as caught:
+                check_host_is_safe(host)
+            message = str(caught.exception)
+            self.assertIn("no login", message)
+            self.assertIn("SNAPGRID_ALLOW_ANY_HOST", message, "it has to say how to override")
+
+    def test_the_override_works_and_is_explicit(self):
+        os.environ["SNAPGRID_ALLOW_ANY_HOST"] = "1"
+        self.addCleanup(os.environ.pop, "SNAPGRID_ALLOW_ANY_HOST", None)
+        check_host_is_safe("0.0.0.0")         # must not raise

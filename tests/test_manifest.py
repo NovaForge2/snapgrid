@@ -38,7 +38,9 @@ class Defaults(unittest.TestCase):
         self.assertEqual(parse('[run]\ncommand = ["x"]\n').name, "example")
 
     def test_every_settings(self):
-        for text, expected in [("30s", 30), ("15m", 900), ("2h", 7200), ("off", None)]:
+        for text, expected in [("30s", 30), ("15m", 900), ("2h", 7200),
+                               ("1d", 86400), ("10d", 864000), ("2w", 1209600),
+                               ("off", None)]:
             plugin = parse(f'[plugin]\nname="X"\n[run]\ncommand=["x"]\nevery="{text}"\n')
             self.assertEqual(plugin.every, expected, text)
 
@@ -77,13 +79,26 @@ class Refusals(unittest.TestCase):
     def test_command_must_be_a_list_of_text(self):
         self.assert_refused('[run]\ncommand = "python main.py"\n', "list of text")
 
-    def test_timeout_must_be_a_positive_whole_number(self):
-        self.assert_refused('[run]\ncommand=["x"]\ntimeout = 0\n', "whole number")
-        self.assert_refused('[run]\ncommand=["x"]\ntimeout = "30"\n', "whole number")
+    def test_timeout_must_be_a_number_or_a_duration(self):
+        self.assert_refused('[run]\ncommand=["x"]\ntimeout = 0\n', "number of seconds")
+        self.assert_refused('[run]\ncommand=["x"]\ntimeout = "soon"\n', "30s")
+        self.assert_refused('[run]\ncommand=["x"]\ntimeout = "off"\n', "for ever")
+
+    def test_timeout_may_be_written_as_a_duration(self):
+        for text, expected in [("300", 300), ('"30m"', 1800), ('"2h"', 7200)]:
+            plugin = parse(f'[plugin]\nname="X"\n[run]\ncommand=["x"]\ntimeout = {text}\n')
+            self.assertEqual(plugin.timeout, expected, text)
 
     def test_every_must_look_like_a_duration(self):
         self.assert_refused('[run]\ncommand=["x"]\nevery = "15 weeks"\n', "30s")
         self.assert_refused('[run]\ncommand=["x"]\nevery = "soon"\n', "30s")
+        self.assert_refused('[run]\ncommand=["x"]\nevery = "10 days"\n', "10d")
+
+    def test_a_long_interval_survives_a_restart(self):
+        # Ten days between runs only works because the last finish time is
+        # stored, not held in memory.
+        plugin = parse('[plugin]\nname="X"\n[run]\ncommand=["x"]\nevery="10d"\n')
+        self.assertEqual(plugin.every, 10 * 24 * 3600)
 
     def test_columns_cannot_be_an_empty_list(self):
         self.assert_refused('[run]\ncommand=["x"]\n[table]\ncolumns = []\n', "empty list")
@@ -97,6 +112,50 @@ class Refusals(unittest.TestCase):
 
     def test_invalid_toml_is_reported_as_such(self):
         self.assert_refused('[plugin\nname = "X"\n', "not valid toml")
+
+
+class MisplacedKeys(unittest.TestCase):
+    """A key in the wrong section is legal TOML and would otherwise do nothing.
+
+    Writing timeout = 600 at the end of a file puts it in whatever section came
+    last, and the plugin keeps the default while looking as though it was
+    changed. Silence is the worst possible answer here.
+    """
+
+    def assert_refused(self, text: str, expected_words: str):
+        with self.assertRaises(ManifestError) as caught:
+            parse(text)
+        self.assertIn(expected_words, str(caught.exception).lower())
+
+    def test_timeout_under_the_wrong_section_says_where_it_belongs(self):
+        self.assert_refused(
+            '[plugin]\nname="X"\n[run]\ncommand=["x"]\n[history]\nkeep=20\ntimeout=600\n',
+            "belongs in [run]",
+        )
+
+    def test_a_setting_in_plugin_that_belongs_in_run(self):
+        self.assert_refused('[plugin]\nname="X"\nevery="1h"\n[run]\ncommand=["x"]\n',
+                            "belongs in [run]")
+
+    def test_columns_outside_its_section(self):
+        self.assert_refused('[run]\ncommand=["x"]\ncolumns=["a"]\n', "belongs in [table]")
+
+    def test_a_misspelt_key_lists_the_real_ones(self):
+        self.assert_refused('[run]\ncommand=["x"]\ntimout=600\n', "not a setting")
+
+    def test_an_unknown_section_is_refused(self):
+        self.assert_refused('[plugin]\nname="X"\n[runn]\ncommand=["x"]\n',
+                            "not a section")
+
+    def test_everything_in_its_proper_place_is_accepted(self):
+        plugin = parse(
+            '[plugin]\nname="X"\ndescription="d"\ngroup="g"\nenabled=true\n'
+            '[run]\ncommand=["x"]\ntimeout=600\nevery="1h"\n'
+            '[table]\ncolumns=["a"]\n'
+            '[output]\nfile="r.csv"\nsheet="S"\nfresh_for="5m"\n'
+            '[history]\nkeep=5\n'
+        )
+        self.assertEqual(plugin.timeout, 600)
 
 
 class Durations(unittest.TestCase):

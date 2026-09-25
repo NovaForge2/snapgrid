@@ -99,6 +99,16 @@ def resolve_command(command: list[str]) -> list[str]:
     return list(command)
 
 
+def describe_age(seconds: float) -> str:
+    if seconds < 90:
+        return f"{int(seconds)} seconds"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} minutes"
+    if seconds < 172800:
+        return f"{round(seconds / 3600)} hours"
+    return f"{round(seconds / 86400)} days"
+
+
 def parse_table(raw: bytes, plugin: Plugin) -> tuple[list[str], list[list[str]]]:
     """Turn the bytes a plugin produced into columns and rows.
 
@@ -316,6 +326,30 @@ class Runner:
             finally:
                 self._queue.task_done()
 
+    def _use_existing(self, run_id: int, plugin: Plugin) -> bool:
+        """Use the file as it stands if it is younger than fresh_for."""
+        target = plugin.dir / plugin.output_file
+        try:
+            age = time.time() - target.stat().st_mtime
+        except OSError:
+            return False
+        if age >= plugin.fresh_for:
+            return False
+
+        try:
+            columns, rows = parse_table(target.read_bytes(), plugin)
+        except (OutputError, SpreadsheetError, OSError):
+            return False       # unreadable, so run the plugin and find out why
+
+        snapshot_id, changed = self.store.save_snapshot(
+            plugin.id, columns, rows, plugin.history_keep or 1)
+        self.store.finish_run(
+            run_id, plugin.id, store_module.OK, exit_code=0,
+            log=f"{plugin.output_file} was written {describe_age(age)} ago, "
+                f"within [output] fresh_for, so the plugin was not run",
+            snapshot_id=snapshot_id, row_count=len(rows), changed=changed)
+        return True
+
     def _read_only_run(self, run_id: int, plugin: Plugin) -> None:
         """A plugin that is a file and a manifest, with no program to run."""
         try:
@@ -348,6 +382,14 @@ class Runner:
 
         self.store.mark_running(run_id)
 
+        # A file young enough to trust means there is nothing to do. Pressing
+        # Refresh always runs the plugin anyway: asking for it explicitly means
+        # wanting new data, not a repeat of what is already on screen.
+        if plugin.command and plugin.fresh_for:
+            run = self.store.get_run(run_id) or {}
+            if run.get("trigger") != "manual" and self._use_existing(run_id, plugin):
+                return
+
         if not plugin.command:
             # Nothing to run: the folder holds a file and a manifest, and the
             # file is the table. Re-read on each run so edits show up.
@@ -379,6 +421,12 @@ class Runner:
                 resolve_command(plugin.command),
                 cwd=str(plugin.dir),
                 env=environment,
+                # Nothing is going to type an answer. Without this the plugin
+                # inherits whatever the server had, and anything that asks a
+                # question - a password prompt, a confirmation, a stray input()
+                # - waits for ever and is eventually killed by the timeout,
+                # having looked fine when run by hand in a terminal.
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 **popen_kwargs,
@@ -453,15 +501,31 @@ class Runner:
         with self._lock:
             log = "\n".join(active.tail)
 
+        if status in (store_module.CANCELLED, store_module.TIMEOUT):
+            # Whatever it printed is the only evidence of how far it got, and
+            # on the stdout path that would otherwise be discarded along with
+            # the half-finished table. Keep it: a timeout with an empty log
+            # tells you nothing at all.
+            printed = mask((stdout_chunks[0] if stdout_chunks else b"")
+                           .decode("utf-8", "replace"), secret_values).strip()
+            if printed:
+                tail = printed.splitlines()[-LOG_LINES:]
+                log = (log + "\n" if log else "") + "--- printed before it was stopped ---\n" \
+                      + "\n".join(tail)
+
         if status == store_module.CANCELLED:
             self.store.finish_run(run_id, plugin_id, status, error="cancelled", log=log)
             return
         if status == store_module.TIMEOUT:
+            last = log.strip().splitlines()[-1] if log.strip() else ""
+            detail = f". Last thing it printed: {last}" if last else \
+                     ". It printed nothing at all, so it was stuck before its first output"
             self.store.finish_run(
                 run_id,
                 plugin_id,
                 status,
-                error=f"the plugin was stopped after {plugin.timeout} seconds ([run] timeout)",
+                error=f"the plugin was stopped after {plugin.timeout} seconds "
+                      f"([run] timeout){detail}",
                 log=log,
             )
             return

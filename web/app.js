@@ -79,8 +79,17 @@ function timeAgo(seconds) {
   return new Date(seconds * 1000).toLocaleString();
 }
 
+function timeUntil(seconds) {
+  const delta = seconds - Date.now() / 1000;
+  if (delta <= 30) return "any moment";
+  if (delta < 5400) return "in " + Math.round(delta / 60) + " min";
+  return "at " + new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function humanInterval(seconds) {
   if (!seconds) return "manual only";
+  if (seconds % 604800 === 0) return "every " + seconds / 604800 + "w";
+  if (seconds % 86400 === 0) return "every " + seconds / 86400 + "d";
   if (seconds % 3600 === 0) return "every " + seconds / 3600 + "h";
   if (seconds % 60 === 0) return "every " + seconds / 60 + "m";
   return "every " + seconds + "s";
@@ -223,7 +232,7 @@ function renderEmptyState(server, pluginCount) {
 function renderServerInfo(server) {
   if (!server) return;
   if (server.title) {
-    el("brand").textContent = server.title;
+    el("brand-text").textContent = server.title;
     document.title = server.title;
   }
 
@@ -339,20 +348,33 @@ function renderDetail() {
   } else if (detail.snapshot) {
     meta.push("result from " + timeAgo(detail.snapshot.last_seen));
   }
+  // A plugin that keeps failing is slowed down, and used to be slowed down in
+  // silence: nothing running, nothing said, and the same old error on screen.
+  if (!live && detail.next_run) {
+    meta.push(detail.failures >= 3
+      ? `slowed after ${detail.failures} failures, next try ${timeUntil(detail.next_run)}`
+      : "next run " + timeUntil(detail.next_run));
+  }
   el("p-meta").textContent = meta.join(" - ");
 
   const busy = Boolean(live);
   el("btn-refresh").disabled = busy;
-  el("btn-refresh").textContent = busy ? "Running..." : "Refresh";
+  el("btn-refresh").textContent = busy ? "Running..." : "Run now";
   el("btn-cancel").hidden = !busy;
 
   const lastRun = detail.last_run;
   if (detail.error) {
     showMessage("This plugin cannot be loaded:\n" + detail.error, false);
   } else if (lastRun && lastRun.status !== "ok" && !busy) {
-    showMessage(("Last run " + lastRun.status + ": " + (lastRun.error || "")).trim(), false);
+    let note = ("Last run " + lastRun.status + ": " + (lastRun.error || "")).trim();
+    if (detail.failures >= 3) {
+      note += `\n\nAfter ${detail.failures} failures in a row it is being tried less often` +
+              (detail.next_run ? `, next ${timeUntil(detail.next_run)}` : "") +
+              ". Run now starts it immediately, and editing plugin.toml clears the wait.";
+    }
+    showMessage(note, false);
   } else if (!detail.snapshot && !busy) {
-    showMessage("No result yet. Press Refresh, or wait for the schedule.", true);
+    showMessage("No result yet. Press Run now, or wait for the schedule.", true);
   } else {
     showMessage("", true);
   }
@@ -371,7 +393,7 @@ function renderDetail() {
 
   // Filters only make sense for the columns they were built against.
   const snapshot = detail.snapshot;
-  const key = snapshot ? snapshot.columns.join(" ") : "";
+  const key = snapshot ? snapshot.columns.join("\u0000") : "";
   if (key !== state.columnsKey) {
     state.columnsKey = key;
     state.filters.clear();
@@ -523,6 +545,11 @@ function showSide(which) {
   el("side").hidden = !open;
   el("log-text").hidden = which !== "log";
   el("config-body").hidden = which !== "config";
+  el("side-follow").hidden = which !== "log";
+  if (which === "log") {
+    setFollowing(following());
+    requestAnimationFrame(() => { if (following()) scrollLogToEnd(); });
+  }
   el("side-log").classList.toggle("active", which === "log");
   el("side-config").classList.toggle("active", which === "config");
   el("btn-log").classList.toggle("active", which === "log");
@@ -545,12 +572,60 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.side) showSide(null);
 });
 
+// Following means the newest line stays in view while a plugin is running.
+// It is on by default because a log you have opened during a run is a log you
+// are watching, and it turns itself off the moment you scroll up to read
+// something - which is the only reason anyone ever scrolls up in a log.
+const FOLLOW_KEY = "snapgrid-follow";
+const AT_BOTTOM = 24;   // px of slack, so "nearly at the bottom" counts
+
+function following() {
+  try {
+    return localStorage.getItem(FOLLOW_KEY) !== "off";
+  } catch (error) {
+    return true;
+  }
+}
+
+function setFollowing(on) {
+  try {
+    localStorage.setItem(FOLLOW_KEY, on ? "on" : "off");
+  } catch (error) {
+    /* the choice lasts for this page only, which is better than failing */
+  }
+  const button = el("side-follow");
+  button.classList.toggle("active", on);
+  button.textContent = on ? "Following" : "Follow";
+  if (on) scrollLogToEnd();
+}
+
+function scrollLogToEnd() {
+  const pre = el("log-text");
+  pre.scrollTop = pre.scrollHeight;
+}
+
 function renderLog() {
   const detail = state.detail;
   const live = detail.live;
   const text = (live && live.log) || (detail.last_run && detail.last_run.log) || "";
-  el("log-text").textContent = text || "(no log output)";
+  const pre = el("log-text");
+
+  const unchanged = pre.textContent === (text || "(no log output)");
+  if (!unchanged) pre.textContent = text || "(no log output)";
+
+  el("side-follow").hidden = state.side !== "log";
+  if (!unchanged && following()) scrollLogToEnd();
 }
+
+el("side-follow").addEventListener("click", () => setFollowing(!following()));
+
+// Scrolling up is how you say "stop moving"; scrolling back to the bottom is
+// how you say "carry on". Neither needs a button to be pressed.
+el("log-text").addEventListener("scroll", () => {
+  const pre = el("log-text");
+  const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight <= AT_BOTTOM;
+  if (atBottom !== following()) setFollowing(atBottom);
+});
 
 /* --------------------------------------------------------------- table */
 
@@ -584,6 +659,12 @@ function renderTable() {
 
   const columns = snapshot.columns;
   const kinds = columns.map((_, index) => detectKind(snapshot.rows, index));
+  // Hidden columns still filter and sort - they are out of sight, not out of
+  // the table - so everything below works on indexes into the full row.
+  const hidden = hiddenColumns();
+  const shownIndexes = columns.map((column, index) => (hidden.has(column) ? -1 : index))
+                              .filter((index) => index >= 0);
+  const shownColumns = shownIndexes.map((index) => columns[index]);
   let rows = visibleRows(columns, snapshot.rows, null);
 
   if (state.sort.direction !== 0 && state.sort.column) {
@@ -599,7 +680,8 @@ function renderTable() {
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
 
-  columns.forEach((column) => {
+  shownIndexes.forEach((columnIndex) => {
+    const column = columns[columnIndex];
     const th = document.createElement("th");
     const inner = document.createElement("div");
     inner.className = "th-inner";
@@ -627,6 +709,7 @@ function renderTable() {
 
     inner.append(label, mark, filterButton);
     th.appendChild(inner);
+    th.appendChild(columnGrip(table, shownColumns, column, th));
     headRow.appendChild(th);
   });
 
@@ -637,7 +720,7 @@ function renderTable() {
   if (!rows.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = columns.length;
+    td.colSpan = shownIndexes.length;
     td.className = "empty-row";
     td.textContent = snapshot.rows.length
       ? "No rows match the current filters."
@@ -647,7 +730,7 @@ function renderTable() {
   } else {
     for (const row of rows) {
       const tr = document.createElement("tr");
-      columns.forEach((_, index) => {
+      shownIndexes.forEach((index) => {
         const td = document.createElement("td");
         if (kinds[index] === "number") td.className = "num";
         const value = row[index] === undefined ? "" : row[index];
@@ -660,10 +743,15 @@ function renderTable() {
   }
   table.appendChild(tbody);
   wrap.appendChild(table);
+  applyWidths(table, shownColumns);
 
   const total = snapshot.rows.length;
-  el("row-note").textContent =
-    rows.length === total ? total + " rows" : rows.length + " of " + total + " rows";
+  const note = rows.length === total ? total + " rows"
+                                     : rows.length + " of " + total + " rows";
+  const missing = columns.length - shownIndexes.length;
+  el("row-note").textContent = missing ? `${note} - ${missing} column${missing > 1 ? "s" : ""} hidden`
+                                       : note;
+  el("btn-columns").classList.toggle("active", missing > 0);
   el("btn-clear").hidden = state.filters.size === 0 && !state.search;
 }
 
@@ -677,6 +765,180 @@ function toggleSort(column) {
   }
   renderTable();
 }
+
+/* ------------------------------------------------------------- columns */
+
+// Widths and hidden columns are per plugin and per browser: they are about
+// this screen and this table, not about the data, so they do not belong in
+// plugin.toml and are not shared with anyone else looking at the same page.
+
+function columnKey(what) {
+  return `snapgrid-${what}-${state.selected || ""}`;
+}
+
+function readStored(what, fallback) {
+  try {
+    const raw = localStorage.getItem(columnKey(what));
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function writeStored(what, value) {
+  try {
+    localStorage.setItem(columnKey(what), JSON.stringify(value));
+  } catch (error) {
+    /* the choice lasts for this page only */
+  }
+}
+
+function hiddenColumns() {
+  const list = readStored("hidden", []);
+  return new Set(Array.isArray(list) ? list : []);
+}
+
+function setHiddenColumns(set) {
+  writeStored("hidden", Array.from(set));
+  renderTable();
+}
+
+function storedWidths() {
+  const map = readStored("widths", {});
+  return map && typeof map === "object" ? map : {};
+}
+
+// Every column is given an explicit width the first time one is dragged, and
+// the table switched to fixed layout. Without that, widening one column makes
+// the browser quietly take the space from another.
+function lockWidths(table, shownColumns) {
+  const widths = storedWidths();
+  const headings = table.querySelectorAll("thead th");
+  shownColumns.forEach((column, index) => {
+    if (widths[column] === undefined && headings[index]) {
+      widths[column] = Math.round(headings[index].getBoundingClientRect().width);
+    }
+  });
+  writeStored("widths", widths);
+  return widths;
+}
+
+function applyWidths(table, shownColumns) {
+  const widths = storedWidths();
+  if (!Object.keys(widths).length) return;
+  table.classList.add("fixed");
+  const headings = table.querySelectorAll("thead th");
+  shownColumns.forEach((column, index) => {
+    if (widths[column] && headings[index]) headings[index].style.width = widths[column] + "px";
+  });
+}
+
+// shownColumns, not every column: a hidden column has no heading, so anything
+// matching headings by position has to count only the ones on screen.
+function columnGrip(table, shownColumns, column, th) {
+  const grip = document.createElement("span");
+  grip.className = "col-grip";
+  grip.title = "Drag to resize. Double-click to fit";
+
+  grip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const widths = lockWidths(table, shownColumns);
+    table.classList.add("fixed");
+    const startX = event.clientX;
+    const startWidth = widths[column];
+    grip.setPointerCapture(event.pointerId);
+    document.body.classList.add("resizing");
+
+    const onMove = (moved) => {
+      const width = Math.max(48, Math.round(startWidth + moved.clientX - startX));
+      th.style.width = width + "px";
+    };
+    const onUp = () => {
+      grip.removeEventListener("pointermove", onMove);
+      grip.removeEventListener("pointerup", onUp);
+      grip.removeEventListener("pointercancel", onUp);
+      document.body.classList.remove("resizing");
+      const current = storedWidths();
+      current[column] = parseInt(th.style.width, 10);
+      writeStored("widths", current);
+    };
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onUp);
+    grip.addEventListener("pointercancel", onUp);
+  });
+
+  // Back to whatever the content needs, for one column rather than all of them.
+  grip.addEventListener("dblclick", (event) => {
+    event.stopPropagation();
+    const current = storedWidths();
+    delete current[column];
+    writeStored("widths", current);
+    renderTable();
+  });
+
+  return grip;
+}
+
+function openColumns(anchor) {
+  const popup = el("filter-popup");
+  const columns = (state.detail && state.detail.snapshot && state.detail.snapshot.columns) || [];
+  const hidden = hiddenColumns();
+
+  popup.textContent = "";
+  popup.hidden = false;
+
+  const list = document.createElement("div");
+  list.className = "values";
+  for (const column of columns) {
+    const row = document.createElement("label");
+    row.className = "value-row";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !hidden.has(column);
+    box.addEventListener("change", () => {
+      // The last visible column cannot be hidden: an empty table is not a
+      // view of anything, and there would be no heading left to click.
+      if (!box.checked && hidden.size >= columns.length - 1) {
+        box.checked = true;
+        return;
+      }
+      if (box.checked) hidden.delete(column);
+      else hidden.add(column);
+      setHiddenColumns(hidden);
+    });
+    const text = document.createElement("span");
+    text.className = "v";
+    text.textContent = column;
+    row.append(box, text);
+    list.appendChild(row);
+  }
+  popup.appendChild(list);
+
+  const foot = document.createElement("div");
+  foot.className = "popup-foot";
+  const all = document.createElement("button");
+  all.type = "button";
+  all.textContent = "Show all";
+  all.addEventListener("click", () => {
+    setHiddenColumns(new Set());
+    closeFilter();
+  });
+  foot.appendChild(all);
+  popup.appendChild(foot);
+
+  placePopup(popup, anchor);
+}
+
+el("btn-columns").addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!el("filter-popup").hidden) {
+    closeFilter();
+    return;
+  }
+  openColumns(el("btn-columns"));
+});
 
 /* -------------------------------------------------------- filter popup */
 
@@ -786,11 +1048,15 @@ function openFilter(column, anchor) {
   popup.appendChild(actions);
   draw("");
 
+  placePopup(popup, anchor);
+  search.focus();
+}
+
+function placePopup(popup, anchor) {
   const box = anchor.getBoundingClientRect();
   popup.style.top = window.scrollY + box.bottom + 4 + "px";
   const left = Math.min(window.scrollX + box.left, window.scrollX + window.innerWidth - 276);
   popup.style.left = Math.max(8, left) + "px";
-  search.focus();
 }
 
 document.addEventListener("click", (event) => {
@@ -849,3 +1115,146 @@ setInterval(loadPlugins, 5000);
 setInterval(() => {
   if (state.detail && state.detail.live) loadDetail();
 }, 1000);
+
+/* ------------------------------------------------------------- resizing */
+
+// Both panels are dragged by a grip on the edge between them. The width is
+// kept per browser, because it is a preference about this screen rather than
+// about the data, and a shared one would fight between two people.
+const PANES = {
+  "sidebar-grip": {
+    key: "snapgrid-sidebar-width",
+    variable: "--sidebar-width",
+    fallback: 260, min: 160, max: 560,
+    measure: (event) => event.clientX,
+  },
+  "side-grip": {
+    key: "snapgrid-side-width",
+    variable: "--side-width",
+    fallback: null,                         // the stylesheet decides
+    min: 260, max: 1200,
+    measure: (event) => window.innerWidth - event.clientX,
+  },
+};
+
+function applyWidth(pane, pixels) {
+  document.documentElement.style.setProperty(pane.variable, `${Math.round(pixels)}px`);
+}
+
+function restoreWidths() {
+  for (const pane of Object.values(PANES)) {
+    let saved = null;
+    try {
+      saved = parseInt(localStorage.getItem(pane.key), 10);
+    } catch (error) {
+      saved = null;
+    }
+    if (Number.isFinite(saved) && saved >= pane.min && saved <= pane.max) {
+      applyWidth(pane, saved);
+    }
+  }
+}
+
+function dragPane(grip, pane) {
+  grip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    grip.setPointerCapture(event.pointerId);
+    grip.classList.add("dragging");
+    document.body.classList.add("resizing");
+
+    const onMove = (moved) => {
+      const width = Math.min(pane.max, Math.max(pane.min, pane.measure(moved)));
+      applyWidth(pane, width);
+    };
+    const onUp = () => {
+      grip.removeEventListener("pointermove", onMove);
+      grip.removeEventListener("pointerup", onUp);
+      grip.removeEventListener("pointercancel", onUp);
+      grip.classList.remove("dragging");
+      document.body.classList.remove("resizing");
+      const current = document.documentElement.style.getPropertyValue(pane.variable);
+      try {
+        if (current) localStorage.setItem(pane.key, parseInt(current, 10));
+      } catch (error) {
+        /* the width lasts for this page only */
+      }
+    };
+    grip.addEventListener("pointermove", onMove);
+    grip.addEventListener("pointerup", onUp);
+    grip.addEventListener("pointercancel", onUp);
+  });
+
+  // Back to the width it came with, for anyone who has dragged it somewhere
+  // unusable and would rather not drag it back by eye.
+  grip.addEventListener("dblclick", () => {
+    document.documentElement.style.removeProperty(pane.variable);
+    if (pane.fallback) applyWidth(pane, pane.fallback);
+    try {
+      localStorage.removeItem(pane.key);
+    } catch (error) {
+      /* nothing to forget */
+    }
+  });
+
+  // The keyboard reaches it too: a grip that only answers to a mouse is not
+  // usable by everyone, and arrow keys are more precise anyway.
+  grip.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 40 : 10;
+    const towards = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+    if (!towards) return;
+    event.preventDefault();
+    const element = grip.id === "sidebar-grip" ? el("sidebar") : el("side");
+    const sign = grip.id === "sidebar-grip" ? 1 : -1;
+    const width = Math.min(pane.max,
+                  Math.max(pane.min, element.getBoundingClientRect().width + towards * step * sign));
+    applyWidth(pane, width);
+    try {
+      localStorage.setItem(pane.key, Math.round(width));
+    } catch (error) {
+      /* the width lasts for this page only */
+    }
+  });
+}
+
+restoreWidths();
+for (const [id, pane] of Object.entries(PANES)) {
+  const grip = el(id);
+  if (grip) dragPane(grip, pane);
+}
+
+/* ------------------------------------------------- hiding the left panel */
+
+const SIDEBAR_KEY = "snapgrid-sidebar";
+
+function sidebarHidden() {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "hidden";
+  } catch (error) {
+    return false;
+  }
+}
+
+function showSidebar(visible) {
+  document.body.classList.toggle("no-sidebar", !visible);
+  try {
+    localStorage.setItem(SIDEBAR_KEY, visible ? "shown" : "hidden");
+  } catch (error) {
+    /* the choice lasts for this page only */
+  }
+}
+
+showSidebar(!sidebarHidden());
+el("sidebar-toggle").addEventListener("click", () => showSidebar(false));
+el("sidebar-show").addEventListener("click", () => showSidebar(true));
+
+// The same key hides and shows it, the way an editor does, because reaching
+// for the mouse to get more room defeats the point of getting more room.
+document.addEventListener("keydown", (event) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+  if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.key === "[") {
+    event.preventDefault();
+    showSidebar(document.body.classList.contains("no-sidebar"));
+  }
+});

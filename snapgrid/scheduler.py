@@ -36,6 +36,7 @@ class Scheduler(threading.Thread):
         self.runner = runner
         self._stop = threading.Event()
         self._last_scan = 0.0
+        self._seen_mtime: dict[str, float] = {}
 
     def stop(self) -> None:
         self._stop.set()
@@ -55,6 +56,13 @@ class Scheduler(threading.Thread):
             self._last_scan = now
 
         for plugin in self.registry.all():
+            # An edited manifest clears the backoff. Someone changing a plugin
+            # is trying to fix it, and should not have to wait out an hour of
+            # doubling - or delete the database - to see whether it worked.
+            if self._seen_mtime.get(plugin.id, plugin.mtime) != plugin.mtime:
+                self.store.clear_failures(plugin.id)
+            self._seen_mtime[plugin.id] = plugin.mtime
+
             if not plugin.runnable or plugin.every is None:
                 continue
             if self.runner.is_busy(plugin.id):

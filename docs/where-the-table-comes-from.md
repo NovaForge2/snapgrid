@@ -77,7 +77,8 @@ No program at all. A folder containing a manifest and a file is a plugin.
 
 ```toml
 [plugin]
-name = "Contact list"
+name  = "Contact list"
+group = "Reference data"     # optional: the heading it appears under
 
 [run]
 every = "1h"
@@ -111,6 +112,25 @@ This is the case for a file a colleague keeps up to date: they edit the
 spreadsheet where they always have, and it appears as a searchable, filterable
 table without anyone writing any code.
 
+## Not running the script when the file is recent
+
+```toml
+[output]
+file      = "report.csv"
+fresh_for = "30m"
+```
+
+With `fresh_for`, a scheduled run checks the file's age first. Younger than
+that and the file is used as it stands, with the plugin never started - which
+matters when the work is slow or expensive, or when the file is already being
+refreshed by something else.
+
+Pressing **Run now** in the page ignores this and runs the plugin, because
+asking for it by hand means wanting new data.
+
+The plugin runs as normal if the file is missing, older than `fresh_for`, or
+cannot be read.
+
 ## What is true in every case
 
 - **The first row is the header.** Column names come from it.
@@ -122,6 +142,9 @@ table without anyone writing any code.
   stdout or from a file.
 - **The file must be inside the plugin folder.** A path starting with `/` or
   containing `..` is refused when the manifest is read.
+- **`[run] timeout` still applies** whenever there is a program to run: five
+  minutes unless the manifest says otherwise, after which it is killed and the
+  file is not read at all. See [plugin-toml.md](plugin-toml.md).
 
 ## Spreadsheets in detail
 

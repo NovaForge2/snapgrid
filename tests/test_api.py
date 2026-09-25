@@ -70,6 +70,65 @@ class ApiTest(unittest.TestCase):
         return status, json.loads(body or b"{}")
 
 
+class AddressedToThisMachine(ApiTest):
+    """DNS rebinding, which is the only way in that loopback does not close.
+
+    A site can point its own name at 127.0.0.1, and the browser will then
+    treat it as the same origin and hand it whatever it reads. What the site
+    cannot do is change the Host header, so that is what is checked.
+    """
+
+    def test_an_ordinary_request_is_allowed(self):
+        status, _ = self.get_json("/api/plugins")
+        self.assertEqual(status, 200)
+
+    def test_a_request_addressed_elsewhere_is_refused(self):
+        status, payload = self.get_json("/api/plugins", headers={"Host": "evil.example"})
+        self.assertEqual(status, 403)
+        self.assertIn("does not answer to", payload["error"])
+
+    def test_the_page_itself_is_refused_too(self):
+        # Not just the API: the page is what would be loaded and read.
+        status, _, _ = self.request("/", headers={"Host": "evil.example"})
+        self.assertEqual(status, 403)
+
+    def test_localhost_by_name_is_allowed(self):
+        status, _ = self.get_json("/api/plugins",
+                                  headers={"Host": f"localhost:{self.config.port}"})
+        self.assertEqual(status, 200)
+
+    def test_starting_a_run_from_elsewhere_is_refused(self):
+        status, _, _ = self.request("/api/plugins/demo/run", method="POST",
+                                    headers={"X-Snapgrid": "1", "Host": "evil.example"})
+        self.assertEqual(status, 403)
+
+
+class Throttling(ApiTest):
+    """What the page needs in order to say why nothing is happening."""
+
+    def test_a_healthy_plugin_reports_no_failures(self):
+        _, payload = self.get_json("/api/plugins/demo")
+        self.assertEqual(payload["failures"], 0)
+
+    def test_failures_and_the_next_attempt_are_reported(self):
+        # every = "off" in this plugin, so give it a schedule to be held off.
+        folder = self.config.plugins_dir / "demo"
+        (folder / "plugin.toml").write_text(
+            '[plugin]\nname = "Demo"\n[run]\ncommand = ["python", "main.py"]\nevery = "15m"\n',
+            encoding="utf-8",
+        )
+        self.registry.scan()
+        for _ in range(4):
+            run_id = self.store.create_run("demo", "schedule")
+            self.store.finish_run(run_id, "demo", "failed", error="no")
+
+        _, payload = self.get_json("/api/plugins/demo")
+        self.assertEqual(payload["failures"], 4)
+        # Four failures means an hour, not the fifteen minutes it asked for.
+        last_finished, _ = self.store.get_state("demo")
+        self.assertAlmostEqual(payload["next_run"] - last_finished, 3600, delta=1)
+
+
 class Reading(ApiTest):
     def test_the_plugin_list(self):
         status, payload = self.get_json("/api/plugins")

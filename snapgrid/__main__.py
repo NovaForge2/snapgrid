@@ -88,6 +88,7 @@ def command_hint(config: Config, command: str) -> str:
 
 def config_from(args: argparse.Namespace) -> Config:
     plugins_dir = Path(getattr(args, "dir", None) or DEFAULT_PLUGINS_DIR).expanduser()
+    check_host_is_safe(getattr(args, "host", None))
     # A command line option beats snapgrid.toml, which beats the built-in default.
     settings = load_settings()
     port = getattr(args, "port", None)
@@ -98,6 +99,34 @@ def config_from(args: argparse.Namespace) -> Config:
         host=getattr(args, "host", None) or "127.0.0.1",
         port=port if port is not None else settings["port"],
         max_concurrent=limit if limit is not None else settings["max_concurrent"],
+    )
+
+
+LOOPBACK = {"127.0.0.1", "localhost", "::1", ""}
+ALLOW_ANY_HOST = "SNAPGRID_ALLOW_ANY_HOST"
+
+
+def check_host_is_safe(host: str | None) -> None:
+    """Stop --host quietly putting an unauthenticated tool on the network.
+
+    There is no login, so whoever reaches the port can read every table and
+    press Run now on every plugin - with the credentials in your .env, against
+    whatever those plugins talk to. That is a decision worth making on purpose
+    rather than by copying a flag out of a note.
+    """
+    if host is None or host in LOOPBACK:
+        return
+    if os.environ.get(ALLOW_ANY_HOST) == "1":
+        print(f"snapgrid: listening on {host} - anyone who can reach this port can "
+              f"read every table and run every plugin.", file=sys.stderr)
+        return
+    raise SystemExit(
+        f"snapgrid: refusing to listen on {host}.\n"
+        f"  snapgrid has no login. On anything other than this machine, whoever\n"
+        f"  reaches the port can read every table and press Run now on every\n"
+        f"  plugin, using the credentials in your .env files.\n"
+        f"  Leave out --host to stay on 127.0.0.1, which is how it is meant to run.\n"
+        f"  If you really mean it, set {ALLOW_ANY_HOST}=1 and it will say so at startup."
     )
 
 

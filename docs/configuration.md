@@ -5,6 +5,11 @@
 One file, in the folder you cloned into. It configures the server, where a
 `plugin.toml` inside a plugin folder configures one plugin.
 
+Nothing here applies to a single plugin. How long a plugin may run
+(`timeout`), how often it runs (`every`), what it runs and where its table
+comes from are all in that plugin's own manifest - see
+[plugin-toml.md](plugin-toml.md).
+
 It ships with the repository, ready to edit, and applies whichever plugins
 folder you point at. A command line option beats it. Everything in it is
 optional - delete the file and the defaults still apply.
@@ -81,12 +86,99 @@ the framework stays exactly as cloned, and `git pull` can never touch your work.
 ./server.py --dir ~/my-plugins status
 ```
 
-snapgrid keeps its database, log and chosen port in a hidden `.snapgrid` folder
-inside that same folder, so one workspace is one self-contained thing. If your
-plugins folder is a git repository, add `.snapgrid/` to its `.gitignore`. Use
-`--data` to put that elsewhere.
+snapgrid keeps everything it writes in a hidden `.snapgrid` folder inside that
+same folder, so one workspace is one self-contained thing - see below.
 
 One server per plugins folder. Starting a second one on the same folder is
 refused, because both would share a database and schedule the same plugins.
 Different folders are independent, and each gets its own port.
 
+
+## What is on disk
+
+snapgrid creates one folder, on first start, inside whatever plugins folder it
+is pointed at. Nothing else on the machine is written to, and nothing is ever
+written into a plugin's own folder.
+
+**One database for the whole server, not one per plugin.** Every row carries
+the plugin it belongs to, which is how they are kept apart. A second database
+exists only if you point a second server at a different plugins folder.
+
+```
+plugins/.snapgrid/
+    snapgrid.db      every run and every result
+    server.log       the server's own log, not the plugins'
+    server.json      the pid and port of the running server
+```
+
+| File | What it is | If you delete it |
+|---|---|---|
+| `snapgrid.db` | a SQLite database: runs, results and per-plugin state | history is lost, everything else still works |
+| `server.log` | what the server itself printed, including startup problems | nothing |
+| `server.json` | how `stop` and `status` find the running server without searching | `stop` cannot find it; kill it by hand |
+
+While the server is running you may also see `snapgrid.db-wal` and
+`snapgrid.db-shm`. Those are SQLite's own working files - it runs in WAL mode
+so that reading never blocks a plugin finishing - and they go away on a clean
+shutdown.
+
+`--data` puts the folder somewhere else. If your plugins folder is a repository
+of your own, add `.snapgrid/` to its `.gitignore`.
+
+### Why SQLite, when the front page says no database
+
+There is nothing to install and nothing to run. SQLite is part of Python
+itself, and the database is one ordinary file that the server opens. What the
+project avoids is a database *server* - something to provision, start, keep
+running and get permission for, which is exactly what is impossible on a locked
+down machine.
+
+Flat files would have meant writing concurrent access, partial-write recovery
+and querying by hand, none of which would end up better than what is already in
+the standard library.
+
+### The tables
+
+Three of them, and reading them directly is a fair way to answer a question the
+page does not:
+
+**`runs`** - one row per run. `status`, `trigger` (the schedule or the Run now
+button), `queued_at`, `started_at`, `finished_at`, `exit_code`, `error`, the
+`log`, the `snapshot_id` it produced, and whether it `changed` anything.
+
+**`snapshots`** - the tables themselves: `columns_json`, `rows_json`,
+`row_count`, a `content_hash`, and `first_seen`, `last_seen`, `seen_count`. The
+hash is what makes `[history] keep = 20` mean twenty *changes*: an identical
+result updates `last_seen` and `seen_count` instead of taking a slot.
+
+**`state`** - per plugin, `last_finished` and `consecutive_failures`. This is
+why `every = "10d"` survives a restart rather than starting its ten days again,
+and why the backoff after repeated failures is not forgotten when the server
+restarts.
+
+Times are Unix timestamps, so `datetime(finished_at, 'unixepoch', 'localtime')`
+makes them readable.
+
+```bash
+sqlite3 plugins/.snapgrid/snapgrid.db \
+  "select plugin_id, status,
+          datetime(finished_at,'unixepoch','localtime') as finished, error
+     from runs order by id desc limit 10"
+```
+
+```bash
+sqlite3 plugins/.snapgrid/snapgrid.db \
+  "select datetime(first_seen,'unixepoch','localtime') as changed, row_count
+     from snapshots where plugin_id = 'my-plugin' order by id desc"
+```
+
+If the `sqlite3` command is not on the machine - it often is not, and the
+project does not assume it - Python reads the same file:
+
+```bash
+python3 -c "import sqlite3; print(*sqlite3.connect('plugins/.snapgrid/snapgrid.db').execute('select plugin_id, status, error from runs order by id desc limit 10'), sep=chr(10))"
+```
+
+Read it while the server is running by all means. Writing to it is not
+supported: the server holds its own connections and expects to be the only one
+making changes.

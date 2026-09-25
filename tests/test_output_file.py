@@ -241,3 +241,78 @@ class Spreadsheets(RunningPlugins):
         self.assertEqual(run["status"], store_module.OK)
         self.assertEqual(self.store.get_snapshot(run["snapshot_id"])["rows"], [["1"]])
         self.assertIn("done", run["log"])
+
+
+class FreshEnoughToSkip(RunningPlugins):
+    """[output] fresh_for - do not run the plugin if the file is recent."""
+
+    def make_counting_plugin(self, name, fresh_for="1h"):
+        # Appends a line every time it actually runs, so the test can tell
+        # whether it ran at all.
+        return self.make_plugin(
+            name,
+            'from pathlib import Path\n'
+            'count = Path("runs.txt")\n'
+            'count.write_text(str(int(count.read_text() or 0) + 1) if count.exists() else "1")\n'
+            'Path("report.csv").write_text("a\\n" + count.read_text() + "\\n")\n',
+            manifest_extra=f'[output]\nfile = "report.csv"\nfresh_for = "{fresh_for}"\n',
+        )
+
+    def runs_so_far(self, plugin):
+        counter = plugin.dir / "runs.txt"
+        return int(counter.read_text()) if counter.exists() else 0
+
+    def test_a_fresh_file_is_used_and_the_plugin_is_not_run(self):
+        plugin = self.make_counting_plugin("cached")
+        self.run_now(plugin)                       # manual, so it runs
+        self.assertEqual(self.runs_so_far(plugin), 1)
+
+        run_id = self.runner.submit(plugin, "schedule")
+        self.wait_for(run_id)
+        self.assertEqual(self.runs_so_far(plugin), 1, "it ran again despite a fresh file")
+        run = self.store.get_run(run_id)
+        self.assertEqual(run["status"], store_module.OK)
+        self.assertIn("was not run", run["log"])
+
+    def test_an_old_file_means_the_plugin_runs(self):
+        plugin = self.make_counting_plugin("expired", fresh_for="30s")
+        self.run_now(plugin)
+        self.assertEqual(self.runs_so_far(plugin), 1)
+
+        old = time.time() - 600
+        os.utime(plugin.dir / "report.csv", (old, old))
+        run_id = self.runner.submit(plugin, "schedule")
+        self.wait_for(run_id)
+        self.assertEqual(self.runs_so_far(plugin), 2)
+
+    def test_refresh_always_runs_it(self):
+        # Pressing Refresh means wanting new data, not the file again.
+        plugin = self.make_counting_plugin("forced")
+        self.run_now(plugin)
+        self.run_now(plugin)
+        self.assertEqual(self.runs_so_far(plugin), 2)
+
+    def test_a_missing_file_means_the_plugin_runs(self):
+        plugin = self.make_counting_plugin("absent")
+        self.run_now(plugin)
+        (plugin.dir / "report.csv").unlink()
+        run_id = self.runner.submit(plugin, "schedule")
+        self.wait_for(run_id)
+        self.assertEqual(self.runs_so_far(plugin), 2)
+
+    def test_an_unreadable_file_means_the_plugin_runs(self):
+        plugin = self.make_counting_plugin("broken")
+        self.run_now(plugin)
+        (plugin.dir / "report.csv").write_text("", encoding="utf-8")
+        run_id = self.runner.submit(plugin, "schedule")
+        self.wait_for(run_id)
+        self.assertEqual(self.runs_so_far(plugin), 2)
+
+    def test_fresh_for_without_a_file_is_refused(self):
+        folder = self.config.plugins_dir / "no-file"
+        folder.mkdir(parents=True)
+        (folder / "plugin.toml").write_text(
+            '[plugin]\nname = "no-file"\n[run]\ncommand = ["x"]\n'
+            '[output]\nfresh_for = "1h"\n', encoding="utf-8")
+        self.registry.scan()
+        self.assertIn("only means something with", self.registry.get("no-file").error)

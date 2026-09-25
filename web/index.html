@@ -11,7 +11,12 @@
 <div id="banner" hidden></div>
 <div id="layout">
   <aside id="sidebar">
-    <div id="brand">snapgrid</div>
+    <div id="brand">
+      <span id="brand-text">snapgrid</span>
+      <span class="grow"></span>
+      <button id="sidebar-toggle" type="button" title="Hide the panel"
+              aria-label="Hide the plugin panel">&#171;</button>
+    </div>
     <div id="plugin-list"></div>
     <div id="sidebar-foot">
       <span id="server-note"></span>
@@ -19,6 +24,12 @@
       <button id="theme" type="button" title="Light, dark, or follow the system">auto</button>
     </div>
   </aside>
+
+  <div id="sidebar-grip" class="grip" role="separator" aria-orientation="vertical"
+       tabindex="0" title="Drag to resize. Double-click to reset"></div>
+
+  <button id="sidebar-show" type="button" title="Show the plugin panel"
+          aria-label="Show the plugin panel">&#187;</button>
 
   <main id="main">
     <div id="empty" class="placeholder">
@@ -37,12 +48,14 @@
       </header>
 
       <div id="toolbar">
-        <button id="btn-refresh" type="button">Refresh</button>
+        <button id="btn-refresh" type="button"
+                title="Run the plugin now, without waiting for the schedule">Run now</button>
         <button id="btn-cancel" type="button" hidden>Cancel</button>
         <select id="snapshot-picker" hidden aria-label="Which result to show"></select>
         <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
         <span id="spacer"></span>
         <span id="row-note"></span>
+        <button id="btn-columns" type="button" title="Choose which columns to show">Columns</button>
         <button id="btn-clear" type="button" hidden>Clear filters</button>
         <a id="btn-export" href="#">Export CSV</a>
         <button id="btn-log" type="button">Log</button>
@@ -53,10 +66,14 @@
       <div id="table-wrap"></div>
 
       <aside id="side" hidden>
+        <div id="side-grip" class="grip" role="separator" aria-orientation="vertical"
+             tabindex="0" title="Drag to resize. Double-click to reset"></div>
         <header id="side-head">
           <button id="side-log" type="button" class="side-tab">Log</button>
           <button id="side-config" type="button" class="side-tab">Config</button>
           <span class="grow"></span>
+          <button id="side-follow" type="button" class="side-tab" hidden
+                  title="Keep the newest line in view as the log grows">Follow</button>
           <button id="side-close" type="button" title="Close" aria-label="Close">&#215;</button>
         </header>
         <pre id="log-text" hidden></pre>

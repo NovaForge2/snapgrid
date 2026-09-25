@@ -53,7 +53,7 @@ decrypted only by it.
   You only need a new key if the key itself is exposed, and then everything
   encrypted with it has to be redone.
 - No restart is needed. `.env` and `plugin.toml` are read again at the start of
-  every run, so you edit and click Refresh.
+  every run, so you edit and click Run now.
 - A wrong or missing key fails the run with a clear message instead of handing
   the script nonsense.
 - Decrypted values are **masked** as `****` anywhere they would otherwise be

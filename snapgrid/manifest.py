@@ -30,7 +30,7 @@ from .config import DEFAULT_EVERY
 MANIFEST_NAME = "plugin.toml"
 ENV_NAME = ".env"
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-DURATION_RE = re.compile(r"^(\d+)\s*([smh])$")
+DURATION_RE = re.compile(r"^(\d+)\s*([smhdw])$")
 
 
 class ManifestError(Exception):
@@ -51,6 +51,7 @@ class Plugin:
     columns: list[str] | None = None  # expected header, None means take it from the output
     output_file: str = ""             # read the table from this file instead of stdout
     output_sheet: str = ""            # which sheet of a workbook, if not the first
+    fresh_for: int | None = None      # skip the run while the file is younger than this
     history_keep: int = 0             # how many different snapshots to keep
     mtime: float = 0.0
     error: str = ""                   # set when the manifest could not be read
@@ -65,13 +66,17 @@ class Plugin:
 
 
 def parse_duration(value: object, field_name: str) -> int | None:
-    """Turn "15m" into 900. "off" and "" mean no schedule."""
+    """Turn "15m" into 900. "off" and "" mean no schedule.
+
+    Seconds, minutes, hours, days and weeks, so that something checked twice a
+    day and something checked twice a month are both sayable.
+    """
     if value is None:
         return None
     if isinstance(value, int) and not isinstance(value, bool):
         return value if value > 0 else None
     if not isinstance(value, str):
-        raise ManifestError(f"{field_name} must be text like \"15m\", or \"off\"")
+        raise ManifestError(f"{field_name} must be text like \"15m\" or \"10d\", or \"off\"")
 
     text = value.strip().lower()
     if text in ("", "off", "never", "manual"):
@@ -79,10 +84,11 @@ def parse_duration(value: object, field_name: str) -> int | None:
     match = DURATION_RE.match(text)
     if not match:
         raise ManifestError(
-            f"{field_name} is \"{value}\" but should look like \"30s\", \"15m\", \"2h\" or \"off\""
+            f"{field_name} is \"{value}\" but should look like \"30s\", \"15m\", \"2h\", "
+            f"\"10d\", \"2w\" or \"off\""
         )
     amount, unit = int(match.group(1)), match.group(2)
-    seconds = amount * {"s": 1, "m": 60, "h": 3600}[unit]
+    seconds = amount * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[unit]
     if seconds <= 0:
         return None
     return seconds
@@ -105,6 +111,45 @@ def _output_file(output_table: dict) -> str:
     return value
 
 
+# What belongs where. A key in the wrong section is accepted by TOML and would
+# otherwise be ignored in silence: "timeout = 600" written after [history]
+# belongs to [history], and the plugin quietly keeps the default.
+KNOWN_KEYS = {
+    "plugin": {"name", "description", "group", "enabled"},
+    "run": {"command", "timeout", "every"},
+    "table": {"columns"},
+    "output": {"file", "sheet", "fresh_for"},
+    "history": {"keep"},
+}
+BELONGS_TO = {key: section for section, keys in KNOWN_KEYS.items() for key in keys}
+
+
+def _check_keys(data: dict) -> None:
+    """Refuse a key that is misplaced or misspelt, rather than ignoring it."""
+    for section in data:
+        if section not in KNOWN_KEYS:
+            known = ", ".join(f"[{name}]" for name in KNOWN_KEYS)
+            raise ManifestError(f"[{section}] is not a section snapgrid knows. "
+                                f"The sections are {known}")
+
+    for section, keys in KNOWN_KEYS.items():
+        for key in data.get(section, {}):
+            if key in keys:
+                continue
+            home = BELONGS_TO.get(key)
+            if home:
+                raise ManifestError(
+                    f"{key} is in [{section}], but it belongs in [{home}]. "
+                    f"In TOML a key belongs to the section above it, so "
+                    f"\"{key} = ...\" has to be written under [{home}] to have "
+                    f"any effect"
+                )
+            raise ManifestError(
+                f"[{section}] {key} is not a setting snapgrid knows. "
+                f"In [{section}] there is {', '.join(sorted(keys))}"
+            )
+
+
 def _table(data: dict, name: str) -> dict:
     value = data.get(name, {})
     if not isinstance(value, dict):
@@ -123,6 +168,8 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ManifestError(f"plugin.toml is not valid TOML: {exc}") from exc
+
+    _check_keys(data)
 
     plugin_table = _table(data, "plugin")
     run_table = _table(data, "run")
@@ -157,9 +204,18 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
             'unless [output] file names a file to read instead'
         )
 
-    timeout = run_table.get("timeout", 300)
-    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout <= 0:
-        raise ManifestError("[run] timeout must be a whole number of seconds")
+    # Seconds as a number, or the same units as every: timeout = "30m".
+    raw_timeout = run_table.get("timeout", 300)
+    if isinstance(raw_timeout, str):
+        timeout = parse_duration(raw_timeout, "[run] timeout")
+        if timeout is None:
+            raise ManifestError('[run] timeout cannot be "off" - a plugin that never '
+                                "stops would hold a worker for ever")
+    elif isinstance(raw_timeout, int) and not isinstance(raw_timeout, bool) and raw_timeout > 0:
+        timeout = raw_timeout
+    else:
+        raise ManifestError('[run] timeout must be a number of seconds, or text '
+                            'like "30m" or "2h"')
 
     every = parse_duration(run_table.get("every", DEFAULT_EVERY), "[run] every")
 
@@ -172,6 +228,13 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
     output_sheet = output_table.get("sheet", "")
     if not isinstance(output_sheet, str):
         raise ManifestError('[output] sheet must be text, for example sheet = "Summary"')
+
+    fresh_for = parse_duration(output_table.get("fresh_for"), "[output] fresh_for")
+    if fresh_for is not None and not output_file:
+        raise ManifestError(
+            "[output] fresh_for only means something with [output] file, "
+            "since it is the age of that file"
+        )
 
     history_keep = history_table.get("keep", 0)
     if not isinstance(history_keep, int) or isinstance(history_keep, bool) or history_keep < 0:
@@ -190,6 +253,7 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         columns=columns,
         output_file=output_file,
         output_sheet=output_sheet.strip(),
+        fresh_for=fresh_for,
         history_keep=history_keep,
         mtime=mtime,
     )

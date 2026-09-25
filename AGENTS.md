@@ -53,7 +53,7 @@ enabled     = true
 
 [run]
 command = ["python", "main.py"]            # required, argument list, no shell
-timeout = 300
+timeout = "5m"                             # or a number of seconds
 every   = "15m"
 
 [table]
@@ -67,16 +67,20 @@ keep = 20
 |---|---|---|---|
 | `plugin.name` | string | **required** | shown in the left panel |
 | `plugin.description` | string | `""` | one line, shown above the table |
-| `plugin.group` | string | `""` | plugins with the same group are listed together |
+| `plugin.group` | string | `""` | plugins giving the same string are listed under one heading. Groups and the plugins in them are ordered alphabetically; those with no group appear together under "Plugins" |
 | `plugin.enabled` | bool | `true` | `false` hides it completely and stops it running |
 | `run.command` | list of strings | **required** | argument list. A bare `python` or `python3` means the interpreter running snapgrid |
-| `run.timeout` | int seconds | `300` | the process and its children are killed at this point |
-| `run.every` | string | `"15m"` | `"30s"`, `"15m"`, `"2h"`, or `"off"` for manual only. Measured from the end of the previous run |
+| `run.timeout` | int seconds, or a duration string | `300` | how long one run may take. The process and its children are killed at this point and the run is marked failed. `600` and `"10m"` are the same; `"off"` is refused. Per-plugin, not a server setting |
+| `run.every` | string | `"15m"` | a number and a unit: `s`, `m`, `h`, `d`, `w`. So `"30s"`, `"15m"`, `"2h"`, `"10d"`, `"2w"`, or `"off"` for manual only. Measured from the end of the previous run |
 | `table.columns` | list of strings | none | when present, the header line must match it exactly. Omit it and the header defines the columns |
 | `output.file` | string | none | read the table from this file instead of stdout. Anything printed then becomes log. `.xlsx` is read as a spreadsheet |
 | `output.sheet` | string | first sheet | which sheet of a workbook to read |
+| `output.fresh_for` | string | none | if the file is younger than this, use it and do not run the plugin. Run now runs it anyway |
 | `run.command` | | | not required when `output.file` is set - a folder with a manifest and a file is a valid plugin |
 | `history.keep` | int | `0` | how many *differing* results to keep. Omit for latest only |
+
+Every key has to be written under its own section header: a `timeout` added at the
+end of the file belongs to whatever section came last and is refused, not ignored.
 
 Choose `every` by how fast the underlying data really changes. A plugin hitting
 a live API every 30 seconds is a bad neighbour; most reporting plugins
@@ -249,7 +253,9 @@ Check every line:
 - [ ] progress and warnings went to stderr
 - [ ] `echo $?` is `0` on success, non-zero when it fails
 - [ ] column count is identical on every row
-- [ ] it finishes well inside `run.timeout`
+- [ ] it finishes well inside `run.timeout` - time it, and raise the value in `plugin.toml`
+      if the work is genuinely slow rather than stuck
+- [ ] nothing it calls out to can block for ever: give every network call its own timeout
 - [ ] no secret is hardcoded, and none is passed as an argument
 - [ ] it needs no input typed at it, and never prompts
 - [ ] running it twice gives the same table when nothing changed
@@ -264,6 +270,8 @@ worse than one that fails.
 | Message in the UI | Cause |
 |---|---|
 | `plugin.toml is not valid TOML` | syntax error in the manifest |
+| `x is in [a], but it belongs in [b]` | a key written under the wrong section header. In TOML a key belongs to the section above it, so a setting appended at the end of the file lands in the last section |
+| `x is not a setting snapgrid knows` | a misspelt key. The message lists the real ones |
 | `cannot run 'x': no such program` | `run.command[0]` is not on PATH |
 | `the header line does not match [table] columns` | the script's header changed, or `columns` is wrong |
 | `line 4 has 5 values but there are 4 columns` | an unquoted comma in a value — use a CSV writer |
@@ -271,7 +279,7 @@ worse than one that fails.
 | `the plugin finished but did not write 'x.csv'` | `[output] file` names a file the script never wrote |
 | `'x.csv' was last written at ... before this run started` | the file is from an earlier run; write it every time |
 | `the plugin exited with code 1` | the script failed; its last stderr line is shown |
-| `the plugin was stopped after N seconds` | exceeded `run.timeout` |
+| `the plugin was stopped after N seconds` | exceeded `run.timeout`. The log keeps whatever it printed first, which is where to look |
 | `cannot decrypt value` | wrong or missing key for an `enc:` value in `.env` |
 
 ## Do not

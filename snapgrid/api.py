@@ -8,7 +8,12 @@ Two deliberate security choices, both cheap and both easy to get wrong later:
 * anything that starts or stops a run must be a POST carrying a header that a
   web page from another site cannot add, and its Origin must match. Without
   that, any site you happened to visit could quietly tell your browser to run
-  your plugins, with your credentials.
+  your plugins, with your credentials;
+* every request must be addressed to this machine by name. A site can point
+  its own hostname at 127.0.0.1 and the browser will then treat it as the same
+  origin and let it read the answers - but it still sends that site's name in
+  the Host header, which it cannot forge. Checking the name closes the only
+  way in that listening on loopback does not already close.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ import hashlib
 import io
 import json
 import re
+import ssl
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +32,7 @@ from urllib.parse import parse_qs, urlparse
 from . import store as store_module
 from .config import Config, display_path
 from .manifest import MANIFEST_NAME
+from .scheduler import interval_for
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 from .runner import resolve_command
@@ -33,6 +40,9 @@ from .secrets_store import PREFIX as ENCRYPTED_PREFIX, parse_env_file
 from .settings import load_settings
 
 GUARD_HEADER = "X-Snapgrid"
+# The names this machine answers to. Anything else means the request was
+# addressed somewhere that was made to resolve here, which is the whole trick.
+LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -85,6 +95,10 @@ class Application:
     def _summary(self, plugin) -> dict:
         live = self.runner.live(plugin.id)
         last = self.store.last_finished_run(plugin.id)
+        last_finished, failures = self.store.get_state(plugin.id)
+        next_run = None
+        if plugin.runnable and plugin.every is not None and last_finished:
+            next_run = last_finished + interval_for(plugin.every, failures)
         status = "never"
         if plugin.error:
             status = "broken"
@@ -110,6 +124,8 @@ class Application:
             "busy": bool(live),
             "last_finished": last["finished_at"] if last else None,
             "last_status": last["status"] if last else None,
+            "failures": failures,
+            "next_run": next_run,
             "row_count": last["row_count"] if last else None,
         }
 
@@ -297,13 +313,34 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, status: int, message: str) -> None:
         self._json({"error": message}, status=status)
 
+    def _check_host(self) -> None:
+        """Refuse a request addressed to a name that is not this machine.
+
+        Browsers set Host from the address bar and a page cannot change it, so
+        this is what tells an ordinary visit apart from a site that has pointed
+        its own name here to read what it finds.
+        """
+        header = self.headers.get("Host")
+        if header is None:
+            raise HttpError(403, "the request did not say which host it was for")
+        name = header.rsplit(":", 1)[0] if not header.endswith("]") else header
+        if name.lower() in LOOPBACK_NAMES:
+            return
+        # Whatever it was told to listen on is also a name it answers to, for
+        # anyone who has deliberately bound something other than loopback.
+        if name == self.app.config.host:
+            return
+        raise HttpError(403, f"this server does not answer to {name!r}")
+
     def _check_guard(self) -> None:
         if self.headers.get(GUARD_HEADER) is None:
             raise HttpError(403, "missing request header")
         origin = self.headers.get("Origin")
         if origin:
-            expected = f"http://{self.headers.get('Host', '')}"
-            if origin != expected:
+            host = self.headers.get("Host", "")
+            scheme = "https" if isinstance(getattr(self, "connection", None), ssl.SSLSocket) \
+                     else "http"
+            if origin != f"{scheme}://{host}":
                 raise HttpError(403, "request came from another site")
 
     def _static(self, path: str) -> None:
@@ -321,6 +358,7 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path, query = parsed.path, parse_qs(parsed.query)
         try:
+            self._check_host()
             if path == "/api/plugins":
                 return self._json(self.app.list_plugins())
 
@@ -367,6 +405,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         try:
+            self._check_host()
             self._check_guard()
 
             match = PLUGIN_RUN_RE.match(path)

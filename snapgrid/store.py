@@ -261,6 +261,19 @@ class Store:
 
     # ----- scheduler state ----------------------------------------------
 
+    def clear_failures(self, plugin_id: str) -> None:
+        """Forget the run of failures, without touching when it last ran.
+
+        Called when plugin.toml changes: editing a plugin is how someone fixes
+        a failing one, and making them wait out an hour of backoff to find out
+        whether it worked is the wrong answer.
+        """
+        with self._lock:
+            self._db.execute(
+                "UPDATE state SET consecutive_failures=0 WHERE plugin_id=?", (plugin_id,)
+            )
+            self._db.commit()
+
     def get_state(self, plugin_id: str) -> tuple[float, int]:
         with self._lock:
             row = self._db.execute(

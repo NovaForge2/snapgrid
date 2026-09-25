@@ -82,6 +82,44 @@ body {
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
 
 #layout { display: flex; height: 100%; }
+
+/* ---------- resizing ----------
+   Both panels are dragged by a grip sitting on the edge between them. The
+   grip is wider than the line it draws, because a 1px target is a fight. */
+:root { --sidebar-width: 260px; --side-width: min(460px, 60%); }
+.grip {
+  flex: 0 0 9px; width: 9px; margin-left: -5px; z-index: 6;
+  cursor: col-resize; background: transparent;
+  transition: background .12s;
+}
+.grip:hover, .grip:focus-visible, .grip.dragging { background: var(--accent); opacity: .55; }
+.grip:focus-visible { outline: none; }
+#side-grip {
+  position: absolute; top: 0; bottom: 0; left: 0; margin: 0; height: 100%;
+}
+/* While dragging, nothing else should decide it is being selected or hovered. */
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe, body.resizing .grip { pointer-events: none; }
+
+/* ---------- hiding the left panel ----------
+   Worth having on a laptop, where 260px of plugin names is 260px not spent on
+   the table. The way back has to stay visible, so a collapsed panel leaves a
+   button behind rather than disappearing completely. */
+body.no-sidebar #sidebar, body.no-sidebar #sidebar-grip { display: none; }
+#sidebar-toggle, #sidebar-show {
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 5px;
+}
+#sidebar-toggle:hover, #sidebar-show:hover { background: var(--hover); color: var(--text); }
+#brand { display: flex; align-items: center; gap: 8px; }
+#brand .grow { flex: 1; }
+#sidebar-show {
+  position: absolute; top: 10px; left: 8px; z-index: 7;
+  background: var(--panel); border: 1px solid var(--line);
+}
+body:not(.no-sidebar) #sidebar-show { display: none; }
+/* A gutter for the button to live in, so it never sits on top of the title. */
+body.no-sidebar #main { padding-left: 32px; }
 body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-height)); }
 
 /* A message set in snapgrid.toml, for whoever is looking at this instance. */
@@ -115,7 +153,7 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
 
 /* ---------- sidebar ---------- */
 #sidebar {
-  width: 260px; flex: 0 0 260px; background: var(--panel);
+  width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); background: var(--panel);
   border-right: 1px solid var(--line); display: flex; flex-direction: column;
 }
 #brand {
@@ -179,6 +217,8 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
 }
 #spacer { flex: 1; }
 #row-note { color: var(--muted); font-size: 12px; }
+/* Something is being kept from view, so the button says so. */
+#btn-columns.active { color: var(--accent); border-color: var(--accent); }
 button, select, input[type=search], #btn-export {
   font: inherit; color: var(--text); background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px;
@@ -214,6 +254,25 @@ thead th {
   text-align: left; padding: 0; white-space: nowrap;
 }
 .th-inner { display: flex; align-items: center; gap: 4px; padding: 8px 6px 8px 10px; }
+
+/* ---------- column widths ----------
+   Once any column has been given a width, the table is laid out from those
+   widths: otherwise widening one column silently narrows another. */
+#table-wrap table.fixed { table-layout: fixed; }
+#table-wrap table.fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+thead th { position: relative; }
+.col-grip {
+  position: absolute; top: 0; right: -3px; bottom: 0; width: 7px;
+  cursor: col-resize; z-index: 4;
+}
+.col-grip:hover, .col-grip:active { background: var(--accent); opacity: .5; }
+
+.popup-foot { border-top: 1px solid var(--line); padding: 6px; display: flex; }
+.popup-foot button {
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  font: inherit; padding: 4px 8px; border-radius: 5px;
+}
+.popup-foot button:hover { background: var(--hover); color: var(--text); }
 .th-label { cursor: pointer; user-select: none; font-weight: 600; }
 .th-label:hover { color: var(--accent); }
 .sort-mark { color: var(--accent); font-size: 11px; }
@@ -253,7 +312,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- side panel: over the table, never taking its space ---------- */
 #side {
-  position: absolute; top: 0; right: 0; bottom: 0; width: min(460px, 60%);
+  position: absolute; top: 0; right: 0; bottom: 0; width: var(--side-width);
   display: flex; flex-direction: column; z-index: 5;
   background: var(--panel); border-left: 1px solid var(--line);
   box-shadow: -8px 0 24px rgba(0, 0, 0, .10);

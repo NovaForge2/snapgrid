@@ -49,6 +49,16 @@ class RunningPlugins(unittest.TestCase):
         self.registry.scan()
         return self.registry.get(name)
 
+    def wait_for(self, run_id, seconds=30):
+        """Wait for a run that was submitted directly."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            run = self.store.get_run(run_id)
+            if run and run["finished_at"]:
+                return run
+            time.sleep(0.05)
+        self.fail(f"run {run_id} did not finish within {seconds}s")
+
     def run_now(self, plugin, seconds=30):
         """Run it and wait for the result, the way the page does."""
         run_id = self.runner.submit(plugin, "manual")
@@ -255,3 +265,48 @@ class InterpreterNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WaitingForInput(RunningPlugins):
+    def test_a_plugin_that_asks_a_question_fails_instead_of_hanging(self):
+        # Nothing can answer, so reading input must end immediately rather
+        # than waiting until the timeout kills it.
+        plugin = self.make_plugin(
+            "asks",
+            'import sys\n'
+            'answer = sys.stdin.readline()\n'
+            'print("a")\n'
+            'print("got:" + (answer.strip() or "nothing"))\n',
+            timeout=20,
+        )
+        started = time.time()
+        run = self.run_now(plugin, seconds=25)
+        self.assertLess(time.time() - started, 10, "it waited for input")
+        self.assertEqual(run["status"], store_module.OK)
+        self.assertEqual(self.store.get_snapshot(run["snapshot_id"])["rows"],
+                         [["got:nothing"]])
+
+
+class WhenItIsStopped(RunningPlugins):
+    def test_a_timeout_keeps_what_was_printed(self):
+        plugin = self.make_plugin(
+            "slow-but-talkative",
+            'import sys, time\n'
+            'print("a")\n'
+            'print("started step one")\n'
+            'sys.stdout.flush()\n'
+            'print("halfway", file=sys.stderr)\n'
+            'time.sleep(60)\n',
+            timeout=2,
+        )
+        run = self.run_now(plugin, seconds=25)
+        self.assertEqual(run["status"], store_module.TIMEOUT)
+        self.assertIn("started step one", run["log"])   # stdout survived
+        self.assertIn("halfway", run["log"])            # stderr too
+        self.assertIn("Last thing it printed", run["error"])
+
+    def test_a_timeout_with_no_output_says_so(self):
+        plugin = self.make_plugin("silent-and-stuck", "import time\ntime.sleep(60)\n", timeout=2)
+        run = self.run_now(plugin, seconds=25)
+        self.assertEqual(run["status"], store_module.TIMEOUT)
+        self.assertIn("stuck before its first output", run["error"])
