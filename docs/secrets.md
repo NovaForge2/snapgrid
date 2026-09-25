@@ -27,8 +27,28 @@ OC_PASSWORD=enc:u8Vj97KHcvUDrRuIj2NDwkkYQwY93c/T77JwVZvFvtDvCydOTtV...
 The plugin reads `OC_PASSWORD` from its environment as normal and knows nothing
 about any of this.
 
-- The key lives in `~/.snapgrid_key`, outside the repository, so it cannot be
-  committed by accident. Override the location with `SNAPGRID_KEY_FILE`.
+## The key
+
+**You do not choose the key and you never type one.** The first time you run
+`./server.py encrypt`, snapgrid generates one: 32 random bytes from the
+operating system's cryptographic random source, stored base64 in
+`~/.snapgrid_key` with permissions that keep it to your account.
+
+A passphrase you invented would be the weak point - people pick memorable
+things, and a memorable key is a guessable key. A random 32 byte key cannot be
+guessed, and since you never have to remember it, there is no reason for it to
+be anything else.
+
+Every later `encrypt` reuses that same key. Values encrypted with it can be
+decrypted only by it.
+
+- It lives outside the repository, so it cannot be committed by accident.
+  Override the location with `SNAPGRID_KEY_FILE` if you need it elsewhere.
+- **Back it up.** If the file is lost, every encrypted value is unreadable and
+  must be re-encrypted from the original passwords. Copy it into a password
+  manager the first time it appears.
+- If the key is ever exposed, delete it, run `encrypt` again to generate a new
+  one, and re-encrypt every value.
 - Changing a password means re-encrypting **that one value** with the same key.
   You only need a new key if the key itself is exposed, and then everything
   encrypted with it has to be redone.

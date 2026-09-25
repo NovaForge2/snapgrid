@@ -206,7 +206,9 @@ cp AGENTS.md ~/my-plugins/
 
 Whatever language you write in, three rules:
 
-1. **Standard output is the table.** CSV, starting with a header line.
+1. **Standard output is the table.** CSV, starting with a header line. Or a
+   file, or a spreadsheet - see
+   [where the table comes from](docs/where-the-table-comes-from.md).
 2. **Standard error is the log.** Progress, warnings, anything for a human.
 3. **The exit code decides.** `0` means success, anything else is a failure.
 
@@ -425,7 +427,8 @@ snapgrid runs programs on your machine, so a few things are deliberate:
 
 - [docs/configuration.md](docs/configuration.md) - `snapgrid.toml`, ports, the banner, using a plugins folder of your own
 - [docs/secrets.md](docs/secrets.md) - `.env`, encryption, masking
-- [docs/the-web-page.md](docs/the-web-page.md) - what every control does
+- [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
+- [docs/the-web-page.md](docs/the-web-page.md) - what every control does, including light and dark
 - [AGENTS.md](AGENTS.md) - the plugin specification, written to hand to an AI assistant
 
 ## License

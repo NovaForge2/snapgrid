@@ -2,6 +2,11 @@
 
 # The web page
 
+**Light or dark:** the button in the bottom left corner cycles `auto`, `light`
+and `dark`. `auto` follows your operating system, which is the default. The
+choice is remembered in your browser and is not shared with anyone else looking
+at the same instance.
+
 - **Left panel** - plugins grouped by `group`, with a status dot: green for a
   good run, red for a failure or a broken `plugin.toml`, blue while running.
 - **Refresh** starts a run in the background. You can go to another plugin while

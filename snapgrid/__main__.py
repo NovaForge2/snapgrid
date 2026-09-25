@@ -459,6 +459,9 @@ def command_status(args: argparse.Namespace) -> int:
 
 
 def command_encrypt(args: argparse.Namespace) -> int:
+    # Whether a key was just made or already existed is the thing someone
+    # wants to know the first time they run this.
+    was_there = key_path().exists()
     try:
         key = load_key(create=True)
     except SecretError as exc:
@@ -477,7 +480,12 @@ def command_encrypt(args: argparse.Namespace) -> int:
     print()
     print(f"    SOME_NAME={encrypt(value, key)}")
     print()
-    print(f"The key is in {key_path()}. Keep it. Without it the value cannot be read back.")
+    if was_there:
+        print(f"Encrypted with the key already in {key_path()}.")
+    else:
+        print(f"A new key was generated for you: 32 random bytes, saved in {key_path()}.")
+        print("You never type this key and never choose one yourself.")
+    print("Back it up. Without it, values encrypted with it cannot be read back.")
     return 0
 
 

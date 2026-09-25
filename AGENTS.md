@@ -112,6 +112,10 @@ ENV2,payments-api,2.15.0-SNAPSHOT
 
 ### If the script already writes a file
 
+Every combination - a file, a spreadsheet, or a plugin with no program at all -
+is set out in
+[docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md).
+
 Plenty of scripts write a CSV file and print progress as they go. Rather than
 rewriting them, name the file and snapgrid reads that instead of stdout:
 

@@ -21,6 +21,43 @@ const state = {
 
 const el = (id) => document.getElementById(id);
 
+/* ---------------------------------------------------------------- theme */
+
+// Three states rather than two: someone whose system switches at sunset
+// usually wants the page to follow it, but anyone who disagrees with their
+// system should not have to change the system to disagree.
+const THEMES = ["auto", "light", "dark"];
+const THEME_KEY = "snapgrid-theme";
+
+function applyTheme(choice) {
+  const root = document.documentElement;
+  if (choice === "auto") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", choice);
+  const button = document.getElementById("theme");
+  if (button) button.textContent = choice;
+}
+
+function storedTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    return THEMES.includes(saved) ? saved : "auto";
+  } catch (error) {
+    return "auto";
+  }
+}
+
+applyTheme(storedTheme());
+
+document.getElementById("theme").addEventListener("click", () => {
+  const next = THEMES[(THEMES.indexOf(storedTheme()) + 1) % THEMES.length];
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch (error) {
+    /* the choice lasts for this page only, which is better than failing */
+  }
+  applyTheme(next);
+});
+
 /* ------------------------------------------------------------------ api */
 
 async function api(path, options = {}) {
