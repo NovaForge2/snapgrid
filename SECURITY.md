@@ -73,6 +73,19 @@ anything running as you can decrypt anything you can.
 If that is not enough for a particular secret, do not put that secret in a
 `.env` file.
 
+## What is checked automatically
+
+- **The tests** run on every push and pull request, on Linux, macOS and Windows
+  against Python 3.11 to 3.13, and a build fails if anything starts importing a
+  module that would have to be installed.
+- **CodeQL** analyses the source on every push and once a week, with the
+  extended security rules.
+- **Secret scanning with push protection** is on, so a commit containing a
+  credential is refused before it reaches the repository.
+- **Dependabot** watches the versions of the actions used by those workflows.
+
+None of that inspects your plugins. They are your code, on your machine.
+
 ## Reporting something
 
 Open an issue at

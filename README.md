@@ -604,6 +604,11 @@ appears or if anything in the project imports a module that is not part of
 Python, because "nothing to install" is the one promise worth enforcing rather
 than stating.
 
+**CodeQL** analyses the source on every push as well, looking hardest at the
+places that turn something from outside into a file or a process: serving files
+by name, unpacking a spreadsheet, and starting a plugin. Findings appear under
+the repository's Security tab.
+
 ## When something goes wrong
 
 | What you see | What it means |

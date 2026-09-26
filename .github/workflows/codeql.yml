@@ -1,0 +1,47 @@
+# Static analysis of snapgrid's own source.
+#
+# The parts worth watching are the ones that take something from outside and
+# turn it into a filesystem or process operation: serving files by name out of
+# web/, unpacking an .xlsx, and starting a plugin. Those are exactly the places
+# a careless change would open a hole, and exactly the places a human reviewer
+# stops looking after the third time.
+#
+# Free because this repository is public.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Once a week: the rules get better over time, so the same code is worth
+    # re-checking even when nobody has touched it.
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyse:
+    name: analyse python
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write      # to file what it finds under Security
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          # security-extended adds rules that are useful but noisier than the
+          # default set. This codebase is small enough to read every finding.
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:python
