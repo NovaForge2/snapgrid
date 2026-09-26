@@ -1,0 +1,54 @@
+# snapgrid has no dependencies, so there is nothing to install and nothing to
+# cache: check out the code and run the tests with the Python that is there.
+#
+# Three operating systems because the project claims to run wherever Python
+# does, and the parts most likely to break elsewhere - killing a process tree,
+# finding an interpreter, file locking in SQLite - are exactly the parts that
+# cannot be checked on one machine.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # 3.11 is the oldest supported version: tomllib arrived in it.
+      - name: Show what we are testing with
+        run: python -c "import sys, sqlite3, tomllib; print(sys.version); print('sqlite', sqlite3.sqlite_version)"
+
+      - name: Run the tests
+        run: python run-tests.py
+
+      - name: Check there are no dependencies to install
+        shell: bash
+        run: |
+          if [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f setup.py ]; then
+            echo "A dependency file appeared. The whole point is that there are none." >&2
+            exit 1
+          fi
+          echo "no requirements.txt, no pyproject.toml, no setup.py"
+
+      - name: Check nothing imports a third party module
+        shell: bash
+        run: python tools/check-imports.py

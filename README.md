@@ -16,6 +16,7 @@
 <p align="center"><sub>Sort, filter by value, search, switch plugins. No page reloads, no build step, no dependencies.</sub></p>
 
 <p align="center">
+  <a href="https://github.com/NovaForge2/snapgrid/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/NovaForge2/snapgrid/actions/workflows/tests.yml/badge.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-none-2f6f4e">
   <img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
@@ -596,6 +597,13 @@ history, encryption and masking, settings, scheduling and the HTTP API.
 Warnings count as failures, so a leaked file handle fails the run rather than
 scrolling past.
 
+Every push and every pull request runs the same command on **Linux, macOS and
+Windows against Python 3.11, 3.12 and 3.13** - nine combinations, no
+installation step in any of them. The build also fails if a `requirements.txt`
+appears or if anything in the project imports a module that is not part of
+Python, because "nothing to install" is the one promise worth enforcing rather
+than stating.
+
 ## When something goes wrong
 
 | What you see | What it means |
@@ -612,10 +620,17 @@ scrolling past.
 
 ## Security
 
-<details>
-<summary><b>Listens on 127.0.0.1 only and refuses to listen elsewhere, no shell, no HTML injection, and plugins run with your permissions</b></summary>
+> **A plugin is a program, and snapgrid runs it as you.**
+> Adding a plugin is exactly as serious as running a script somebody sent you:
+> it gets your account, your files, your network and whatever is in its `.env`.
+> **snapgrid is not a sandbox and does not try to be one.** Read a plugin before
+> you add it, and treat write access to the plugins folder as the ability to run
+> code as you.
+>
+> Full detail, including the threat model for the encryption, is in
+> [SECURITY.md](SECURITY.md).
 
-snapgrid runs programs on your machine, so a few things are deliberate:
+The rest is deliberate:
 
 - It listens on **127.0.0.1 only**. Nothing else on the network can reach it,
   which is why plain HTTP is enough: the traffic never touches a network
@@ -643,13 +658,16 @@ snapgrid runs programs on your machine, so a few things are deliberate:
   can run anything as you. Treat that folder the way you treat your own scripts -
   it is a stronger control than anything at the HTTP layer, because a plugin is
   code you have agreed to run on a schedule with your credentials loaded.
-
-</details>
+- The **encryption for `.env` values is written in this project**, not taken
+  from a library, because nothing can be installed. It is meant to stop a
+  password being readable over your shoulder, not to withstand someone who
+  already has your account. See [SECURITY.md](SECURITY.md#the-encryption-is-written-in-this-project).
 
 ## Reference
 
 - [docs/plugin-toml.md](docs/plugin-toml.md) - every `plugin.toml` key: command, timeout, schedule, columns, output, history
 - [docs/configuration.md](docs/configuration.md) - `snapgrid.toml`, ports, the banner, using a plugins folder of your own
+- [SECURITY.md](SECURITY.md) - what snapgrid does and does not protect you from, and how to report something
 - [docs/secrets.md](docs/secrets.md) - `.env`, encryption, masking
 - [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
 - [docs/the-web-page.md](docs/the-web-page.md) - what every control does: sorting, filters, showing and sizing columns, resizing and hiding the panels, following the log, light and dark

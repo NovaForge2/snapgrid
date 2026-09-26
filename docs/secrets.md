@@ -2,6 +2,18 @@
 
 # Secrets
 
+> **The encryption here is written in this project, not taken from a library.**
+> snapgrid cannot depend on anything that has to be installed, so there is no
+> `cryptography` package behind this. It has not been audited.
+>
+> It is meant to stop a password being readable **over your shoulder, in a
+> screen share, or by someone glancing at a file**. It is not meant to protect
+> a secret from someone who already has your account - the key sits in
+> `~/.snapgrid_key`, so anything running as you can read anything you can.
+>
+> If a particular secret needs more than that, do not put it in a `.env` file.
+> [SECURITY.md](../SECURITY.md) has the reasoning in full.
+
 A `.env` file in a plugin folder is loaded automatically and given to that
 plugin only:
 
@@ -63,4 +75,24 @@ decrypted only by it.
 **What this protects against, honestly:** someone reading your screen. It is not
 protection against someone who can use your machine - the key is on the same
 disk, and anything running as you can read it.
+
+## How it is built, for anyone reviewing it
+
+Set out plainly so it can be judged rather than taken on trust:
+
+- Two separate keys are derived from the stored 32 byte key, one for the
+  keystream and one for authentication, so the same bytes are never used for
+  both jobs.
+- Each value gets a **random nonce**, so encrypting the same password twice
+  gives different output.
+- The keystream is **HMAC-SHA256** in counter mode, xored with the value.
+- A **tag over nonce and ciphertext** is checked before anything is decrypted,
+  and compared with a constant time comparison, so a modified value is rejected
+  rather than silently producing rubbish.
+- Everything comes from `hmac`, `hashlib` and `secrets` in the standard
+  library. Nothing is invented at the primitive level.
+
+The shapes are right, and it is still **unaudited code written for this
+project**. That is the trade for needing no installation, and it is why the
+paragraph above describes what it is actually for.
 

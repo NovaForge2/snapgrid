@@ -46,6 +46,7 @@ AREAS = {
     "test_scheduling": "when plugins run",
     "test_api": "the HTTP interface",
     "test_gif": "the GIF in the README",
+    "test_no_dependencies": "nothing to install",
 }
 
 
