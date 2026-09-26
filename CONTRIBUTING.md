@@ -34,11 +34,22 @@ because people trust it.
 
 ## The animation in the README
 
-`docs/demo.gif` is built from screenshots with `tools/make-gif.py`, which joins
+`docs/demo.gif` and `docs/diff.gif` are built from screenshots with
+`tools/make-gif.py`, which joins
 PNG frames into an animated GIF using only the standard library - no ffmpeg, no
 ImageMagick, no Pillow. A GIF rather than an animated PNG because plenty of
 locked down machines will not animate the latter, and those machines are the
 audience.
+
+The frames come from headless Chrome against a running server, one per state,
+which is what the URL parameters make possible:
+
+```bash
+chrome --headless=new --window-size=1100,545 --screenshot=f1.png \
+  "http://127.0.0.1:8765/?plugin=diff-demo&compare=3&theme=dark"
+```
+
+so the pictures can be rebuilt exactly rather than recaptured by hand.
 
 ## Tests
 

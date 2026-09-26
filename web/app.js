@@ -14,6 +14,9 @@ const state = {
   filters: new Map(), // column name -> Set of allowed values
   configFor: null,    // which plugin the config panel is currently showing
   side: null,         // null, "log" or "config"
+  depth: 1,           // how many runs are shown in each cell; 1 means off
+  past: [],           // the older snapshots, newest first, once fetched
+  onlyChanged: false,
   sort: { column: null, direction: 0 },
   search: "",
   columnsKey: "",
@@ -46,7 +49,15 @@ function storedTheme() {
   }
 }
 
-applyTheme(storedTheme());
+// A link can ask for a theme, which the button then overrides as usual. It is
+// what makes a screenshot or a link for a presentation come out as intended
+// rather than as whatever the viewer's machine happens to prefer.
+function askedTheme() {
+  const asked = new URLSearchParams(location.search).get("theme");
+  return THEMES.includes(asked) ? asked : storedTheme();
+}
+
+applyTheme(askedTheme());
 
 document.getElementById("theme").addEventListener("click", () => {
   const next = THEMES[(THEMES.indexOf(storedTheme()) + 1) % THEMES.length];
@@ -283,7 +294,22 @@ async function loadPlugins() {
     renderSidebar();
     // Landing on "pick something" when there is a table ready to look at
     // wastes the first few seconds. Open the first one.
-    if (!state.selected && state.plugins.length) select(state.plugins[0].id);
+    if (!state.selected && state.plugins.length) {
+      // A link can name the plugin, and how far back to compare, so that what
+      // is on your screen is something you can send to somebody.
+      const asked = new URLSearchParams(location.search);
+      const wanted = asked.get("plugin");
+      const known = state.plugins.some((plugin) => plugin.id === wanted);
+      await select(known ? wanted : state.plugins[0].id);
+      state.depth = Math.min(MAX_DEPTH, Math.max(1, Number(asked.get("compare")) || 1));
+      state.onlyChanged = asked.get("changed") === "1";
+      el("diff-only-box").checked = state.onlyChanged;
+      if (state.depth > 1) {
+        renderComparePicker();
+        await loadComparison();
+        renderTable();
+      }
+    }
   } catch (error) {
     el("server-note").textContent = error.message;
   }
@@ -299,9 +325,28 @@ async function select(id) {
     state.sort = { column: null, direction: 0 };
     state.search = "";
     el("search").value = "";
+    // A comparison belongs to one table; carrying it to another would compare
+    // things that have nothing to do with each other.
+    state.depth = 1;
+    state.past = [];
+    state.onlyChanged = false;
+    el("diff-only-box").checked = false;
+    closeCellHistory();
   }
   renderSidebar();
+  rememberInTheAddress();
   await loadDetail();
+}
+
+// Kept in the address rather than in storage: a bookmark, a link in a message
+// and the back button then all mean the same thing.
+function rememberInTheAddress() {
+  const asked = new URLSearchParams();
+  if (state.selected) asked.set("plugin", state.selected);
+  if (state.depth > 1) asked.set("compare", String(state.depth));
+  if (state.onlyChanged) asked.set("changed", "1");
+  const query = asked.toString();
+  history.replaceState(null, "", query ? "?" + query : location.pathname);
 }
 
 async function loadDetail() {
@@ -380,6 +425,7 @@ function renderDetail() {
   }
 
   renderSnapshotPicker();
+  renderComparePicker();
   renderLog();
 
   // A plugin that cannot be loaded has nothing else to show, and its file is
@@ -422,6 +468,271 @@ function renderSnapshotPicker() {
     }
     picker.appendChild(option);
   });
+}
+
+function renderComparePicker() {
+  const picker = el("compare-picker");
+  const snapshots = state.detail.snapshots || [];
+  // Nothing to compare a single result with.
+  if (snapshots.length < 2) {
+    picker.hidden = true;
+    return;
+  }
+  picker.hidden = false;
+  picker.textContent = "";
+
+  // Five is the most, and it is a limit of height rather than of arithmetic:
+  // five runs of a forty row table is a very tall page.
+  const options = [[1, "Compare: off"], [2, "Compare with: the one before"]];
+  for (let depth = 3; depth <= Math.min(MAX_DEPTH, snapshots.length); depth += 1) {
+    options.push([depth, `Compare: last ${depth} runs`]);
+  }
+
+  for (const [value, label] of options) {
+    const option = document.createElement("option");
+    option.value = String(value);
+    option.textContent = label;
+    if (value === state.depth) option.selected = true;
+    picker.appendChild(option);
+  }
+}
+
+const MAX_DEPTH = 5;
+
+/* ---------------------------------------------------------- comparing */
+
+// Rows are lined up by the column that names them - [table] key, or the first
+// column. Without that, a changed value looks like one row leaving and another
+// arriving, which is true but useless.
+function keyIndex(columns) {
+  const named = state.detail && state.detail.key;
+  const index = named ? columns.indexOf(named) : 0;
+  return index >= 0 ? index : 0;
+}
+
+function byKey(columns, rows) {
+  const index = keyIndex(columns);
+  const map = new Map();
+  let duplicates = false;
+  for (const row of rows) {
+    const key = row[index] === undefined ? "" : row[index];
+    if (map.has(key)) duplicates = true;
+    else map.set(key, row);
+  }
+  return { map, duplicates };
+}
+
+// Every run that is being shown, newest first: what is on screen, then the
+// older ones. Each becomes one line inside every cell.
+function comparedRuns(current) {
+  return [current, ...state.past].slice(0, state.depth);
+}
+
+// What each row looks like across those runs, or a reason it cannot be worked
+// out. A row is included if it was there in any of them, so one that has gone
+// is still visible - that is the thing worth noticing.
+function compareRuns(current) {
+  const runs = comparedRuns(current);
+  if (runs.length < 2) return null;
+
+  const shape = current.columns.join("\u0000");
+  if (runs.some((run) => run.columns.join("\u0000") !== shape)) {
+    return { impossible: "the columns are not the same in every run" };
+  }
+
+  const indexed = runs.map((run) => byKey(run.columns, run.rows));
+  if (indexed.some((one) => one.duplicates)) {
+    const name = current.columns[keyIndex(current.columns)];
+    return { degraded: `more than one row is called the same thing in "${name}"` };
+  }
+
+  const names = [];
+  const seen = new Set();
+  for (const one of indexed) {
+    for (const name of one.map.keys()) {
+      if (!seen.has(name)) { seen.add(name); names.push(name); }
+    }
+  }
+
+  const rows = new Map();
+  let changedCells = 0, added = 0, removed = 0;
+  for (const name of names) {
+    // One entry per run: the row as it was then, or null if it was not there.
+    const overRuns = indexed.map((one) => one.map.get(name) || null);
+    const here = overRuns[0] !== null;
+    const everBefore = overRuns.slice(1).some((row) => row !== null);
+    const moved = overRuns.some((row, at) =>
+      at > 0 && !sameRow(row, overRuns[at - 1], current.columns));
+
+    if (here && !everBefore) added += 1;
+    else if (!here && everBefore) removed += 1;
+    if (here && everBefore && moved) {
+      current.columns.forEach((_, index) => {
+        if (index === keyIndex(current.columns)) return;
+        const values = overRuns.map((row) => (row ? cellValue(row, index) : null));
+        for (let at = 1; at < values.length; at += 1) {
+          if (values[at] !== null && values[at] !== values[at - 1]) changedCells += 1;
+        }
+      });
+    }
+    rows.set(name, { overRuns, here, everBefore, moved });
+  }
+  return { rows, names, runs, changedCells, added, removed };
+}
+
+function cellValue(row, index) {
+  return row[index] === undefined ? "" : row[index];
+}
+
+function sameRow(a, b, columns) {
+  if (a === null || b === null) return a === b;
+  return columns.every((_, index) => cellValue(a, index) === cellValue(b, index));
+}
+
+async function loadComparison() {
+  state.past = [];
+  if (state.depth < 2 || !state.detail) return;
+
+  const snapshots = state.detail.snapshots || [];
+  const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
+  const at = snapshots.findIndex((snapshot) => snapshot.id === showing);
+  const wanted = snapshots.slice(at + 1, at + state.depth);
+
+  const loaded = [];
+  for (const snapshot of wanted) {
+    try {
+      const payload = await api("/api/snapshots/" + snapshot.id);
+      loaded.push(payload.snapshot || payload);     // the endpoint wraps it
+    } catch (error) {
+      break;                                        // show what was readable
+    }
+  }
+  state.past = loaded;
+}
+
+function renderDiffBar(diff) {
+  const bar = el("diff-bar");
+  if (!diff) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+
+  const what = el("diff-what");
+  what.textContent = "";
+  const tally = el("diff-tally");
+  tally.textContent = "";
+
+  if (diff.impossible || diff.degraded) {
+    what.textContent = diff.impossible
+      ? "Cannot compare: " + diff.impossible
+      : "Cannot line the rows up: " + diff.degraded;
+    return;
+  }
+
+  what.textContent = `Showing the last ${diff.runs.length} runs`;
+
+  // The runs are the same for every cell, so they are named once, here.
+  // There is no room for a date inside a cell.
+  const legend = document.createElement("span");
+  legend.className = "legend";
+  diff.runs.forEach((run, at) => {
+    const item = document.createElement("span");
+    const number = document.createElement("i");
+    number.className = at === 0 ? "n now" : "n";
+    number.textContent = String(at + 1);
+    item.append(number, document.createTextNode(at === 0 ? "now" : whenExactly(run.last_seen)));
+    legend.appendChild(item);
+  });
+  tally.appendChild(legend);
+
+  const counts = [
+    ["c-changed", diff.changedCells, "value", "changed"],
+    ["c-added", diff.added, "row", "appeared"],
+    ["c-removed", diff.removed, "row", "gone"],
+  ];
+  for (const [css, number, noun, verb] of counts) {
+    if (!number) continue;
+    const span = document.createElement("span");
+    span.className = css;
+    const bold = document.createElement("b");
+    bold.textContent = String(number);
+    span.append(bold, document.createTextNode(` ${noun}${number === 1 ? "" : "s"} ${verb}`));
+    tally.appendChild(span);
+  }
+}
+
+/* --------------------------------------------- the history of one cell */
+
+function closeCellHistory() {
+  el("cell-history").hidden = true;
+}
+
+async function openCellHistory(rowName, column, anchor) {
+  const popup = el("cell-history");
+  popup.textContent = "";
+  popup.hidden = false;
+
+  const heading = document.createElement("h4");
+  heading.textContent = `${rowName} - ${column}`;
+  popup.appendChild(heading);
+
+  const loading = document.createElement("div");
+  loading.className = "none";
+  loading.textContent = "reading the history...";
+  popup.appendChild(loading);
+  placePopup(popup, anchor);
+
+  let payload;
+  try {
+    payload = await api("/api/plugins/" + encodeURIComponent(state.selected) + "/cell"
+                        + "?row=" + encodeURIComponent(rowName)
+                        + "&column=" + encodeURIComponent(column));
+  } catch (error) {
+    loading.textContent = "the history could not be read";
+    return;
+  }
+  if (popup.hidden) return;                   // closed while it was loading
+
+  loading.remove();
+  const history = payload.history || [];
+  if (!history.length) {
+    const none = document.createElement("div");
+    none.className = "none";
+    none.textContent = "Only one result is stored, so there is nothing to compare.";
+    popup.appendChild(none);
+    return;
+  }
+
+  const list = document.createElement("ol");
+  history.forEach((entry, index) => {
+    const item = document.createElement("li");
+    if (index === 0) item.className = "now";
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = index === 0 ? "now" : whenExactly(entry.since);
+    const value = document.createElement("span");
+    value.className = "val";
+    value.textContent = entry.value === "" ? "(blank)" : entry.value;
+    item.append(when, value);
+    list.appendChild(item);
+  });
+  popup.appendChild(list);
+  placePopup(popup, anchor);
+}
+
+// Built by hand rather than left to the locale, because "Sep 25, 08:40 PM"
+// wraps onto two lines in a column this narrow and a 24 hour clock does not.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function whenExactly(seconds) {
+  const date = new Date(seconds * 1000);
+  const pad = (number) => String(number).padStart(2, "0");
+  const year = date.getFullYear() === new Date().getFullYear()
+    ? "" : " " + date.getFullYear();
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}${year} `
+       + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /* ------------------------------------------------------- toml highlight */
@@ -659,6 +970,16 @@ function renderTable() {
 
   const columns = snapshot.columns;
   const kinds = columns.map((_, index) => detectKind(snapshot.rows, index));
+  let diff = null;
+  try {
+    diff = compareRuns(snapshot);
+  } catch (error) {
+    diff = { impossible: "these runs cannot be lined up" };
+  }
+  renderDiffBar(state.depth > 1 ? (diff || { impossible: "there are no earlier runs yet" })
+                                : null);
+  const usable = diff && diff.rows ? diff : null;
+  const key = keyIndex(columns);
   // Hidden columns still filter and sort - they are out of sight, not out of
   // the table - so everything below works on indexes into the full row.
   const hidden = hiddenColumns();
@@ -717,28 +1038,104 @@ function renderTable() {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  if (!rows.length) {
+  if (!rows.length && !(usable && usable.removed)) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = shownIndexes.length;
     td.className = "empty-row";
-    td.textContent = snapshot.rows.length
-      ? "No rows match the current filters."
-      : "The plugin returned no rows.";
+    td.textContent = state.onlyChanged && usable
+      ? "Nothing changed between these two results."
+      : snapshot.rows.length
+        ? "No rows match the current filters."
+        : "The plugin returned no rows.";
     tr.appendChild(td);
     tbody.appendChild(tr);
   } else {
-    for (const row of rows) {
+    // Without a comparison this is one line per row, as it always was. With
+    // one, every cell in the row holds the same number of lines, so line two
+    // means "the run before" the whole way across.
+    const drawRow = (row, over, kind) => {
       const tr = document.createElement("tr");
+      if (kind) tr.className = kind;
+      const depth = over ? over.length : 1;
+
       shownIndexes.forEach((index) => {
         const td = document.createElement("td");
         if (kinds[index] === "number") td.className = "num";
-        const value = row[index] === undefined ? "" : row[index];
-        td.textContent = value;
-        td.title = value; // cells are clipped, so keep the full value reachable
+
+        if (!over) {
+          const value = cellValue(row, index);
+          td.textContent = value;
+          td.title = value;   // cells are clipped, so keep the full value reachable
+          tr.appendChild(td);
+          return;
+        }
+
+        td.classList.add("stack");
+
+        // The column that names the row is not a value: it says the same
+        // thing in every run by definition, so it is written once.
+        if (index === key) {
+          const line = document.createElement("span");
+          line.className = "v now";
+          line.textContent = cellValue(row, index);
+          if (kind) {
+            const chip = document.createElement("span");
+            chip.className = "chip " + kind;
+            chip.textContent = kind === "added" ? "new" : "gone";
+            line.appendChild(chip);
+          }
+          td.appendChild(line);
+          td.classList.add("name");
+          tr.appendChild(td);
+          return;
+        }
+
+        const values = over.map((one) => (one ? cellValue(one, index) : null));
+        if (index !== key && values.some((value, at) =>
+              at > 0 && value !== null && value !== values[at - 1])) {
+          td.classList.add("moved");
+        }
+
+        for (let at = 0; at < depth; at += 1) {
+          const line = document.createElement("span");
+          const value = values[at];
+          if (value === null) {
+            // It was not in that run at all. Said once, not on every line.
+            const firstMissing = at === 0 || values[at - 1] !== null;
+            line.className = "v gap";
+            line.textContent = firstMissing ? (at === 0 ? "gone" : "not there") : "\u00b7";
+          } else if (at > 0 && value === values[at - 1]) {
+            line.className = "v same";
+            line.textContent = "\u00b7";     // the same as the line above
+            line.title = value;
+          } else {
+            line.className = at === 0 ? "v now" : "v old";
+            line.textContent = value;
+          }
+          line.addEventListener("click", () =>
+            openCellHistory(cellValue(row, key), columns[index], td));
+          td.appendChild(line);
+        }
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
+    };
+
+    if (!usable) {
+      for (const row of rows) drawRow(row, null, "");
+    } else {
+      const shownNames = new Set(rows.map((row) => row[key]));
+      for (const name of usable.names) {
+        const entry = usable.rows.get(name);
+        // A row that is on screen now has to survive the filters; one that has
+        // gone is not in this result to be filtered, so it is always shown.
+        if (entry.here && !shownNames.has(name)) continue;
+        if (state.onlyChanged && !entry.moved) continue;
+        const kind = !entry.here ? "removed" : (!entry.everBefore ? "added" : "");
+        const newest = entry.overRuns.find((one) => one !== null);
+        drawRow(newest, entry.overRuns, kind);
+      }
     }
   }
   table.appendChild(tbody);
@@ -746,8 +1143,13 @@ function renderTable() {
   applyWidths(table, shownColumns);
 
   const total = snapshot.rows.length;
-  const note = rows.length === total ? total + " rows"
-                                     : rows.length + " of " + total + " rows";
+  // While comparing, what is on screen includes rows that have gone, so the
+  // count is of lines drawn rather than of rows in this result.
+  const drawn = tbody.querySelectorAll("tr").length;
+  const note = usable
+    ? (drawn === total ? total + " rows" : drawn + " of " + total + " rows")
+    : (rows.length === total ? total + " rows"
+                             : rows.length + " of " + total + " rows");
   const missing = columns.length - shownIndexes.length;
   el("row-note").textContent = missing ? `${note} - ${missing} column${missing > 1 ? "s" : ""} hidden`
                                        : note;
@@ -1062,9 +1464,17 @@ function placePopup(popup, anchor) {
 document.addEventListener("click", (event) => {
   const popup = el("filter-popup");
   if (!popup.hidden && !popup.contains(event.target)) closeFilter();
+  const history = el("cell-history");
+  if (!history.hidden && !history.contains(event.target)
+      && !event.target.closest("td.changed")) {
+    closeCellHistory();
+  }
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeFilter();
+  if (event.key === "Escape") {
+    closeFilter();
+    closeCellHistory();
+  }
 });
 
 /* ------------------------------------------------------------- actions */
@@ -1098,6 +1508,22 @@ el("snapshot-picker").addEventListener("change", (event) => {
 
 el("search").addEventListener("input", (event) => {
   state.search = event.target.value;
+  renderTable();
+});
+
+el("compare-picker").addEventListener("change", async (event) => {
+  state.depth = Number(event.target.value) || 1;
+  state.onlyChanged = false;
+  el("diff-only-box").checked = false;
+  closeCellHistory();
+  rememberInTheAddress();
+  await loadComparison();
+  renderTable();
+});
+
+el("diff-only-box").addEventListener("change", (event) => {
+  state.onlyChanged = event.target.checked;
+  rememberInTheAddress();
   renderTable();
 });
 

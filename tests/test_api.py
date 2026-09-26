@@ -103,6 +103,32 @@ class AddressedToThisMachine(ApiTest):
         self.assertEqual(status, 403)
 
 
+class TheCellEndpoint(ApiTest):
+    """What the history popover asks for when a cell is clicked."""
+
+    def setUp(self):
+        super().setUp()
+        self.store.save_snapshot("demo", ["a", "b"], [["one", "1"]], 20)
+        self.store.save_snapshot("demo", ["a", "b"], [["one", "2"]], 20)
+
+    def test_it_returns_the_values_newest_first(self):
+        status, payload = self.get_json("/api/plugins/demo/cell?row=one&column=b")
+        self.assertEqual(status, 200)
+        self.assertEqual([entry["value"] for entry in payload["history"]], ["2", "1"])
+
+    def test_an_unknown_column_is_refused(self):
+        status, _ = self.get_json("/api/plugins/demo/cell?row=one&column=nope")
+        self.assertEqual(status, 404)
+
+    def test_an_unknown_row_gives_an_empty_history(self):
+        _, payload = self.get_json("/api/plugins/demo/cell?row=other&column=b")
+        self.assertEqual(payload["history"], [])
+
+    def test_the_key_column_is_reported_so_the_page_can_line_rows_up(self):
+        _, payload = self.get_json("/api/plugins/demo")
+        self.assertIn("key", payload)
+
+
 class Throttling(ApiTest):
     """What the page needs in order to say why nothing is happening."""
 

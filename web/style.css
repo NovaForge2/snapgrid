@@ -267,6 +267,86 @@ thead th { position: relative; }
 }
 .col-grip:hover, .col-grip:active { background: var(--accent); opacity: .5; }
 
+/* ---------- comparing two results ----------
+   Three marks, one per kind of change: a value that differs, a row that
+   arrived, a row that went. */
+:root { --added: #2f6f4e; --removed: #a13b3b; --changed: #8a6d1f; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --added: #5fb98c; --removed: #e08585; --changed: #d9b45c; }
+}
+:root[data-theme="dark"] { --added: #5fb98c; --removed: #e08585; --changed: #d9b45c; }
+
+#diff-bar {
+  display: flex; align-items: baseline; gap: 8px 16px; flex-wrap: wrap;
+  padding: 8px 20px; border-bottom: 1px solid var(--line);
+  background: var(--accent-soft); font-size: 13px;
+}
+#diff-bar > * { flex: none; }
+#diff-bar .grow { flex: 1; }
+#diff-what { font-weight: 600; }
+#diff-tally { color: var(--muted); display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: baseline; }
+#diff-tally > span { white-space: nowrap; }
+#diff-tally b { font-weight: 600; }
+#diff-tally .c-changed b { color: var(--changed); }
+#diff-tally .c-added b { color: var(--added); }
+#diff-tally .c-removed b { color: var(--removed); }
+#diff-only { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+
+/* A cell holding several runs: newest on top, older ones quieter beneath.
+   Nothing is struck through - an older version was not deleted, it is just
+   older. A value equal to the line above is a dot, so the eye lands on the
+   cells that actually moved. */
+td.stack { padding: 0; vertical-align: top; }
+td.stack .v {
+  display: block; padding: 5px 10px; border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums; cursor: pointer;
+}
+td.stack .v:last-child { border-bottom: 0; }
+td.stack .v.now { font-weight: 600; }
+td.stack .v.old { color: var(--muted); font-size: 12px; }
+td.stack .v.same { color: var(--muted); opacity: .35; }
+td.stack .v.gap { color: var(--muted); opacity: .55; font-size: 12px; }
+td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent); }
+/* The name is written once and sits at the top, beside its lines. */
+td.stack.name .v { border-bottom: 0; cursor: default; }
+
+tr.added td { background: color-mix(in srgb, var(--added) 9%, transparent); }
+tr.removed td { background: color-mix(in srgb, var(--removed) 7%, transparent); color: var(--muted); }
+tr.added td:first-child { box-shadow: inset 3px 0 0 var(--added); }
+tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
+.chip {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  padding: 1px 5px; border-radius: 4px; margin-left: 8px; display: inline-block;
+}
+.chip.added { color: var(--added); background: color-mix(in srgb, var(--added) 16%, transparent); }
+.chip.removed { color: var(--removed); background: color-mix(in srgb, var(--removed) 16%, transparent); }
+
+/* Which run each line is. Said once, because there is no room in a cell. */
+#diff-tally .legend { display: flex; gap: 14px; flex-wrap: wrap; }
+#diff-tally .legend .n {
+  display: inline-block; width: 15px; height: 15px; line-height: 15px; text-align: center;
+  border-radius: 3px; background: var(--hover); color: var(--muted);
+  font-size: 10px; margin-right: 5px; font-style: normal;
+}
+#diff-tally .legend .n.now { background: var(--accent-soft); color: var(--accent); }
+
+#cell-history {
+  position: absolute; z-index: 30; width: 270px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28); padding: 10px 12px; font-size: 12px;
+}
+#cell-history h4 { font-size: 12px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+#cell-history ol { list-style: none; margin: 0; padding: 0; }
+#cell-history li {
+  display: flex; gap: 10px; padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--line); margin-left: 3px;
+}
+#cell-history li.now { border-left-color: var(--accent); }
+#cell-history .when { color: var(--muted); width: 104px; flex: none; }
+#cell-history .val { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#cell-history li.now .val { color: var(--accent); font-weight: 600; }
+#cell-history .none { color: var(--muted); }
+
 .popup-foot { border-top: 1px solid var(--line); padding: 6px; display: flex; }
 .popup-foot button {
   border: 0; background: none; color: var(--muted); cursor: pointer;

@@ -34,6 +34,7 @@ at the same instance.
 - **Export CSV** downloads exactly what you are looking at.
 - **The dropdown next to Run now** appears once there is history, and shows any
   earlier result.
+- **The second dropdown compares runs** - see below.
 - **Log** and **Config** are buttons at the right of the toolbar. They open a
   panel over the right of the table, with a tab for each and a close button, so
   a panel you are not using costs the grid no space at all. Escape closes it.
@@ -59,6 +60,81 @@ at the same instance.
   more than its configuration does. Keep secrets in `.env`, never as arguments
   in `command` - arguments are visible to anyone who can list processes,
   and they would be shown here too.
+
+## Comparing runs
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="diff-dark.png">
+    <img src="diff.png" alt="A table comparing four runs" width="900">
+  </picture>
+</p>
+
+The second dropdown chooses how far back to look: **off**, **the one before**,
+or the **last 3, 4 or 5 runs**. It only offers as many as have been stored, and
+it is off until you ask.
+
+With it on, every cell in a row holds one line per run, newest on top. That is
+deliberate: if one cell stacked and its neighbour did not, line two would not
+mean the same thing across the row and you could not read sideways.
+
+| What you see | What it means |
+|---|---|
+| a value in bold, on top | what it is now |
+| a smaller, quieter value below | what it was in that earlier run |
+| **a dot** | the same as the line above - nothing happened |
+| a tinted cell | something moved in that cell |
+| `NEW` and a green edge | the row was not there in the earlier runs |
+| `GONE` and a red edge | the row is not in the current result. It is shown anyway, because a thing disappearing is worth noticing |
+| `not there` | the row did not exist in that particular run |
+
+**Nothing is struck through.** An older value was not deleted; it is just older.
+
+**Which run is which** is written once in the strip above the table -
+`1 now · 2 25 Sep 23:27 · 3 25 Sep 20:40` - because there is no room for a date
+inside a cell and every cell shares the same runs. The strip also counts what
+moved, and holds the **Only what changed** tick, which narrows a forty row table
+to the rows that did something.
+
+**Click any value** to see the history of that one cell, which goes back as far
+as the stored snapshots rather than as far as the comparison:
+
+```
+now            2.17.0
+25 Sep 23:27   2.16.0
+25 Sep 20:40   2.15.0
+22 Sep 11:30   2.14.1
+```
+
+Two things it will refuse to do, rather than guess:
+
+- **Columns that differ between runs.** If a run had four environments and the
+  next had five, there is no honest way to line the columns up, so it says so.
+- **Rows that cannot be told apart.** Rows are matched by the column that names
+  them - the first one, or whichever `[table] key` names. If two rows share a
+  name, it falls back to whole rows appearing and disappearing.
+
+Five runs is the most, and that is a limit of height rather than arithmetic:
+five runs of a forty row table is a very tall page.
+
+## The address bar
+
+What you are looking at is kept in the address, so a link means something to
+whoever you send it to:
+
+```
+http://127.0.0.1:8765/?plugin=image-versions&compare=3&changed=1&theme=dark
+```
+
+| | |
+|---|---|
+| `plugin` | which plugin to open |
+| `compare` | how many runs to show in each cell, 1 to 5. 1 is off |
+| `changed` | `1` to start with **Only what changed** ticked |
+| `theme` | `light`, `dark` or `auto`, for a link that looks the same on any machine |
+
+The theme button still overrides it, and your own choice is what is remembered
+afterwards.
 
 ## Resizing
 

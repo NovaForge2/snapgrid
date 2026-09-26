@@ -91,8 +91,55 @@ When you want to write your own, restart without `--dir`, which uses `plugins/`:
 | **A real grid** | click to sort, per-column filters with value counts, search everything, export CSV |
 | **Runs by itself** | every plugin on a schedule, in the background, results cached so the page is instant |
 | **History** | every result kept, with a dropdown to look back. Identical runs do not use a slot, so twenty snapshots means the last twenty times something actually changed |
+| **What changed** | compare the last 2 to 5 runs in the table itself - values that moved, rows that appeared, rows that went - and click any value for its own history |
 | **Secrets handled** | `.env` per plugin, values can be encrypted, and they are masked everywhere they would otherwise be shown or stored |
 | **Nothing to learn** | print CSV to standard output, exit 0. That is the whole interface |
+
+## Seeing what changed
+
+A table tells you how things are. The question people actually ask is **what
+moved, and when** - and that is what the stored history is for.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.gif">
+    <img src="docs/diff.gif" alt="Turning on the comparison: each cell fills with the last few runs, changed values stand out, rows that appeared or disappeared are marked, and the table can be narrowed to only what changed" width="900">
+  </picture>
+</p>
+
+Pick how far back to look - the run before, or up to five runs - and every cell
+fills in with what it held each time, newest on top:
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.png">
+    <img src="docs/diff.png" alt="A table comparing four runs. One cell shows four different versions stacked; unchanged cells show a dot; a row marked NEW and a row marked GONE" width="900">
+  </picture>
+</p>
+
+- **A dot means "the same as the line above."** Only values that actually moved
+  are written out, so the eye lands on them rather than on forty repetitions of
+  the same version.
+- **Nothing is struck through.** An older value was not deleted; it is just
+  older, so it is smaller and quieter.
+- **Rows that appeared** are marked `NEW`, **rows that went** are marked `GONE`
+  and are shown even though they are not in the current result - a repository
+  disappearing from an environment is exactly the thing worth noticing.
+- **Which run is which** is written once, in the strip above the table. There is
+  no room for a date inside a cell, and every cell shares the same runs.
+- **Only what changed** narrows a forty row table to the three rows that moved.
+- **Click any value** for the full history of that one cell, further back than
+  the comparison goes.
+
+Rows are lined up by the column that names them - the first column, or
+whichever one `[table] key` names. If the columns are not the same in every run,
+comparing is refused with a reason rather than guessing which column is which.
+
+The view is in the address, so a link carries it:
+
+```
+http://127.0.0.1:8765/?plugin=image-versions&compare=3&changed=1
+```
 
 ## How it works
 
@@ -336,6 +383,21 @@ command = ["python", "main.py", "--all"]   # fixed arguments are fine
 A bare `python` or `python3` means the same interpreter that is running
 snapgrid, whichever of the two names exists. Use a full path if you deliberately
 want a different one.
+
+### `[table] key`
+
+Which column names each row. It is what lets two runs be lined up when
+comparing them, so that a version changing reads as *this row changed* rather
+than *one row left and another arrived*.
+
+```toml
+[table]
+key = "repo"        # the first column unless you say otherwise
+```
+
+Rarely needed: the first column is the key by default. Set it when the naming
+column is not first. The key column is never compared - a different value there
+is a different row.
 
 ### `[table] columns`
 

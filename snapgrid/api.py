@@ -58,6 +58,7 @@ PLUGIN_RUNS_RE = re.compile(r"^/api/plugins/([^/]+)/runs$")
 PLUGIN_SNAPS_RE = re.compile(r"^/api/plugins/([^/]+)/snapshots$")
 PLUGIN_EXPORT_RE = re.compile(r"^/api/plugins/([^/]+)/export\.csv$")
 PLUGIN_CONFIG_RE = re.compile(r"^/api/plugins/([^/]+)/config$")
+PLUGIN_CELL_RE = re.compile(r"^/api/plugins/([^/]+)/cell$")
 PLUGIN_RE = re.compile(r"^/api/plugins/([^/]+)$")
 RUN_CANCEL_RE = re.compile(r"^/api/runs/(\d+)/cancel$")
 RUN_RE = re.compile(r"^/api/runs/(\d+)$")
@@ -124,6 +125,7 @@ class Application:
             "busy": bool(live),
             "last_finished": last["finished_at"] if last else None,
             "last_status": last["status"] if last else None,
+            "key": plugin.key,
             "failures": failures,
             "next_run": next_run,
             "row_count": last["row_count"] if last else None,
@@ -154,6 +156,29 @@ class Application:
                     "id": self._banner_id(settings["banner_text"]),
                 },
             },
+        }
+
+    def plugin_cell(self, plugin_id: str, query: dict) -> dict:
+        """The history of one cell: which row, which column."""
+        plugin = self._plugin(plugin_id)
+        latest = self.store.latest_snapshot(plugin.id)
+        if not latest:
+            return {"history": []}
+
+        columns = latest["columns"]
+        key_name = plugin.key or (columns[0] if columns else "")
+        column_name = query.get("column", [""])[0]
+        key_value = query.get("row", [""])[0]
+        if key_name not in columns or column_name not in columns:
+            raise HttpError(404, "no such column")
+
+        return {
+            "row": key_value,
+            "column": column_name,
+            "history": self.store.cell_history(
+                plugin.id, columns.index(key_name), key_value,
+                columns.index(column_name), limit=max(plugin.history_keep, 1) + 1,
+            ),
         }
 
     def plugin_detail(self, plugin_id: str, query: dict) -> dict:
@@ -378,6 +403,10 @@ class Handler(BaseHTTPRequestHandler):
                 match = pattern.match(path)
                 if match:
                     return self._json(method(match.group(1)))
+
+            match = PLUGIN_CELL_RE.match(path)
+            if match:
+                return self._json(self.app.plugin_cell(match.group(1), query))
 
             match = PLUGIN_RE.match(path)
             if match:

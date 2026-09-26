@@ -149,7 +149,9 @@ button), `queued_at`, `started_at`, `finished_at`, `exit_code`, `error`, the
 **`snapshots`** - the tables themselves: `columns_json`, `rows_json`,
 `row_count`, a `content_hash`, and `first_seen`, `last_seen`, `seen_count`. The
 hash is what makes `[history] keep = 20` mean twenty *changes*: an identical
-result updates `last_seen` and `seen_count` instead of taking a slot.
+result updates `last_seen` and `seen_count` instead of taking a slot. This is
+also what the page compares when you ask it what changed, and what the history
+of a single cell is read from.
 
 **`state`** - per plugin, `last_finished` and `consecutive_failures`. This is
 why `every = "10d"` survives a restart rather than starting its ten days again,

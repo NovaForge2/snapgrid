@@ -137,3 +137,56 @@ class FailureCounting(StoreTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CellHistory(StoreTest):
+    """Answering "when did that change?" for one value.
+
+    Done in the store rather than in the page, because otherwise the browser
+    would download every stored snapshot in full to read one value out of each.
+    """
+
+    COLUMNS = ["repo", "ENV1"]
+
+    def save(self, rows):
+        self.store.save_snapshot("p", self.COLUMNS, rows, 20)
+
+    def history(self, repo="payments-api", column=1):
+        return self.store.cell_history("p", 0, repo, column)
+
+    def test_one_snapshot_gives_one_entry(self):
+        self.save([["payments-api", "2.14.1"]])
+        self.assertEqual([e["value"] for e in self.history()], ["2.14.1"])
+
+    def test_newest_first(self):
+        self.save([["payments-api", "2.14.1"]])
+        self.save([["payments-api", "2.15.0"]])
+        self.assertEqual([e["value"] for e in self.history()], ["2.15.0", "2.14.1"])
+
+    def test_a_value_seen_again_is_not_repeated(self):
+        # Twenty identical readings are one fact, not twenty.
+        self.save([["payments-api", "2.14.1"]])
+        self.save([["payments-api", "2.15.0"]])
+        self.save([["payments-api", "2.15.0"], ["orders-api", "1.0.0"]])
+        self.assertEqual([e["value"] for e in self.history()], ["2.15.0", "2.14.1"])
+
+    def test_a_repeat_stretches_back_to_when_it_first_appeared(self):
+        self.save([["payments-api", "2.15.0"]])
+        first = self.history()[0]["since"]
+        self.save([["payments-api", "2.15.0"], ["orders-api", "1.0.0"]])
+        self.assertEqual(self.history()[0]["since"], first,
+                         "the value has been the same since the earlier run")
+
+    def test_runs_where_the_row_did_not_exist_are_skipped(self):
+        self.save([["orders-api", "1.0.0"]])
+        self.save([["payments-api", "2.15.0"], ["orders-api", "1.0.0"]])
+        self.assertEqual([e["value"] for e in self.history()], ["2.15.0"])
+
+    def test_a_snapshot_with_a_different_shape_is_skipped(self):
+        self.save([["payments-api", "2.14.1"]])
+        self.store.save_snapshot("p", ["repo"], [["payments-api"]], 20)
+        self.assertEqual([e["value"] for e in self.history()], ["2.14.1"])
+
+    def test_an_unknown_row_has_no_history(self):
+        self.save([["payments-api", "2.14.1"]])
+        self.assertEqual(self.history("never-existed"), [])

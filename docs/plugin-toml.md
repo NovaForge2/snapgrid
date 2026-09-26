@@ -53,6 +53,7 @@ keep = 20
 | `run.timeout` | seconds, or a duration | `300` (5 minutes) | how long a run may take before it is killed |
 | `run.every` | duration, or `"off"` | `"15m"` | how long after one run finishes the next starts |
 | `table.columns` | list of text | none | if present, the header must match exactly |
+| `table.key` | text | the first column | which column names a row, used to line runs up when comparing |
 | `output.file` | text | none | read the table from this file instead of stdout |
 | `output.sheet` | text | the first sheet | which sheet of an `.xlsx` |
 | `output.fresh_for` | duration | none | skip the run while the file is younger than this |
@@ -210,6 +211,35 @@ When present, the header must match it exactly, in names and order. A mismatch
 fails the run and shows both lists - which catches a script that quietly
 changed its output instead of putting data under the wrong headings.
 
+## `[table] key`
+
+Which column says **what a row is about**, as opposed to what its values are.
+It is what lets two runs be lined up, so that a version changing reads as "this
+row changed" rather than "one row left and another arrived".
+
+```toml
+[table]
+key = "repo"
+```
+
+The **first column is the key** unless this says otherwise, which is why it is
+rarely needed. Set it when the identifying column is not first:
+
+```
+environment,repo,version     ->  key = "repo"
+```
+
+Two rules follow from it:
+
+- **The key column is never compared.** A different value there is a different
+  row, not a changed one.
+- **Keys should be unique.** If two rows are called the same thing, cell by cell
+  comparison is impossible, so it falls back to whole rows appearing and
+  disappearing, and the page says so rather than guessing.
+
+If `[table] columns` is declared, the key has to be one of them, or the manifest
+is refused.
+
 ## `[output]`
 
 Where the table comes from when it is not standard output, covered in full in
@@ -257,6 +287,7 @@ that says what is wrong with it.
 | `[output] fresh_for only means something with [output] file` | the age of a file that was never named |
 | `[history] keep must be 0 or more` | a negative number |
 | `[plugin] enabled must be true or false` | `enabled = "yes"` |
+| `[table] key is "x", which is not one of the columns` | the key names a column that is not declared |
 | `timeout is in [history], but it belongs in [run]` | a key written under the wrong section header |
 | `[run] timout is not a setting snapgrid knows` | a misspelt key |
 | `[runn] is not a section snapgrid knows` | a misspelt section header |

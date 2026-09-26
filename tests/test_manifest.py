@@ -158,6 +158,26 @@ class MisplacedKeys(unittest.TestCase):
         self.assertEqual(plugin.timeout, 600)
 
 
+class TheKeyColumn(unittest.TestCase):
+    """[table] key says which column names a row, for comparing two runs."""
+
+    def test_it_defaults_to_empty_meaning_the_first_column(self):
+        self.assertEqual(parse('[run]\ncommand=["x"]\n').key, "")
+
+    def test_it_can_be_named(self):
+        plugin = parse('[run]\ncommand=["x"]\n[table]\nkey = "repo"\n')
+        self.assertEqual(plugin.key, "repo")
+
+    def test_it_must_be_one_of_the_declared_columns(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse('[run]\ncommand=["x"]\n[table]\ncolumns=["a","b"]\nkey="repo"\n')
+        self.assertIn("not one of the columns", str(caught.exception))
+
+    def test_it_is_not_checked_when_the_columns_are_not_declared(self):
+        # The header decides the columns then, and it is not known until a run.
+        self.assertEqual(parse('[run]\ncommand=["x"]\n[table]\nkey="repo"\n').key, "repo")
+
+
 class Durations(unittest.TestCase):
     def test_off_and_blank_mean_no_schedule(self):
         for value in ("off", "OFF", "", "never", "manual", None):

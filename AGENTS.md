@@ -73,6 +73,7 @@ keep = 20
 | `run.timeout` | int seconds, or a duration string | `300` | how long one run may take. The process and its children are killed at this point and the run is marked failed. `600` and `"10m"` are the same; `"off"` is refused. Per-plugin, not a server setting |
 | `run.every` | string | `"15m"` | a number and a unit: `s`, `m`, `h`, `d`, `w`. So `"30s"`, `"15m"`, `"2h"`, `"10d"`, `"2w"`, or `"off"` for manual only. Measured from the end of the previous run |
 | `table.columns` | list of strings | none | when present, the header line must match it exactly. Omit it and the header defines the columns |
+| `table.key` | string | the first column | which column names a row. Used to line two runs up when comparing them, so it must be stable and unique |
 | `output.file` | string | none | read the table from this file instead of stdout. Anything printed then becomes log. `.xlsx` is read as a spreadsheet |
 | `output.sheet` | string | first sheet | which sheet of a workbook to read |
 | `output.fresh_for` | string | none | if the file is younger than this, use it and do not run the plugin. Run now runs it anyway |
@@ -85,6 +86,12 @@ end of the file belongs to whatever section came last and is refused, not ignore
 Choose `every` by how fast the underlying data really changes. A plugin hitting
 a live API every 30 seconds is a bad neighbour; most reporting plugins
 want `"15m"` or `"1h"`.
+
+**Put the column that names each row first**, and keep its values unique and
+stable. snapgrid compares runs by matching rows on it: `payments-api` yesterday
+and `payments-api` today have to be recognisably the same row, or a changed
+version reads as one row leaving and another arriving. If the naming column
+cannot be first, say which it is with `[table] key`.
 
 Set `history.keep` when looking back matters — versions, counts, anything you
 would ask "when did that change?" about. A run producing an identical table does
@@ -103,7 +110,9 @@ ENV2,payments-api,2.15.0-SNAPSHOT
   value containing a comma or a quote must be quoted correctly, and hand-rolled
   joining gets this wrong.
 - **Keep the column order stable** between runs. Changing it silently reshapes
-  the table and breaks history comparison.
+  the table, and comparing two runs is refused outright when the columns differ.
+- **Keep the row names stable too.** A row that renames itself between runs
+  looks like one row disappearing and another appearing.
 - A missing value is an **empty field**, not the text `None`, `null` or `N/A`.
 - Emit **plain values**: `2.14.1`, `41.5`, `2026-09-14 10:22`. No units, no
   thousands separators, no ANSI colour. A column where every value is a number

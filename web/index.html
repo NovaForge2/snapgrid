@@ -52,6 +52,7 @@
                 title="Run the plugin now, without waiting for the schedule">Run now</button>
         <button id="btn-cancel" type="button" hidden>Cancel</button>
         <select id="snapshot-picker" hidden aria-label="Which result to show"></select>
+        <select id="compare-picker" hidden aria-label="Which result to compare with"></select>
         <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
         <span id="spacer"></span>
         <span id="row-note"></span>
@@ -63,6 +64,14 @@
       </div>
 
       <div id="message" hidden></div>
+
+      <div id="diff-bar" hidden>
+        <span id="diff-what"></span>
+        <span id="diff-tally"></span>
+        <span class="grow"></span>
+        <label id="diff-only"><input id="diff-only-box" type="checkbox"> Only what changed</label>
+      </div>
+
       <div id="table-wrap"></div>
 
       <aside id="side" hidden>
@@ -84,6 +93,7 @@
 </div>
 
 <div id="filter-popup" hidden></div>
+<div id="cell-history" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

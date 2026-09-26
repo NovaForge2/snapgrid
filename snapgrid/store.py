@@ -259,6 +259,42 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def cell_history(self, plugin_id: str, key_index: int, key_value: str,
+                     column_index: int, limit: int = 50) -> list[dict[str, Any]]:
+        """What one cell has been, newest first, with repeats collapsed.
+
+        Done here rather than in the page because answering "when did this
+        change?" from the browser would mean downloading every snapshot in
+        full to read one value out of each.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                """SELECT columns_json, rows_json, first_seen, last_seen
+                     FROM snapshots WHERE plugin_id=? ORDER BY id DESC LIMIT ?""",
+                (plugin_id, limit),
+            ).fetchall()
+
+        history: list[dict[str, Any]] = []
+        for row in rows:
+            columns = json.loads(row["columns_json"])
+            if key_index >= len(columns) or column_index >= len(columns):
+                continue                      # the shape changed; skip that one
+            value = None
+            for values in json.loads(row["rows_json"]):
+                if key_index < len(values) and values[key_index] == key_value:
+                    value = values[column_index] if column_index < len(values) else ""
+                    break
+            if value is None:
+                continue                      # the row did not exist then
+            if history and history[-1]["value"] == value:
+                # The same value seen again: stretch the entry back in time
+                # rather than repeating it.
+                history[-1]["since"] = row["first_seen"]
+                continue
+            history.append({"value": value, "since": row["first_seen"],
+                            "until": row["last_seen"]})
+        return history
+
     # ----- scheduler state ----------------------------------------------
 
     def clear_failures(self, plugin_id: str) -> None:

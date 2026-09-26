@@ -49,6 +49,7 @@ class Plugin:
     timeout: int = 300
     every: int | None = None          # seconds between runs, None means manual only
     columns: list[str] | None = None  # expected header, None means take it from the output
+    key: str = ""                     # the column naming each row, for comparing runs
     output_file: str = ""             # read the table from this file instead of stdout
     output_sheet: str = ""            # which sheet of a workbook, if not the first
     fresh_for: int | None = None      # skip the run while the file is younger than this
@@ -117,7 +118,7 @@ def _output_file(output_table: dict) -> str:
 KNOWN_KEYS = {
     "plugin": {"name", "description", "group", "enabled"},
     "run": {"command", "timeout", "every"},
-    "table": {"columns"},
+    "table": {"columns", "key"},
     "output": {"file", "sheet", "fresh_for"},
     "history": {"keep"},
 }
@@ -225,6 +226,17 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         if not columns:
             raise ManifestError("[table] columns cannot be an empty list")
 
+    # Which column says what a row is about, so two runs can be lined up. The
+    # first column is nearly always it, which is why this is rarely set.
+    key = table_table.get("key", "")
+    if not isinstance(key, str):
+        raise ManifestError('[table] key must be the name of a column, for example key = "repo"')
+    key = key.strip()
+    if key and columns and key not in columns:
+        raise ManifestError(
+            f'[table] key is "{key}", which is not one of the columns: {", ".join(columns)}'
+        )
+
     output_sheet = output_table.get("sheet", "")
     if not isinstance(output_sheet, str):
         raise ManifestError('[output] sheet must be text, for example sheet = "Summary"')
@@ -251,6 +263,7 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         timeout=timeout,
         every=every,
         columns=columns,
+        key=key,
         output_file=output_file,
         output_sheet=output_sheet.strip(),
         fresh_for=fresh_for,
