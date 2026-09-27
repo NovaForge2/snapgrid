@@ -381,6 +381,12 @@ history, encryption and masking, settings, scheduling and the HTTP API.
 Warnings count as failures, so a leaked file handle fails the run rather than
 scrolling past.
 
+Working out **what changed between runs** happens in the browser, so its tests
+run there too, on node's own test runner - no package.json, nothing installed.
+`./run-tests.py` runs them as well, and says plainly when node is absent rather
+than reporting a green total that quietly covered less. node is needed to run
+that part of the suite; it is never needed to *use* snapgrid.
+
 Every push and every pull request runs the same command on **Linux, macOS and
 Windows against Python 3.11, 3.12 and 3.13** - nine combinations, no
 installation step in any of them. The build also fails if a `requirements.txt`

@@ -24,6 +24,7 @@ confusing way.
 """
 
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -61,6 +62,24 @@ def imported_names(path: Path) -> set[str]:
     return found
 
 
+# require("something") where something is not node's own and not a file next
+# to it. The browser code has the same promise to keep as the Python: nothing
+# that has to be installed, and no package.json to install it with.
+REQUIRE_RE = re.compile(r"""require\(\s*["']([^"']+)["']\s*\)""")
+
+
+def javascript_offenders() -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {}
+    for path in sorted(ROOT.rglob("*.js")):
+        if any(part in SKIP for part in path.relative_to(ROOT).parts):
+            continue
+        for name in REQUIRE_RE.findall(path.read_text(encoding="utf-8")):
+            if name.startswith((".", "/")) or name.startswith("node:"):
+                continue
+            found.setdefault(name, set()).add(str(path.relative_to(ROOT)))
+    return found
+
+
 def main() -> int:
     offenders: dict[str, set[str]] = {}
     checked = 0
@@ -74,6 +93,9 @@ def main() -> int:
                 continue
             offenders.setdefault(name, set()).add(str(path.relative_to(ROOT)))
 
+    for name, where in javascript_offenders().items():
+        offenders.setdefault(name, set()).update(where)
+
     if offenders:
         print("These are not part of the standard library, so they would have to be "
               "installed:", file=sys.stderr)
@@ -85,7 +107,8 @@ def main() -> int:
               "required.", file=sys.stderr)
         return 1
 
-    print(f"{checked} files, every import is part of Python itself.")
+    print(f"{checked} python files and every .js file: nothing that has to be "
+          f"installed.")
     return 0
 
 

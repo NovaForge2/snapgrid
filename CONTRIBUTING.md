@@ -66,6 +66,24 @@ By submitting a contribution you confirm that you are the author of it, that
 you have the right to submit it, and that it is contributed under the Apache
 License 2.0, like the rest of the project.
 
+## The browser tests
+
+`web/compare.js` decides what changed between two runs, and a wrong answer
+there is worse than an error - "nothing changed" is a claim. It is kept free
+of the page and of shared state so it can be tested directly:
+
+```bash
+node --test tests/compare.test.js
+```
+
+`./run-tests.py` runs them too. node's test runner is part of node, so there
+is nothing to install, no `package.json`, and `tools/check-imports.py` fails
+the build if any JavaScript ever starts requiring something that is not
+node's own or a file beside it.
+
+**node is a development tool here, like git.** Nothing about running snapgrid
+needs it: the browser executes that file, as it always did.
+
 ## Versions and releases
 
 The version lives in **one place**, `snapgrid/__init__.py`, and `./server.py

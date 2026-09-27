@@ -24,10 +24,23 @@ part you just changed was among it.
     ./run-tests.py store     only files matching "store"
 """
 
+import shutil
+import subprocess
 import sys
 import time
 import unittest
 import warnings
+
+# snapgrid needs 3.11 for tomllib. Without this the first thing an older
+# Python hits is a type annotation it cannot parse, and the error is about
+# unsupported operands rather than about the version - which sends people
+# looking in the wrong place. A "python3" on PATH can easily be 3.9.
+if sys.version_info < (3, 11):
+    raise SystemExit(
+        f"snapgrid needs Python 3.11 or newer. This is "
+        f"{sys.version.split()[0]} at {sys.executable}.\n"
+        f"  Try: python3.11 run-tests.py"
+    )
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -97,6 +110,48 @@ def summarise(result: Timed, seconds: float) -> None:
           f"{'all passed' if result.wasSuccessful() else 'FAILED'}")
 
 
+def browser_tests(pattern: str | None) -> int | None:
+    """Run the JavaScript tests, if node is here.
+
+    What changed between two runs is worked out in the browser, so the tests
+    for it have to run there too. node's own test runner needs nothing
+    installed, and node is not required to *use* snapgrid - only to run this
+    part of its suite. A machine without it gets a clear line saying which
+    tests did not run, rather than a green total that quietly covered less.
+    """
+    if pattern and pattern not in "compare":
+        return None
+
+    found = sorted((ROOT / "tests").glob("*.test.js"))
+    if not found:
+        return None
+
+    node = shutil.which("node")
+    if node is None:
+        print("\n  browser tests: skipped, node was not found. "
+              "They cover comparing runs, and CI runs them.")
+        return None
+
+    print()
+    finished = subprocess.run(
+        [node, "--test", *[str(path) for path in found]],
+        cwd=str(ROOT), capture_output=True, text=True,
+    )
+    passed = failed = 0
+    for line in finished.stdout.splitlines():
+        if line.startswith("# pass ") or line.startswith("\u2139 pass "):
+            passed = int(line.rsplit(" ", 1)[1])
+        elif line.startswith("# fail ") or line.startswith("\u2139 fail "):
+            failed = int(line.rsplit(" ", 1)[1])
+
+    if finished.returncode != 0:
+        print(finished.stdout)
+        print(finished.stderr, file=sys.stderr)
+    print(f"  {passed} browser tests (comparing runs) - "
+          f"{'all passed' if failed == 0 else f'{failed} FAILED'}")
+    return finished.returncode
+
+
 def main() -> int:
     warnings.simplefilter("error", ResourceWarning)
     pattern = next((arg for arg in sys.argv[1:] if not arg.startswith("-")), None)
@@ -112,7 +167,11 @@ def main() -> int:
         verbosity=2 if "-v" in sys.argv else 1, resultclass=Timed)
     result = runner.run(tests)
     summarise(result, time.perf_counter() - started)
-    return 0 if result.wasSuccessful() else 1
+
+    browser = browser_tests(pattern)
+    if not result.wasSuccessful():
+        return 1
+    return 1 if browser else 0
 
 
 if __name__ == "__main__":

@@ -24,9 +24,21 @@ class NothingToInstall(unittest.TestCase):
         self.assertEqual(check_imports.main(), 0)
 
     def test_there_is_no_dependency_file(self):
-        for name in ("requirements.txt", "pyproject.toml", "setup.py", "Pipfile"):
+        # package.json and package-lock.json included: the browser code has
+        # the same promise to keep, and the JavaScript tests run on node's own
+        # runner precisely so there is nothing to install for them either.
+        for name in ("requirements.txt", "pyproject.toml", "setup.py", "Pipfile",
+                     "package.json", "package-lock.json"):
             self.assertFalse((ROOT / name).exists(),
                              f"{name} exists, so something has to be installed")
+
+    def test_the_browser_code_imports_nothing_either(self):
+        self.assertEqual(check_imports.javascript_offenders(), {})
+
+    def test_a_third_party_require_would_be_noticed(self):
+        found = check_imports.REQUIRE_RE.findall(
+            'require("lodash"); require("node:fs"); require("./near")')
+        self.assertIn("lodash", found)
 
     def test_a_third_party_import_would_be_noticed(self):
         # Otherwise the check could be silently passing on everything.

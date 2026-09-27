@@ -514,175 +514,22 @@ const MAX_DEPTH = 5;
 
 /* ---------------------------------------------------------- comparing */
 
-// Rows are lined up by the column that names them - [table] key, or the first
-// column. Without that, a changed value looks like one row leaving and another
-// arriving, which is true but useless.
+// The work itself is in compare.js, which the page loads first: pure
+// functions, given the runs and the key column, returning what differs.
+// These three are the seam, and the only part that knows about state.
+
 function keyIndex(columns) {
-  const named = state.detail && state.detail.key;
-  const index = named ? columns.indexOf(named) : 0;
-  return index >= 0 ? index : 0;
+  return keyIndexIn(columns, state.detail && state.detail.key);
 }
 
-// [table] key naming a column this result does not have. The manifest can only
-// catch that when [table] columns is declared too, so most of the time the
-// first this can be known is here, with a result in hand. Falling back to the
-// leftmost column would compare by whatever happens to be there and say
-// nothing about it, which is the one thing comparing must never do.
-function missingKeyColumn(columns) {
-  const named = state.detail && state.detail.key;
-  return named && !columns.includes(named) ? named : "";
-}
-
-function byKey(columns, rows) {
-  const index = keyIndex(columns);
-  const map = new Map();
-  let duplicates = false;
-  for (const row of rows) {
-    const key = row[index] === undefined ? "" : row[index];
-    if (map.has(key)) duplicates = true;
-    else map.set(key, row);
-  }
-  return { map, duplicates };
-}
-
-// Every run that is being shown, newest first: what is on screen, then the
-// older ones. Each becomes one line inside every cell.
+// Every run being shown, newest first: what is on screen, then the older ones.
+// Each becomes one line inside every cell.
 function comparedRuns(current) {
   return [current, ...state.past].slice(0, state.depth);
 }
 
-// What each row looks like across those runs, or a reason it cannot be worked
-// out. A row is included if it was there in any of them, so one that has gone
-// is still visible - that is the thing worth noticing.
-function compareRuns(current) {
-  const runs = comparedRuns(current);
-  if (runs.length < 2) return null;
-
-  const shape = current.columns.join("\u0000");
-  if (runs.some((run) => run.columns.join("\u0000") !== shape)) {
-    return { impossible: "the columns are not the same in every run" };
-  }
-
-  const missing = missingKeyColumn(current.columns);
-  if (missing) {
-    return { impossible: `[table] key is "${missing}", and this result has no column `
-                         + `of that name - it has ${current.columns.join(", ")}` };
-  }
-
-  const indexed = runs.map((run) => byKey(run.columns, run.rows));
-  if (indexed.some((one) => one.duplicates)) {
-    // Cell by cell comparison needs one row per name. Without that, whole
-    // rows can still be compared - a row is the same row or it is not - which
-    // is less, but is what the documentation promises and is better than
-    // showing nothing.
-    const name = current.columns[keyIndex(current.columns)];
-    return wholeRows(runs, `more than one row is called the same thing in "${name}"`);
-  }
-
-  const names = [];
-  const seen = new Set();
-  for (const one of indexed) {
-    for (const name of one.map.keys()) {
-      if (!seen.has(name)) { seen.add(name); names.push(name); }
-    }
-  }
-
-  const rows = new Map();
-  let changedCells = 0, added = 0, removed = 0;
-  for (const name of names) {
-    // One entry per run: the row as it was then, or null if it was not there.
-    const overRuns = indexed.map((one) => one.map.get(name) || null);
-    const here = overRuns[0] !== null;
-    const everBefore = overRuns.slice(1).some((row) => row !== null);
-    const moved = overRuns.some((row, at) =>
-      at > 0 && !sameRow(row, overRuns[at - 1], current.columns));
-
-    if (here && !everBefore) added += 1;
-    else if (!here && everBefore) removed += 1;
-    if (here && everBefore && moved) {
-      current.columns.forEach((_, index) => {
-        if (index === keyIndex(current.columns)) return;
-        const values = overRuns.map((row) => (row ? cellValue(row, index) : null));
-        for (let at = 1; at < values.length; at += 1) {
-          if (values[at] !== null && values[at] !== values[at - 1]) changedCells += 1;
-        }
-      });
-    }
-    rows.set(name, { overRuns, here, everBefore, moved });
-  }
-  return { rows, names, runs, changedCells, added, removed };
-}
-
-// A row compared as a whole, for when rows cannot be told apart by name.
-function rowText(row) {
-  return JSON.stringify(row);
-}
-
-function wholeRows(runs, why) {
-  // Rows are compared as whole lines here, so two identical lines are two
-  // things, not one. Everything below counts copies: three of a row yesterday
-  // and none today is three rows gone, and it is drawn as three.
-  const counts = runs.map((run) => {
-    const seen = new Map();
-    for (const row of run.rows) {
-      const text = rowText(row);
-      seen.set(text, (seen.get(text) || 0) + 1);
-    }
-    return seen;
-  });
-
-  const distinct = [];
-  const seen = new Set();
-  for (const run of runs) {
-    for (const row of run.rows) {
-      const text = rowText(row);
-      if (!seen.has(text)) { seen.add(text); distinct.push({ text, row }); }
-    }
-  }
-
-  const rows = new Map();
-  const names = [];
-  let added = 0;
-  let removed = 0;
-
-  for (const { text, row } of distinct) {
-    const perRun = counts.map((one) => one.get(text) || 0);
-    const copies = Math.max(...perRun);
-
-    // One entry per copy. Copy n exists in a run if that run held more than n
-    // of it, which is what turns "three became one" into two rows gone rather
-    // than one row that is somehow still here.
-    for (let n = 0; n < copies; n += 1) {
-      const presence = perRun.map((held) => held > n);
-      const here = presence[0];
-      const everBefore = presence.slice(1).some(Boolean);
-      // Moved if this copy was not there in every run being compared, which
-      // also catches one that went away and came back inside the window.
-      const moved = presence.some((one) => one !== presence[0]);
-
-      if (here && !everBefore) added += 1;
-      else if (!here && everBefore) removed += 1;
-
-      rows.set(`${text}#${n}`, {
-        overRuns: here ? [row] : [null, row],
-        here,
-        everBefore,
-        moved,
-      });
-      names.push(`${text}#${n}`);
-    }
-  }
-
-  return { rows, names, runs, changedCells: 0, added, removed, whole: true, degraded: why };
-}
-
-function cellValue(row, index) {
-  return row[index] === undefined ? "" : row[index];
-}
-
-function sameRow(a, b, columns) {
-  if (a === null || b === null) return a === b;
-  return columns.every((_, index) => cellValue(a, index) === cellValue(b, index));
+function comparisonFor(current) {
+  return compareRuns(comparedRuns(current), state.detail && state.detail.key);
 }
 
 // What a set of older snapshots belongs to: this plugin, showing this result,
@@ -1100,7 +947,7 @@ function renderTable() {
   const kinds = columns.map((_, index) => detectKind(snapshot.rows, index));
   let diff = null;
   try {
-    diff = compareRuns(snapshot);
+    diff = comparisonFor(snapshot);
   } catch (error) {
     diff = { impossible: "these runs cannot be lined up" };
   }
