@@ -3,6 +3,15 @@
 When each TLS certificate expires, and how many days are left. The question
 nobody asks until the morning a service stops working.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="screenshot-dark.png">
+    <img src="screenshot.png" alt="The certificate expiry plugin in snapgrid, showing three hosts with their expiry dates, days remaining and issuer" width="900">
+  </picture>
+</p>
+
+**What the plugin prints:**
+
 ```
 host,expires,days_left,issuer
 example.com,2026-12-25,89,SSL Corporation
@@ -13,13 +22,20 @@ github.com,2026-11-29,63,Sectigo Limited
 No credentials of any kind. A server hands its certificate to anybody who
 connects — that is what a public certificate is for.
 
-## Try it
+## See it
 
 ```bash
-cd examples/certificate-expiry && python3 main.py
+./server.py --dir examples
 ```
 
-Then edit `hosts.txt` and put your own hosts in it, one per line:
+It is in the list on the left. To keep it, copy the folder into your own
+plugins folder and it appears there within ten seconds:
+
+```bash
+cp -r examples/certificate-expiry plugins/
+```
+
+Then put your own hosts in `hosts.txt`, one per line:
 
 ```
 example.com
@@ -27,9 +43,8 @@ intranet.example.internal:8443     # a port other than 443
 # lines starting with a hash are ignored
 ```
 
-```bash
-cp -r examples/certificate-expiry plugins/
-```
+Sort the `days_left` column and whatever expires next is at the top, which is
+the whole point of the table.
 
 ## How it works
 
@@ -92,3 +107,20 @@ no date in it to report.
 - **`every = "6h"`.** Certificates change perhaps twice a year. Checking every
   minute would be rude to the servers and tell you nothing new.
 - **`[history] keep`**, which makes "when was this renewed?" answerable.
+
+## When it is not working
+
+Run the program by hand. What it prints is exactly what snapgrid sees, with
+nothing in between:
+
+```bash
+cd plugins/certificate-expiry && python3 main.py
+```
+
+Standard output is the table, standard error is the log, and `echo $?` shows
+whether it thought it succeeded. If that output looks right, the plugin is
+right, and the problem is in `plugin.toml`.
+
+The **Log** and **Config** buttons in the page show the same two things from
+the last real run - what it printed, and the manifest exactly as snapgrid read
+it.

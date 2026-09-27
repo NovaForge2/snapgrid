@@ -31,8 +31,15 @@ It appears in the page within ten seconds. No restart.
 | [hello-table](hello-table/) | reads `data.json` next to it | the smallest complete script |
 | [version-matrix](version-matrix/) | invented versions that drift | watching the history and the comparison fill up |
 
-Each folder has its own README explaining what it does, how it works, what to
-change, and which part of the contract it demonstrates.
+Each folder has its own README with a picture of it running, an explanation of
+how it works, what to change, and which part of the contract it demonstrates.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="certificate-expiry/screenshot-dark.png">
+    <img src="certificate-expiry/screenshot.png" alt="One of the examples running in snapgrid: certificate expiry dates for three hosts, sortable by days remaining" width="900">
+  </picture>
+</p>
 
 ## Read them in this order
 

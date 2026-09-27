@@ -6,21 +6,37 @@ There is no script in this folder. There is a manifest and a CSV file, and that
 is a complete plugin: snapgrid re-reads the file on every run, so editing the
 file updates the table.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="screenshot-dark.png">
+    <img src="screenshot.png" alt="The team directory plugin in snapgrid, showing service ownership read straight from a CSV file" width="900">
+  </picture>
+</p>
+
+**What the plugin prints:**
+
 ```
 service,team,owner,on_call,runbook
 payments-api,Payments,A. Novak,payments-oncall,https://wiki.example.internal/payments
 orders-api,Orders,R. Silva,orders-oncall,https://wiki.example.internal/orders
 ```
 
-## Try it
+## See it
+
+```bash
+./server.py --dir examples
+```
+
+It is in the list on the left. To keep it, copy the folder into your own
+plugins folder and it appears there within ten seconds:
 
 ```bash
 cp -r examples/team-directory plugins/
 ```
 
-Open the page, then edit `plugins/team-directory/directory.csv` in any editor
-and save. The table updates within the hour — or press **Run now** to see it
-immediately.
+Then edit `plugins/team-directory/directory.csv` in any editor and save. The
+table updates within the hour - or press **Run now** to see it immediately.
+There is nothing to restart and no script involved.
 
 ## The manifest
 

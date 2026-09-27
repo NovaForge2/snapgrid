@@ -2,6 +2,15 @@
 
 Whether each endpoint answers, and how quickly.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="screenshot-dark.png">
+    <img src="screenshot.png" alt="The endpoint health plugin in snapgrid, showing status code and response time for three URLs" width="900">
+  </picture>
+</p>
+
+**What the plugin prints:**
+
 ```
 endpoint,host,status,ms
 https://example.com,example.com,200,123
@@ -9,10 +18,17 @@ https://www.python.org,www.python.org,200,106
 https://github.com,github.com,200,156
 ```
 
-## Try it
+## See it
 
 ```bash
-cd examples/endpoint-health && python3 main.py
+./server.py --dir examples
+```
+
+It is in the list on the left. To keep it, copy the folder into your own
+plugins folder and it appears there within ten seconds:
+
+```bash
+cp -r examples/endpoint-health plugins/
 ```
 
 Then put your own URLs in `urls.txt`, one per line:
@@ -21,10 +37,6 @@ Then put your own URLs in `urls.txt`, one per line:
 https://intranet.example.internal/health
 https://payments.example.internal/actuator/health
 # lines starting with a hash are ignored
-```
-
-```bash
-cp -r examples/endpoint-health plugins/
 ```
 
 ## How it works
@@ -86,3 +98,20 @@ endpoint is down at 3am you will find out when you look.
 
 If you need alerting, you need a monitoring system. This is for the question
 "has that been slow all week, or only now?"
+
+## When it is not working
+
+Run the program by hand. What it prints is exactly what snapgrid sees, with
+nothing in between:
+
+```bash
+cd plugins/endpoint-health && python3 main.py
+```
+
+Standard output is the table, standard error is the log, and `echo $?` shows
+whether it thought it succeeded. If that output looks right, the plugin is
+right, and the problem is in `plugin.toml`.
+
+The **Log** and **Config** buttons in the page show the same two things from
+the last real run - what it printed, and the manifest exactly as snapgrid read
+it.
