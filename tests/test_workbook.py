@@ -137,6 +137,61 @@ class WhatExcelIsGiven(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+class FormulaInjection(unittest.TestCase):
+    """A value must never become something Excel executes.
+
+    A plugin prints what it reads, and what it reads may come from somewhere
+    else entirely. `=cmd|' /C calc'!A0` in a cell is the classic spreadsheet
+    attack, and a CSV hands it straight to Excel as a formula.
+
+    Nothing here escapes or prefixes anything, because nothing needs to: every
+    text cell is written as an inline string, which Excel displays and never
+    evaluates. These tests exist so that stays true - a later change to shared
+    strings or to a formula element would reintroduce it silently.
+    """
+
+    DANGEROUS = [
+        "=cmd|' /C calc'!A0",
+        "@SUM(1+1)*cmd|' /C calc'!A0",
+        '=HYPERLINK("http://example.invalid","click")',
+        "+1+1",
+        "-1+1",
+        "=1+1",
+    ]
+
+    def sheet(self, rows):
+        path = written(["a"], [[value] for value in rows])
+        with zipfile.ZipFile(path) as archive:
+            return archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+    def test_no_cell_is_ever_written_as_a_formula(self):
+        self.assertNotIn("<f>", self.sheet(self.DANGEROUS))
+
+    def test_every_dangerous_value_is_an_inline_string(self):
+        xml = self.sheet(self.DANGEROUS)
+        # One per value, plus the header cell, which is a string too.
+        self.assertEqual(xml.count("inlineStr"), len(self.DANGEROUS) + 1)
+
+    def test_the_text_comes_back_exactly_as_written(self):
+        rows = [[value] for value in self.DANGEROUS]
+        self.assertEqual(read_xlsx(written(["a"], rows))[1:], rows)
+
+    def test_a_leading_minus_is_not_mistaken_for_a_number(self):
+        # -1+1 is not a number, so it must not reach a <v> element where Excel
+        # would try to make sense of it.
+        self.assertFalse(survives_as_a_number("-1+1"))
+
+
+class OddCharacters(unittest.TestCase):
+    def test_unicode_tabs_and_newlines_survive(self):
+        rows = [["emoji \u2713 \u00e9\u4e2d", "tab\there", "new\nline"]]
+        self.assertEqual(read_xlsx(written(["a", "b", "c"], rows))[1:], rows)
+
+    def test_xml_special_characters_survive(self):
+        rows = [["<script>", "a & b", '"quoted"', "it's"]]
+        self.assertEqual(read_xlsx(written(["a", "b", "c", "d"], rows))[1:], rows)
+
+
 class Letters(unittest.TestCase):
     def test_column_letters(self):
         for index, expected in ((0, "A"), (25, "Z"), (26, "AA"), (27, "AB"), (51, "AZ"),

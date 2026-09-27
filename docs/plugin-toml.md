@@ -211,6 +211,57 @@ When present, the header must match it exactly, in names and order. A mismatch
 fails the run and shows both lists - which catches a script that quietly
 changed its output instead of putting data under the wrong headings.
 
+## `[plugin] group`
+
+Plugins naming the same group are listed together under one heading. There is
+nothing to declare anywhere else and no list of groups to maintain: a group
+exists because a plugin names it, and stops existing when the last plugin that
+named it is gone.
+
+```toml
+# plugins/cert-expiry/plugin.toml
+[plugin]
+name  = "Expiring certificates"
+group = "Platform"
+```
+
+```toml
+# plugins/pod-restarts/plugin.toml
+[plugin]
+name  = "Pod restarts"
+group = "Platform"        # the same string, so the same heading
+```
+
+**Groups are ordered alphabetically, and the plugins inside them likewise** -
+not by folder name, and not by the order you created them. Plugins with no
+group sit together at the top under **Plugins**.
+
+If you want a particular order, put it in the names: a group called
+`1 Platform` sorts before `2 Delivery`. That is a workaround rather than a
+feature, and if it turns out to matter, explicit ordering is worth adding
+properly.
+
+## `[run] command`
+
+A list of arguments, never a command line. There is no shell involved, so
+quoting, `&&`, pipes, redirects and `$VARIABLES` do not work - put those in a
+script and run the script.
+
+```toml
+command = ["python", "main.py"]            # Python
+command = ["bash", "report.sh"]            # a shell script
+command = ["java", "-jar", "report.jar"]   # Java
+command = ["python", "main.py", "--all"]   # fixed arguments are fine
+```
+
+**A bare `python` or `python3` means the same interpreter that is running
+snapgrid**, whichever of the two names exists. That is what stops a plugin
+working in your terminal and failing here because the two found different
+Pythons. Use a full path when you deliberately want a different one.
+
+Never pass a secret as an argument: arguments are visible to anyone who can
+list processes, and they are shown in the page's Config panel. Use `.env`.
+
 ## `[table] key`
 
 Which column says **what a row is about**, as opposed to what its values are.

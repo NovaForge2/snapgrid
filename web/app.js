@@ -16,6 +16,7 @@ const state = {
   side: null,         // null, "log" or "config"
   depth: 1,           // how many runs are shown in each cell; 1 means off
   past: [],           // the older snapshots, newest first, once fetched
+  unreadable: 0,      // how many of those could not be read
   pastFor: "",        // what those older snapshots were fetched for
   onlyChanged: false,
   sort: { column: null, direction: 0 },
@@ -522,6 +523,16 @@ function keyIndex(columns) {
   return index >= 0 ? index : 0;
 }
 
+// [table] key naming a column this result does not have. The manifest can only
+// catch that when [table] columns is declared too, so most of the time the
+// first this can be known is here, with a result in hand. Falling back to the
+// leftmost column would compare by whatever happens to be there and say
+// nothing about it, which is the one thing comparing must never do.
+function missingKeyColumn(columns) {
+  const named = state.detail && state.detail.key;
+  return named && !columns.includes(named) ? named : "";
+}
+
 function byKey(columns, rows) {
   const index = keyIndex(columns);
   const map = new Map();
@@ -550,6 +561,12 @@ function compareRuns(current) {
   const shape = current.columns.join("\u0000");
   if (runs.some((run) => run.columns.join("\u0000") !== shape)) {
     return { impossible: "the columns are not the same in every run" };
+  }
+
+  const missing = missingKeyColumn(current.columns);
+  if (missing) {
+    return { impossible: `[table] key is "${missing}", and this result has no column `
+                         + `of that name - it has ${current.columns.join(", ")}` };
   }
 
   const indexed = runs.map((run) => byKey(run.columns, run.rows));
@@ -686,6 +703,7 @@ async function loadComparison() {
   const wanted = comparisonSignature();
   state.past = [];
   state.pastFor = "";
+  state.unreadable = 0;
   if (state.depth < 2 || !state.detail) return;
 
   const snapshots = state.detail.snapshots || [];
@@ -694,18 +712,24 @@ async function loadComparison() {
   const older = snapshots.slice(at + 1, at + state.depth);
 
   const loaded = [];
+  let unreadable = 0;
   for (const snapshot of older) {
     try {
       const payload = await api("/api/snapshots/" + snapshot.id);
       if (mine !== comparisonRequest) return;       // something newer was asked for
       loaded.push(payload.snapshot || payload);     // the endpoint wraps it
     } catch (error) {
-      break;                                        // show what was readable
+      // One stored result that cannot be read should not lose the others, but
+      // quietly comparing fewer runs than were asked for would be a smaller
+      // answer wearing the label of the one requested.
+      unreadable = older.length - loaded.length;
+      break;
     }
   }
   if (mine !== comparisonRequest) return;
   state.past = loaded;
   state.pastFor = wanted;
+  state.unreadable = unreadable;
 }
 
 function renderDiffBar(diff) {
@@ -726,9 +750,12 @@ function renderDiffBar(diff) {
     return;
   }
 
-  what.textContent = diff.degraded
+  const short = state.unreadable
+    ? ` - ${state.unreadable} earlier result${state.unreadable > 1 ? "s" : ""} could not be read`
+    : "";
+  what.textContent = (diff.degraded
     ? `Whole rows only, because ${diff.degraded}`
-    : `Showing the last ${diff.runs.length} runs`;
+    : `Showing the last ${diff.runs.length} runs`) + short;
 
   // The runs are the same for every cell, so they are named once, here.
   // There is no room for a date inside a cell.

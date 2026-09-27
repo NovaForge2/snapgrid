@@ -313,267 +313,46 @@ plugin is right.
 
 ## plugin.toml
 
-<details>
-<summary><b>Every setting</b> - name, group, command, timeout, schedule, columns, output file, history</summary>
-
-Also written out key by key, with every accepted value and every refusal message, in
-[docs/plugin-toml.md](docs/plugin-toml.md).
-
-Only `[plugin] name` and `[run] command` are required.
+Only `[run] command` is required, and even that is optional when a file is the
+source.
 
 ```toml
 [plugin]
-name        = "OpenShift Image Versions"   # required: shown in the left panel
-description = "Image version per repo per environment"
-group       = "OpenShift"                  # heading in the left panel
-enabled     = true                         # false hides it completely
+name        = "Image versions"
+description = "Version per repository per environment"
+group       = "Platform"          # a heading in the left panel
 
 [run]
-command = ["python", "main.py"]            # required: no shell, just arguments
-timeout = "5m"                             # default 5m; seconds also work
-every   = "15m"                            # default 15m; "off" for manual only
+command = ["python", "main.py"]   # an argument list, run without a shell
+timeout = "5m"                    # or a number of seconds
+every   = "15m"                   # s, m, h, d, w - or "off" for manual only
 
 [table]
-columns = ["environment", "image", "version"]
+columns = ["repo", "ENV1", "ENV2"]  # optional: the header must then match
+key     = "repo"                    # which column names a row, for comparing
 
 [output]
-file = "report.csv"                        # optional: read the table from a file
+file      = "report.csv"          # read the table from a file instead of stdout
+fresh_for = "30m"                 # and skip the run while the file is young
 
 [history]
-keep = 20
+keep = 20                         # how many *differing* results to keep
 ```
 
-### `[plugin] group`
+Four things worth knowing without reading further:
 
-Plugins that give the same `group` are listed together under one heading in the
-left panel. That is all there is to it - there is nothing to declare anywhere
-else, and no list of groups to keep up to date. A group exists because a plugin
-names it, and stops existing when the last plugin that named it is gone.
+- **`command` is a list, not a command line.** There is no shell, so pipes,
+  `&&` and `$VARIABLES` do not work. Put those in a script and run the script.
+- **`every` is measured from the end of the previous run**, so a plugin cannot
+  overlap with itself. It is an interval, not a clock: `"1d"` means a day after
+  the last one finished, not nine every morning.
+- **`timeout` is per plugin**, not a server setting, because it depends
+  entirely on the work.
+- **`key` is how two runs are lined up** when comparing them, and defaults to
+  the first column. Keep its values stable and unique.
 
-```toml
-# plugins/cert-expiry/plugin.toml
-[plugin]
-name  = "Expiring certificates"
-group = "Platform"
-```
-
-```toml
-# plugins/pod-restarts/plugin.toml
-[plugin]
-name  = "Pod restarts"
-group = "Platform"        # the same string, so the same heading
-```
-
-Groups are ordered alphabetically, and plugins within a group likewise - not by
-folder name, and not by the order you created them. Plugins with no `group` sit
-together at the top under **Plugins**.
-
-If you want a particular order, put it in the names: a group called
-`1 Platform` sorts before `2 Delivery`. That is a workaround rather than a
-feature, and if it turns out to matter, explicit ordering is worth adding
-properly.
-
-### `[run] command`
-
-A list of arguments, never a shell command line. There is no shell involved, so
-quoting, `&&`, pipes and redirects do not work - put those in a shell script and
-run that instead.
-
-```toml
-command = ["python", "main.py"]            # Python
-command = ["bash", "report.sh"]            # shell script
-command = ["java", "-jar", "report.jar"]   # Java
-command = ["python", "main.py", "--all"]   # fixed arguments are fine
-```
-
-A bare `python` or `python3` means the same interpreter that is running
-snapgrid, whichever of the two names exists. Use a full path if you deliberately
-want a different one.
-
-### `[table] key`
-
-Which column names each row. It is what lets two runs be lined up when
-comparing them, so that a version changing reads as *this row changed* rather
-than *one row left and another arrived*.
-
-```toml
-[table]
-key = "repo"        # the first column unless you say otherwise
-```
-
-Rarely needed: the first column is the key by default. Set it when the naming
-column is not first. The key column is never compared - a different value there
-is a different row.
-
-### `[table] columns`
-
-Optional. Leave it out and the header line of the output decides the columns and
-their order.
-
-When it is present, the header line must match it **exactly**, in names and
-order. A mismatch fails the run and shows both lists. That is the point: it
-catches a script that quietly changed its output, instead of silently putting
-your data under the wrong headings.
-
-### `[output] file`
-
-If your script already writes a file and prints progress while it works, point
-snapgrid at the file instead of making the script keep stdout clean:
-
-```toml
-[output]
-file = "report.csv"
-```
-
-Everything the script prints then becomes the run log, to either stream, and
-the file is the table. Nothing else about the plugin changes.
-
-**A spreadsheet works too.** Name an `.xlsx` and it is read as one - text,
-numbers, dates, booleans and formula results, from the first sheet or the one
-you name:
-
-```toml
-[output]
-file  = "report.xlsx"
-sheet = "Summary"        # optional, the first sheet otherwise
-```
-
-No library is needed for this: an `.xlsx` is a zip of XML, and Python can read
-both. The old binary `.xls` format is not supported - save it as `.xlsx` or
-`.csv`.
-
-**If the file is recent, do not run the script at all:**
-
-```toml
-[output]
-file      = "report.csv"
-fresh_for = "30m"
-```
-
-A scheduled run first looks at the file. If it was written less than half an
-hour ago it is used as it stands and the plugin is not started - useful when
-the work is expensive, or when something else already refreshes the file.
-Pressing **Run now** always runs the plugin: asking for it explicitly means
-wanting new data, not the file you are already looking at.
-
-If the file is missing, older than that, or unreadable, the plugin runs as
-normal.
-
-**A plugin need not run anything at all.** With no `[run] command`, a folder
-containing a manifest and a file is a plugin: snapgrid re-reads the file on
-each run, so editing it updates the table, and an unchanged file does not
-count as a change.
-
-```toml
-[plugin]
-name = "Contact list"
-
-[run]
-every = "1h"
-
-[output]
-file = "contacts.xlsx"
-```
-
-The file has to live inside the plugin folder, and it has to be written by the
-run in progress. A file left from an earlier run is refused with a message
-saying when it was written - showing yesterday's numbers as though they were
-current is worse than showing an error.
-
-### `[run] every`
-
-A number and a unit: `s` seconds, `m` minutes, `h` hours, `d` days, `w` weeks.
-Or `off` for manual only.
-
-```toml
-every = "30s"     every = "2h"      every = "10d"
-every = "15m"     every = "1d"      every = "off"
-```
-
-The interval is measured from the moment the previous run **finished**, so a
-plugin can never overlap with itself and a slow plugin does not fall behind.
-The last finish time is stored rather than kept in memory, so a plugin that
-runs every ten days survives restarts instead of starting its ten days again
-each time the server does. If the server was off when a run came due, it
-happens once at the next start, not once for every interval that passed.
-
-Two things this deliberately is not. It is not a clock: `1d` means "a day after
-the last one finished", not "at nine every morning". And a run that takes an
-hour pushes the next one an hour later. For a daily report that has to land
-before people arrive, that drift matters - say so, and clock-based timing
-becomes worth adding.
-
-Plugins that keep failing are slowed down rather than retried at full speed:
-after three failures in a row the interval doubles each time, up to an hour, and
-the first success puts it back to normal. Without that, one expired password
-fills your history with hundreds of identical failures overnight.
-
-The page says when a plugin is being held back and when it will next be tried,
-rather than simply going quiet. **Run now** runs it immediately anyway, and
-**editing `plugin.toml` clears the wait** - changing a plugin is how you fix a
-failing one, and having to wait out an hour to find out whether it worked is no
-use to anybody.
-
-Only a few plugins run at once (three by default, `--max-concurrent`), because
-plugins usually talk to the same system with the same credentials. The rest wait
-in a queue. Pressing Run now puts that run at the front of the queue, because
-you are sitting there watching it.
-
-### `[run] timeout`
-
-How long one run may take. Exceed it and the process, **and anything it
-started**, is killed; the run is marked failed and the previous good table
-stays on screen.
-
-```toml
-[run]
-timeout = "10m"        # or 600 - a plain number is seconds
-```
-
-Note that it has to be under `[run]`. In TOML a key belongs to the section
-header above it, so a `timeout` appended to the end of the file belongs to
-whatever section came last - snapgrid refuses that and says where it should go,
-rather than ignoring it.
-
-The default is **five minutes**, deliberately short: most plugins finish in a
-second or two, and a plugin that hangs occupies one of the few worker slots
-until something stops it.
-
-This is per-plugin, in that plugin's own `plugin.toml` - not in
-`snapgrid.toml`, which configures the server. A disk check wants thirty seconds
-and a sweep across a dozen environments might want half an hour, and one number
-for all of them would have to be the largest.
-
-A stopped run tells you where it got to:
-
-```
-the plugin was stopped after 600 seconds ([run] timeout).
-Last thing it printed: connecting to ENV4
-```
-
-Whatever it had printed to standard output before it was stopped is kept in the
-log as well. The half-finished table is never shown as a result.
-
-A plugin that times out every time is usually stuck rather than slow: a network
-call with no timeout of its own is the usual cause. Time it by hand before
-raising the number - `time python3 main.py` takes exactly as long there as it
-does here. There is no way to turn the timeout off, because a plugin that never
-finishes holds a worker for ever.
-
-### `[history] keep`
-
-Without this section, only the latest result is kept.
-
-With `keep = 20`, the last twenty **different** results are kept. A run that
-produces exactly the same table as the one before does not use a slot - it just
-updates when that result was last seen. So on a 15 minute schedule, twenty
-snapshots means the last twenty times something actually changed, not the last
-five hours.
-
-The most recent successful result is always kept, even if every run since then
-has failed, so a broken credential never costs you the last good table.
-
-</details>
+**[docs/plugin-toml.md](docs/plugin-toml.md) is the full reference** - every
+key, its default, what it accepts, and every message it can refuse with.
 
 ## Secrets
 
@@ -681,6 +460,7 @@ The rest is deliberate:
 - [docs/secrets.md](docs/secrets.md) - `.env`, encryption, masking
 - [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
 - [examples/](examples/) - six plugins that run anywhere, each with its own explanation
+- [CHANGELOG.md](CHANGELOG.md) - what changed and why it might matter to you
 - [docs/the-web-page.md](docs/the-web-page.md) - what every control does: sorting, filters, showing and sizing columns, resizing and hiding the panels, following the log, light and dark
 - [AGENTS.md](AGENTS.md) - the plugin specification, written to hand to an AI assistant
 

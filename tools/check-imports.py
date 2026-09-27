@@ -28,7 +28,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP = {".git", "__pycache__", ".snapgrid", "plugins", "examples"}
+# plugins/ is the user's own folder and is not ours to police. examples/ is
+# ours, ships with the project, and is the most likely place for an import of
+# something convenient to creep in - so it is checked like everything else.
+SKIP = {".git", "__pycache__", ".snapgrid", "plugins"}
 
 # Modules that are part of Python itself. sys.stdlib_module_names covers the
 # interpreter running this, which is the one that matters.

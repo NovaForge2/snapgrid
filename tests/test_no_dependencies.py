@@ -37,6 +37,13 @@ class NothingToInstall(unittest.TestCase):
         self.assertIn("requests", found)
         self.assertNotIn("requests", check_imports.STANDARD)
 
+    def test_the_examples_are_checked_too(self):
+        # They ship with the project and are the likeliest place for an import
+        # of something convenient to creep in, so they are not exempt.
+        self.assertNotIn("examples", check_imports.SKIP)
+        self.assertIn("plugins", check_imports.SKIP,
+                      "the user's own folder is not ours to police")
+
     def test_our_own_modules_are_not_mistaken_for_dependencies(self):
         for name in ("snapgrid", "tests", "tools"):
             self.assertIn(name, check_imports.OURS)

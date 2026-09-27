@@ -65,3 +65,27 @@ change. They use only the standard library, like the rest of the project.
 By submitting a contribution you confirm that you are the author of it, that
 you have the right to submit it, and that it is contributed under the Apache
 License 2.0, like the rest of the project.
+
+## Versions and releases
+
+The version lives in **one place**, `snapgrid/__init__.py`, and `./server.py
+--version` prints it. There is no packaging metadata to keep in step, because
+there is nothing to install.
+
+Numbering is ordinary semantic versioning, read from the point of view of
+somebody who has written plugins:
+
+- **patch** - a fix that changes nothing about how a plugin is written;
+- **minor** - a new `plugin.toml` key, or something new in the page. Existing
+  plugins keep working;
+- **major** - a plugin that worked before would have to be changed.
+
+To cut a release:
+
+1. Move the **Unreleased** entries in `CHANGELOG.md` under the new number.
+2. Update `__version__`.
+3. Commit, tag `vX.Y.Z`, push the tag.
+4. Write the GitHub release from the changelog entry.
+
+That is the whole process, and it should stay that small. A project that
+nothing depends on does not need a release train.
