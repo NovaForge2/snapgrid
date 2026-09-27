@@ -59,11 +59,22 @@ clone` and a Python that already exists. That is the whole difference, and on a
 machine where you are not allowed to install anything, it is the only one that
 matters.
 
-### Coming next
+Because every result is stored, snapgrid can also show **what changed** between
+runs - which version moved, which certificate got closer to expiring, which job
+started failing. That is [further down](#seeing-what-changed).
 
-Comparing snapshots: what changed between this run and the last one - which
-version moved, which certificate got closer to expiring, which job started
-failing. Every result is already stored; showing the difference is next.
+### Not there yet
+
+Being straight about the gaps, since they are the reasons you might want
+something else:
+
+- **No alerting.** Nothing is sent anywhere. snapgrid records and shows; you
+  look. If you need to be woken up, you need a monitoring system.
+- **No authentication**, and so it refuses to listen anywhere but this machine.
+- **The schedule is an interval, not a clock.** `"1d"` means a day after the
+  last run finished, not nine every morning.
+- **No sandbox.** A plugin is a program that runs as you - see
+  [SECURITY.md](SECURITY.md).
 
 ## Try it now
 
