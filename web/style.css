@@ -186,11 +186,10 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   display: flex; align-items: center; gap: 8px;
 }
 #sidebar-foot .grow { flex: 1; }
-#theme {
-  border: 0; background: none; color: var(--muted); cursor: pointer;
-  font: inherit; padding: 3px 7px; border-radius: 5px;
-}
-#theme:hover { background: var(--hover); color: var(--text); }
+/* In the toolbar rather than the sidebar foot, because hiding the sidebar
+   used to take the only way of changing the theme with it. */
+#theme { color: var(--muted); min-width: 5.5em; text-align: left; }
+#theme:hover { color: var(--text); border-color: var(--accent); }
 
 /* ---------- main ---------- */
 #main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

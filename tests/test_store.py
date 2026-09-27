@@ -151,8 +151,8 @@ class CellHistory(StoreTest):
     def save(self, rows):
         self.store.save_snapshot("p", self.COLUMNS, rows, 20)
 
-    def history(self, repo="payments-api", column=1):
-        return self.store.cell_history("p", 0, repo, column)
+    def history(self, repo="payments-api", column="ENV1"):
+        return self.store.cell_history("p", "repo", repo, column)
 
     def test_one_snapshot_gives_one_entry(self):
         self.save([["payments-api", "2.14.1"]])
@@ -186,6 +186,26 @@ class CellHistory(StoreTest):
         self.save([["payments-api", "2.14.1"]])
         self.store.save_snapshot("p", ["repo"], [["payments-api"]], 20)
         self.assertEqual([e["value"] for e in self.history()], ["2.14.1"])
+
+    def test_a_reordered_column_is_not_read_out_of_the_wrong_one(self):
+        # The bug this replaced: older snapshots were indexed with the newest
+        # snapshot's layout, so a column that moved reported a neighbour's
+        # values as its own history.
+        self.store.save_snapshot("p", ["repo", "ENV2"], [["api", "from-ENV2"]], 20)
+        self.store.save_snapshot("p", ["repo", "ENV1"], [["api", "from-ENV1"]], 20)
+        got = [e["value"] for e in self.store.cell_history("p", "repo", "api", "ENV1")]
+        self.assertEqual(got, ["from-ENV1"],
+                         "a run without this column has no history to give")
+
+    def test_a_column_that_moved_position_is_still_followed(self):
+        # The other half: the same column in a different place is the same
+        # column, and its history should survive the move.
+        self.store.save_snapshot("p", ["repo", "ENV1", "ENV2"],
+                                 [["api", "1.0", "x"]], 20)
+        self.store.save_snapshot("p", ["repo", "ENV2", "ENV1"],
+                                 [["api", "x", "2.0"]], 20)
+        got = [e["value"] for e in self.store.cell_history("p", "repo", "api", "ENV1")]
+        self.assertEqual(got, ["2.0", "1.0"])
 
     def test_an_unknown_row_has_no_history(self):
         self.save([["payments-api", "2.14.1"]])

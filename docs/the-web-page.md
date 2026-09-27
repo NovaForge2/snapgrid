@@ -2,10 +2,14 @@
 
 # The web page
 
-**Light or dark:** the button in the bottom left corner cycles `auto`, `light`
-and `dark`. `auto` follows your operating system, which is the default. The
-choice is remembered in your browser and is not shared with anyone else looking
-at the same instance.
+**Light or dark:** the button in the toolbar - `◑ auto`, `☀ light`,
+`☾ dark` - cycles through the three. `auto` follows your operating system
+and is the default. It sits in the toolbar rather than in a corner because
+hiding the left panel used to take the only way of changing the theme with it.
+
+The choice is remembered in your browser and is not shared with anyone else
+looking at the same instance. A link carrying `?theme=dark` opens that way
+whatever the machine prefers, and pressing the button still wins.
 
 - **Left panel** - plugins grouped by `group`, with a status dot: green for a
   good run, red for a failure or a broken `plugin.toml`, blue while running.

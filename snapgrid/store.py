@@ -259,13 +259,19 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def cell_history(self, plugin_id: str, key_index: int, key_value: str,
-                     column_index: int, limit: int = 50) -> list[dict[str, Any]]:
+    def cell_history(self, plugin_id: str, key_name: str, key_value: str,
+                     column_name: str, limit: int = 50) -> list[dict[str, Any]]:
         """What one cell has been, newest first, with repeats collapsed.
 
         Done here rather than in the page because answering "when did this
         change?" from the browser would mean downloading every snapshot in
         full to read one value out of each.
+
+        Columns are found **by name in each snapshot**, not by position. A
+        plugin that reorders or inserts a column would otherwise have old
+        values read out of whichever column now happens to sit at that index,
+        and reported as this column's history. Inventing a value is worse than
+        having none, so a run without both columns is skipped.
         """
         with self._lock:
             rows = self._db.execute(
@@ -277,8 +283,11 @@ class Store:
         history: list[dict[str, Any]] = []
         for row in rows:
             columns = json.loads(row["columns_json"])
-            if key_index >= len(columns) or column_index >= len(columns):
-                continue                      # the shape changed; skip that one
+            try:
+                key_index = columns.index(key_name)
+                column_index = columns.index(column_name)
+            except ValueError:
+                continue                      # that run did not have both columns
             value = None
             for values in json.loads(row["rows_json"]):
                 if key_index < len(values) and values[key_index] == key_value:

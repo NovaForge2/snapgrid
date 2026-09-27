@@ -16,6 +16,7 @@ const state = {
   side: null,         // null, "log" or "config"
   depth: 1,           // how many runs are shown in each cell; 1 means off
   past: [],           // the older snapshots, newest first, once fetched
+  pastFor: "",        // what those older snapshots were fetched for
   onlyChanged: false,
   sort: { column: null, direction: 0 },
   search: "",
@@ -32,12 +33,16 @@ const el = (id) => document.getElementById(id);
 const THEMES = ["auto", "light", "dark"];
 const THEME_KEY = "snapgrid-theme";
 
+// A symbol as well as the word: the word alone reads as a label rather than
+// as something to press.
+const THEME_MARKS = { auto: "\u25D1", light: "\u2600", dark: "\u263E" };
+
 function applyTheme(choice) {
   const root = document.documentElement;
   if (choice === "auto") root.removeAttribute("data-theme");
   else root.setAttribute("data-theme", choice);
   const button = document.getElementById("theme");
-  if (button) button.textContent = choice;
+  if (button) button.textContent = `${THEME_MARKS[choice]} ${choice}`;
 }
 
 function storedTheme() {
@@ -355,6 +360,13 @@ async function loadDetail() {
   try {
     state.detail = await api("/api/plugins/" + encodeURIComponent(state.selected) + query);
     renderDetail();
+    // Choosing an older result, or a new run finishing, moves what is on
+    // screen. The baseline has to move with it, or the table ends up
+    // comparing a result with itself and reporting that nothing changed.
+    if (state.depth > 1 && state.pastFor !== comparisonSignature()) {
+      await loadComparison();
+      renderTable();
+    }
   } catch (error) {
     showMessage(error.message, false);
   }
@@ -542,8 +554,12 @@ function compareRuns(current) {
 
   const indexed = runs.map((run) => byKey(run.columns, run.rows));
   if (indexed.some((one) => one.duplicates)) {
+    // Cell by cell comparison needs one row per name. Without that, whole
+    // rows can still be compared - a row is the same row or it is not - which
+    // is less, but is what the documentation promises and is better than
+    // showing nothing.
     const name = current.columns[keyIndex(current.columns)];
-    return { degraded: `more than one row is called the same thing in "${name}"` };
+    return wholeRows(runs, `more than one row is called the same thing in "${name}"`);
   }
 
   const names = [];
@@ -580,6 +596,69 @@ function compareRuns(current) {
   return { rows, names, runs, changedCells, added, removed };
 }
 
+// A row compared as a whole, for when rows cannot be told apart by name.
+function rowText(row) {
+  return JSON.stringify(row);
+}
+
+function wholeRows(runs, why) {
+  // Rows are compared as whole lines here, so two identical lines are two
+  // things, not one. Everything below counts copies: three of a row yesterday
+  // and none today is three rows gone, and it is drawn as three.
+  const counts = runs.map((run) => {
+    const seen = new Map();
+    for (const row of run.rows) {
+      const text = rowText(row);
+      seen.set(text, (seen.get(text) || 0) + 1);
+    }
+    return seen;
+  });
+
+  const distinct = [];
+  const seen = new Set();
+  for (const run of runs) {
+    for (const row of run.rows) {
+      const text = rowText(row);
+      if (!seen.has(text)) { seen.add(text); distinct.push({ text, row }); }
+    }
+  }
+
+  const rows = new Map();
+  const names = [];
+  let added = 0;
+  let removed = 0;
+
+  for (const { text, row } of distinct) {
+    const perRun = counts.map((one) => one.get(text) || 0);
+    const copies = Math.max(...perRun);
+
+    // One entry per copy. Copy n exists in a run if that run held more than n
+    // of it, which is what turns "three became one" into two rows gone rather
+    // than one row that is somehow still here.
+    for (let n = 0; n < copies; n += 1) {
+      const presence = perRun.map((held) => held > n);
+      const here = presence[0];
+      const everBefore = presence.slice(1).some(Boolean);
+      // Moved if this copy was not there in every run being compared, which
+      // also catches one that went away and came back inside the window.
+      const moved = presence.some((one) => one !== presence[0]);
+
+      if (here && !everBefore) added += 1;
+      else if (!here && everBefore) removed += 1;
+
+      rows.set(`${text}#${n}`, {
+        overRuns: here ? [row] : [null, row],
+        here,
+        everBefore,
+        moved,
+      });
+      names.push(`${text}#${n}`);
+    }
+  }
+
+  return { rows, names, runs, changedCells: 0, added, removed, whole: true, degraded: why };
+}
+
 function cellValue(row, index) {
   return row[index] === undefined ? "" : row[index];
 }
@@ -589,25 +668,44 @@ function sameRow(a, b, columns) {
   return columns.every((_, index) => cellValue(a, index) === cellValue(b, index));
 }
 
+// What a set of older snapshots belongs to: this plugin, showing this result,
+// this many runs back. When any of those changes the baseline is wrong.
+function comparisonSignature() {
+  const snapshots = (state.detail && state.detail.snapshots) || [];
+  const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
+  return `${state.selected}|${showing}|${state.depth}`;
+}
+
+// Bumped on every request, so a slow answer cannot land after a newer one and
+// overwrite it. Switching plugins mid-flight used to leave one plugin's table
+// being compared against another plugin's history.
+let comparisonRequest = 0;
+
 async function loadComparison() {
+  const mine = ++comparisonRequest;
+  const wanted = comparisonSignature();
   state.past = [];
+  state.pastFor = "";
   if (state.depth < 2 || !state.detail) return;
 
   const snapshots = state.detail.snapshots || [];
   const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
   const at = snapshots.findIndex((snapshot) => snapshot.id === showing);
-  const wanted = snapshots.slice(at + 1, at + state.depth);
+  const older = snapshots.slice(at + 1, at + state.depth);
 
   const loaded = [];
-  for (const snapshot of wanted) {
+  for (const snapshot of older) {
     try {
       const payload = await api("/api/snapshots/" + snapshot.id);
+      if (mine !== comparisonRequest) return;       // something newer was asked for
       loaded.push(payload.snapshot || payload);     // the endpoint wraps it
     } catch (error) {
       break;                                        // show what was readable
     }
   }
+  if (mine !== comparisonRequest) return;
   state.past = loaded;
+  state.pastFor = wanted;
 }
 
 function renderDiffBar(diff) {
@@ -623,20 +721,23 @@ function renderDiffBar(diff) {
   const tally = el("diff-tally");
   tally.textContent = "";
 
-  if (diff.impossible || diff.degraded) {
-    what.textContent = diff.impossible
-      ? "Cannot compare: " + diff.impossible
-      : "Cannot line the rows up: " + diff.degraded;
+  if (diff.impossible) {
+    what.textContent = "Cannot compare: " + diff.impossible;
     return;
   }
 
-  what.textContent = `Showing the last ${diff.runs.length} runs`;
+  what.textContent = diff.degraded
+    ? `Whole rows only, because ${diff.degraded}`
+    : `Showing the last ${diff.runs.length} runs`;
 
   // The runs are the same for every cell, so they are named once, here.
   // There is no room for a date inside a cell.
   const legend = document.createElement("span");
   legend.className = "legend";
-  diff.runs.forEach((run, at) => {
+  // Whole row mode draws one line per row, so numbering five runs would point
+  // at lines that are not there.
+  const listed = diff.whole ? diff.runs.slice(0, 1) : diff.runs;
+  listed.forEach((run, at) => {
     const item = document.createElement("span");
     const number = document.createElement("i");
     number.className = at === 0 ? "n now" : "n";
@@ -1067,6 +1168,12 @@ function renderTable() {
           const value = cellValue(row, index);
           td.textContent = value;
           td.title = value;   // cells are clipped, so keep the full value reachable
+          if (index === key && kind) {
+            const chip = document.createElement("span");
+            chip.className = "chip " + kind;
+            chip.textContent = kind === "added" ? "new" : "gone";
+            td.appendChild(chip);
+          }
           tr.appendChild(td);
           return;
         }
@@ -1113,8 +1220,12 @@ function renderTable() {
             line.className = at === 0 ? "v now" : "v old";
             line.textContent = value;
           }
-          line.addEventListener("click", () =>
-            openCellHistory(cellValue(row, key), columns[index], td));
+          line.addEventListener("click", (event) => {
+            // Without this the same click reaches the document handler below
+            // and closes the popup in the same tick as it opens.
+            event.stopPropagation();
+            openCellHistory(cellValue(row, key), columns[index], td);
+          });
           td.appendChild(line);
         }
         tr.appendChild(td);
@@ -1125,16 +1236,33 @@ function renderTable() {
     if (!usable) {
       for (const row of rows) drawRow(row, null, "");
     } else {
-      const shownNames = new Set(rows.map((row) => row[key]));
+      // Walk the rows in the order the table was sorted and filtered into,
+      // rather than the order the snapshot happened to store them in, so that
+      // clicking a heading still does something while comparing.
+      // Identical rows are separate things in whole row mode, so the first
+      // one on screen takes the first entry, the second takes the second.
+      const taken = new Map();
+      const nameOf = (row) => {
+        if (!usable.whole) return row[key];
+        const text = rowText(row);
+        const n = taken.get(text) || 0;
+        taken.set(text, n + 1);
+        return `${text}#${n}`;
+      };
+      for (const row of rows) {
+        const entry = usable.rows.get(nameOf(row));
+        if (!entry) continue;
+        if (state.onlyChanged && !entry.moved) continue;
+        drawRow(row, usable.whole ? null : entry.overRuns,
+                entry.everBefore ? "" : "added");
+      }
+      // A row that has gone is not in this result at all, so no filter and no
+      // sort applies to it. It goes after the rows that are still here.
       for (const name of usable.names) {
         const entry = usable.rows.get(name);
-        // A row that is on screen now has to survive the filters; one that has
-        // gone is not in this result to be filtered, so it is always shown.
-        if (entry.here && !shownNames.has(name)) continue;
-        if (state.onlyChanged && !entry.moved) continue;
-        const kind = !entry.here ? "removed" : (!entry.everBefore ? "added" : "");
+        if (entry.here) continue;
         const newest = entry.overRuns.find((one) => one !== null);
-        drawRow(newest, entry.overRuns, kind);
+        drawRow(newest, usable.whole ? null : entry.overRuns, "removed");
       }
     }
   }
@@ -1466,7 +1594,7 @@ document.addEventListener("click", (event) => {
   if (!popup.hidden && !popup.contains(event.target)) closeFilter();
   const history = el("cell-history");
   if (!history.hidden && !history.contains(event.target)
-      && !event.target.closest("td.changed")) {
+      && !event.target.closest("td.stack")) {
     closeCellHistory();
   }
 });

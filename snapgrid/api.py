@@ -176,8 +176,8 @@ class Application:
             "row": key_value,
             "column": column_name,
             "history": self.store.cell_history(
-                plugin.id, columns.index(key_name), key_value,
-                columns.index(column_name), limit=max(plugin.history_keep, 1) + 1,
+                plugin.id, key_name, key_value, column_name,
+                limit=max(plugin.history_keep, 1) + 1,
             ),
         }
 
