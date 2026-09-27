@@ -1,0 +1,7 @@
+# One host per line. Comments and blank lines are ignored.
+# A port can be given as host:port; 443 is assumed.
+example.com
+www.python.org
+github.com
+# an internal service on a different port might look like:
+# intranet.example.internal:8443

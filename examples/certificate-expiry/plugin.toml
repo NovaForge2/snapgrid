@@ -1,0 +1,23 @@
+# When each TLS certificate expires.
+# Edit hosts.txt to say which hosts to watch. Nothing else to configure.
+
+[plugin]
+name        = "Certificate expiry"
+description = "Expiry date and days remaining for each host in hosts.txt"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+# Each host gets 6 seconds of its own; this is the ceiling for the whole run.
+timeout = "5m"
+# Certificates change perhaps twice a year. Checking every minute would be
+# rude to the servers and tell you nothing new.
+every   = "6h"
+
+[table]
+columns = ["host", "expires", "days_left", "issuer"]
+key     = "host"
+
+# The interesting question is "when did this get renewed?", so keep history.
+[history]
+keep = 20

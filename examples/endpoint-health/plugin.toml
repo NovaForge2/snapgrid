@@ -1,0 +1,19 @@
+# Whether each endpoint answers, and how quickly.
+# Edit urls.txt to say which ones. Nothing else to configure.
+
+[plugin]
+name        = "Endpoint health"
+description = "Status code and response time for each URL in urls.txt"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = "5m"            # each URL gets 8 seconds of its own
+every   = "5m"            # often enough to notice, rare enough to be polite
+
+[table]
+columns = ["endpoint", "host", "status", "ms"]
+key     = "endpoint"
+
+[history]
+keep = 20

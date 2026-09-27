@@ -1,0 +1,21 @@
+# How much room is left on each disk.
+# Copy this folder into your plugins folder; it needs nothing configured.
+
+[plugin]
+name        = "Disk space"
+description = "Size, used and free on every mounted filesystem"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = "30s"           # measuring a disk is instant; if it is not, something is wrong
+every   = "15m"           # disks do not fill up in seconds
+
+[table]
+columns = ["filesystem", "size_gb", "used_gb", "free_gb", "used_percent"]
+key     = "filesystem"    # what names a row, so two runs can be lined up
+
+# Keep the last twenty times the numbers actually changed, which is what makes
+# "when did this start filling up?" answerable.
+[history]
+keep = 20

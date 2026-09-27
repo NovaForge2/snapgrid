@@ -75,9 +75,14 @@ git clone https://github.com/NovaForge2/snapgrid.git && cd snapgrid
 ./server.py --dir examples
 ```
 
-Open the address it prints. Two example plugins are already there - **Service inventory** reads a
-JSON file, the other invents a table whose values drift over time, so you can
-watch the history fill up.
+Open the address it prints. **Six example plugins** are already there, and all
+of them run anywhere with nothing to configure: free disk space, TLS
+certificate expiry, endpoint response times, a hand-maintained directory with
+no program at all, a script reading a JSON file, and one that invents versions
+that drift so you can watch the history and the comparison fill up.
+
+Each has a README explaining how it works and what to change -
+see [examples/](examples/).
 
 When you want to write your own, restart without `--dir`, which uses `plugins/`:
 
@@ -675,6 +680,7 @@ The rest is deliberate:
 - [SECURITY.md](SECURITY.md) - what snapgrid does and does not protect you from, and how to report something
 - [docs/secrets.md](docs/secrets.md) - `.env`, encryption, masking
 - [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
+- [examples/](examples/) - six plugins that run anywhere, each with its own explanation
 - [docs/the-web-page.md](docs/the-web-page.md) - what every control does: sorting, filters, showing and sizing columns, resizing and hiding the panels, following the log, light and dark
 - [AGENTS.md](AGENTS.md) - the plugin specification, written to hand to an AI assistant
 

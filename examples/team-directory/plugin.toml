@@ -1,0 +1,27 @@
+# A plugin with no program at all.
+#
+# There is no [run] command here. The folder holds a manifest and a file, and
+# that is a plugin: snapgrid re-reads the file on each run, so editing it
+# updates the table. Use this when the data is something somebody maintains
+# rather than something to compute.
+
+[plugin]
+name        = "Team directory"
+description = "Who owns what. Edit directory.csv to change it"
+group       = "Examples"
+
+[run]
+# No command. Only how often to re-read the file.
+every = "1h"
+
+[output]
+file = "directory.csv"
+# An .xlsx works here too, and is read as a spreadsheet:
+#   file  = "directory.xlsx"
+#   sheet = "Current"
+
+[table]
+key = "service"
+
+[history]
+keep = 20

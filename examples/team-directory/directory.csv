@@ -1,0 +1,6 @@
+service,team,owner,on_call,runbook
+payments-api,Payments,A. Novak,payments-oncall,https://wiki.example.internal/payments
+orders-api,Orders,R. Silva,orders-oncall,https://wiki.example.internal/orders
+customer-api,Customer,J. Adeyemi,customer-oncall,https://wiki.example.internal/customer
+notifications-api,Platform,,platform-oncall,https://wiki.example.internal/platform
+reporting-svc,Data,M. Lindqvist,data-oncall,
