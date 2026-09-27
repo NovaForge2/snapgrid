@@ -15,6 +15,7 @@ from snapgrid.api import make_server
 from snapgrid.config import Config
 from snapgrid.manifest import Registry
 from snapgrid.runner import Runner
+from snapgrid.spreadsheet import read_xlsx
 from snapgrid.store import Store
 
 
@@ -184,18 +185,33 @@ class Reading(ApiTest):
             self.assertIn(expected, headers["Content-Type"], path)
 
     def test_export_before_anything_has_run(self):
-        status, payload = self.get_json("/api/plugins/demo/export.csv")
+        status, payload = self.get_json("/api/plugins/demo/export.xlsx")
         self.assertEqual(status, 404)
         self.assertIn("no result", payload["error"])
 
-    def test_export_returns_the_table_as_a_download(self):
+    def test_export_returns_a_workbook_as_a_download(self):
         self.store.save_snapshot("demo", ["a", "b"], [["1", "2"], ["x,y", "3"]], 5)
-        status, body, headers = self.request("/api/plugins/demo/export.csv",
+        status, body, headers = self.request("/api/plugins/demo/export.xlsx",
                                              headers={"X-Snapgrid": "1"})
         self.assertEqual(status, 200)
-        self.assertIn("text/csv", headers["Content-Type"])
+        self.assertIn("spreadsheetml", headers["Content-Type"])
         self.assertIn("attachment", headers["Content-Disposition"])
-        self.assertEqual(body.decode(), 'a,b\n1,2\n"x,y",3\n')
+        self.assertIn(".xlsx", headers["Content-Disposition"])
+        self.assertTrue(body.startswith(b"PK"), "an xlsx is a zip")
+
+    def test_the_workbook_holds_the_table(self):
+        self.store.save_snapshot("demo", ["a", "b"], [["1", "2"], ["x,y", "3"]], 5)
+        _, body, _ = self.request("/api/plugins/demo/export.xlsx",
+                                  headers={"X-Snapgrid": "1"})
+        folder = tempfile.mkdtemp()
+        path = Path(folder) / "out.xlsx"
+        path.write_bytes(body)
+        self.assertEqual(read_xlsx(path), [["a", "b"], ["1", "2"], ["x,y", "3"]])
+
+    def test_csv_export_is_gone(self):
+        self.store.save_snapshot("demo", ["a"], [["1"]], 5)
+        status, _ = self.get_json("/api/plugins/demo/export.csv")
+        self.assertEqual(status, 404)
 
 
 class Config_(ApiTest):

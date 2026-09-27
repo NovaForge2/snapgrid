@@ -89,7 +89,7 @@ When you want to write your own, restart without `--dir`, which uses `plugins/`:
 
 | | |
 |---|---|
-| **A real grid** | click to sort, per-column filters with value counts, search everything, export CSV |
+| **A real grid** | click to sort, per-column filters with value counts, search everything, export to Excel |
 | **Runs by itself** | every plugin on a schedule, in the background, results cached so the page is instant |
 | **History** | every result kept, with a dropdown to look back. Identical runs do not use a slot, so twenty snapshots means the last twenty times something actually changed |
 | **What changed** | compare the last 2 to 5 runs in the table itself - values that moved, rows that appeared, rows that went - and click any value for its own history |

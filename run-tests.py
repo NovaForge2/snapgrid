@@ -47,6 +47,7 @@ AREAS = {
     "test_api": "the HTTP interface",
     "test_gif": "the GIF in the README",
     "test_no_dependencies": "nothing to install",
+    "test_workbook": "writing .xlsx",
 }
 
 

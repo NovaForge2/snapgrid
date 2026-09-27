@@ -218,12 +218,12 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
 #row-note { color: var(--muted); font-size: 12px; }
 /* Something is being kept from view, so the button says so. */
 #btn-columns.active { color: var(--accent); border-color: var(--accent); }
-button, select, input[type=search], #btn-export {
+button, select, input[type=search], #btn-xlsx {
   font: inherit; color: var(--text); background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px;
 }
-button, #btn-export { cursor: pointer; text-decoration: none; }
-button:hover, #btn-export:hover { background: var(--hover); }
+button, #btn-xlsx { cursor: pointer; text-decoration: none; }
+button:hover, #btn-xlsx:hover { background: var(--hover); }
 #btn-refresh { background: var(--accent); border-color: var(--accent); color: #fff; }
 #btn-refresh:hover { filter: brightness(1.08); }
 #btn-refresh[disabled] { opacity: .55; cursor: default; filter: none; }

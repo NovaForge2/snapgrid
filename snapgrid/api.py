@@ -33,6 +33,7 @@ from . import store as store_module
 from .config import Config, display_path
 from .manifest import MANIFEST_NAME
 from .scheduler import interval_for
+from .workbook import write_xlsx
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 from .runner import resolve_command
@@ -56,7 +57,7 @@ CONTENT_TYPES = {
 PLUGIN_RUN_RE = re.compile(r"^/api/plugins/([^/]+)/run$")
 PLUGIN_RUNS_RE = re.compile(r"^/api/plugins/([^/]+)/runs$")
 PLUGIN_SNAPS_RE = re.compile(r"^/api/plugins/([^/]+)/snapshots$")
-PLUGIN_EXPORT_RE = re.compile(r"^/api/plugins/([^/]+)/export\.csv$")
+PLUGIN_XLSX_RE = re.compile(r"^/api/plugins/([^/]+)/export\.xlsx$")
 PLUGIN_CONFIG_RE = re.compile(r"^/api/plugins/([^/]+)/config$")
 PLUGIN_CELL_RE = re.compile(r"^/api/plugins/([^/]+)/cell$")
 PLUGIN_RE = re.compile(r"^/api/plugins/([^/]+)$")
@@ -286,7 +287,7 @@ class Application:
             raise HttpError(404, "no such snapshot")
         return {"snapshot": snapshot}
 
-    def export_csv(self, plugin_id: str, query: dict) -> tuple[bytes, str]:
+    def _to_export(self, plugin_id: str, query: dict):
         plugin = self._plugin(plugin_id)
         snapshot_id = query.get("snapshot", [None])[0]
         snapshot = (
@@ -296,13 +297,13 @@ class Application:
         )
         if snapshot is None or snapshot["plugin_id"] != plugin.id:
             raise HttpError(404, "there is no result to export yet")
-
-        buffer = io.StringIO()
-        writer = csv.writer(buffer, lineterminator="\n")
-        writer.writerow(snapshot["columns"])
-        writer.writerows(snapshot["rows"])
         stamp = time.strftime("%Y%m%d-%H%M", time.localtime(snapshot["last_seen"]))
-        return buffer.getvalue().encode("utf-8"), f"{plugin.id}-{stamp}.csv"
+        return plugin, snapshot, stamp
+
+    def export_xlsx(self, plugin_id: str, query: dict) -> tuple[bytes, str]:
+        plugin, snapshot, stamp = self._to_export(plugin_id, query)
+        body = write_xlsx(snapshot["columns"], snapshot["rows"], sheet_name=plugin.name)
+        return body, f"{plugin.id}-{stamp}.xlsx"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -387,11 +388,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/plugins":
                 return self._json(self.app.list_plugins())
 
-            match = PLUGIN_EXPORT_RE.match(path)
+            match = PLUGIN_XLSX_RE.match(path)
             if match:
-                body, filename = self.app.export_csv(match.group(1), query)
+                body, filename = self.app.export_xlsx(match.group(1), query)
                 return self._send(
-                    200, body, "text/csv; charset=utf-8",
+                    200, body,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     {"Content-Disposition": f'attachment; filename="{filename}"'},
                 )
 

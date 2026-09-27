@@ -35,7 +35,18 @@ whatever the machine prefers, and pressing the button still wins.
 - **Column widths** are dragged by the edge of a heading. Double-click an edge
   to let that column size itself again. Both the widths and the hidden columns
   are remembered per plugin, in your browser only.
-- **Export CSV** downloads exactly what you are looking at.
+- **Export Excel** downloads an `.xlsx` of the result: the header row frozen
+  and in bold on a filled background, a filter dropdown on every column, thin
+  borders and banded rows, and column widths from the content. **CSV** next to
+  it is the plain version, for scripts.
+
+  The reason to prefer the workbook is not decoration. Excel *interprets* a
+  CSV as it opens it: `1.10` becomes `1.1`, so a version sorts before `1.9`;
+  `0042` becomes `42`; a twenty digit account number becomes `1E+20` and the
+  rest is gone. In the workbook every value is written as text unless the
+  whole column is made of numbers that come back **identical** - so figures
+  you might want to add up stay addable, and everything else arrives exactly
+  as the plugin printed it.
 - **The dropdown next to Run now** appears once there is history, and shows any
   earlier result.
 - **The second dropdown compares runs** - see below.

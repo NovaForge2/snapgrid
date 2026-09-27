@@ -446,8 +446,8 @@ function renderDetail() {
   else if (state.side === "config" && state.configFor !== detail.id) loadConfig();
 
   const suffix = state.snapshotId ? "?snapshot=" + state.snapshotId : "";
-  el("btn-export").href =
-    "/api/plugins/" + encodeURIComponent(detail.id) + "/export.csv" + suffix;
+  el("btn-xlsx").href =
+    "/api/plugins/" + encodeURIComponent(detail.id) + "/export.xlsx" + suffix;
 
   // Filters only make sense for the columns they were built against.
   const snapshot = detail.snapshot;
