@@ -73,6 +73,35 @@ anything running as you can decrypt anything you can.
 If that is not enough for a particular secret, do not put that secret in a
 `.env` file.
 
+## What snapgrid itself connects to
+
+**Nothing but this machine.** Audited rather than asserted:
+
+- The server **listens** on 127.0.0.1 and refuses to listen anywhere else.
+- The only outbound request anywhere in the package asks `http://<host>:<port>/api/plugins`
+  before starting, to tell "a snapgrid is already running here" apart from
+  "something else has this port". `<host>` is the address it is about to bind,
+  which is loopback.
+- The page loads **no external anything**: no CDN, no fonts, no analytics, no
+  telemetry. Its only requests are relative `/api/...` paths to the server you
+  opened. The favicon is an inline `data:` URI.
+- Reading an `.xlsx` **does not resolve external entities**, so a spreadsheet
+  containing `<!ENTITY x SYSTEM "http://...">` is refused rather than fetched.
+  There is a test for that.
+- `--open` opens a browser at the local address and nothing else.
+
+You can check this yourself on a running instance:
+
+```bash
+lsof -p "$(python3 -c "import json;print(json.load(open('plugins/.snapgrid/server.json'))['pid'])")" -a -i -P
+```
+
+**Your plugins are a different matter.** They are your programs and they do
+whatever you wrote them to do - two of the shipped examples deliberately reach
+the internet, one to read certificate expiry dates and one to time HTTP
+endpoints. That is the point of them, and it is also why reading a plugin
+before adding it matters.
+
 ## What is checked automatically
 
 - **The tests** run on every push and pull request, on Linux, macOS and Windows

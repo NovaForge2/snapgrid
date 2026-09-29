@@ -278,5 +278,50 @@ class Helpers(unittest.TestCase):
         self.assertEqual(tidy_number("not a number"), "not a number")
 
 
+class AHostileWorkbook(unittest.TestCase):
+    """A spreadsheet is somebody else's file, and XML can be made to reach out.
+
+    An entity declaration pointing at a URL or a local path is the classic
+    trick: the parser fetches it and puts the answer in a cell. Python's
+    ElementTree does not resolve external entities, so this is refused rather
+    than fetched - but nothing said so, and a later change to a different
+    parser would quietly turn a reporting tool into one that makes requests on
+    behalf of whoever wrote the file.
+    """
+
+    SHEET = """<?xml version="1.0"?>
+<!DOCTYPE t [
+  <!ENTITY reach SYSTEM "http://127.0.0.1:9/fetched">
+  <!ENTITY local SYSTEM "file:///etc/passwd">
+]>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>&reach;</t></is></c></row></sheetData>
+</worksheet>"""
+
+    WORKBOOK = """<?xml version="1.0"?><workbook
+ xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"""
+
+    RELS = """<?xml version="1.0"?><Relationships
+ xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1"
+ Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+ Target="worksheets/sheet1.xml"/></Relationships>"""
+
+    def test_an_external_entity_is_refused_not_fetched(self):
+        folder = tempfile.mkdtemp()
+        path = Path(folder) / "hostile.xlsx"
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("xl/workbook.xml", self.WORKBOOK)
+            archive.writestr("xl/_rels/workbook.xml.rels", self.RELS)
+            archive.writestr("xl/worksheets/sheet1.xml", self.SHEET)
+
+        with self.assertRaises(SpreadsheetError) as caught:
+            read_xlsx(path)
+        self.assertIn("undefined entity", str(caught.exception),
+                      "the entity must be left unresolved, not looked up")
+
+
 if __name__ == "__main__":
     unittest.main()
