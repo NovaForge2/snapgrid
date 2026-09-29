@@ -1227,18 +1227,40 @@ function lockWidths(table, shownColumns) {
   return widths;
 }
 
+// A table laid out from fixed widths has to be told how wide it is. Left to
+// itself it comes out wider than its columns add up to, and a fixed layout
+// gives that difference to the last column - which is why the last column
+// could never be made narrower, and why once any slack existed, dragging any
+// other column appeared to do nothing: the slack absorbed the change.
+//
+// So a complete set of widths means fixed layout and an explicit table width.
+// Anything less stays on the browser's own layout, where the widths we do
+// have are suggestions rather than something to fight with.
 function applyWidths(table, shownColumns) {
   const widths = storedWidths();
   if (!Object.keys(widths).length) return;
-  table.classList.add("fixed");
+
   const headings = table.querySelectorAll("thead th");
+  const complete = shownColumns.every((column) => widths[column]);
+
+  table.classList.toggle("fixed", complete);
   shownColumns.forEach((column, index) => {
     if (widths[column] && headings[index]) headings[index].style.width = widths[column] + "px";
   });
+  table.style.width = complete ? totalWidth(widths, shownColumns) + "px" : "";
+}
+
+// The width the table should be: its columns, with one of them replaced while
+// that one is being dragged.
+function totalWidth(widths, shownColumns, replacing, replacement) {
+  return shownColumns.reduce(
+    (total, column) => total + (column === replacing ? replacement : widths[column] || 0), 0);
 }
 
 // shownColumns, not every column: a hidden column has no heading, so anything
 // matching headings by position has to count only the ones on screen.
+const MIN_COLUMN = 48;   // narrower than this and a heading cannot be read
+
 function columnGrip(table, shownColumns, column, th) {
   const grip = document.createElement("span");
   grip.className = "col-grip";
@@ -1249,15 +1271,21 @@ function columnGrip(table, shownColumns, column, th) {
     event.preventDefault();
     event.stopPropagation();
     const widths = lockWidths(table, shownColumns);
-    table.classList.add("fixed");
+    // Measuring is not enough: every column has to be given its width now,
+    // or the ones nobody has dragged are laid out from nothing and share
+    // the table equally between them the moment fixed layout starts.
+    applyWidths(table, shownColumns);
     const startX = event.clientX;
     const startWidth = widths[column];
     grip.setPointerCapture(event.pointerId);
     document.body.classList.add("resizing");
 
     const onMove = (moved) => {
-      const width = Math.max(48, Math.round(startWidth + moved.clientX - startX));
+      const width = Math.max(MIN_COLUMN, Math.round(startWidth + moved.clientX - startX));
       th.style.width = width + "px";
+      // The table has to narrow and widen with the column. Without this the
+      // difference becomes slack, and the slack goes to the last column.
+      table.style.width = totalWidth(widths, shownColumns, column, width) + "px";
     };
     const onUp = () => {
       grip.removeEventListener("pointermove", onMove);
@@ -1279,6 +1307,9 @@ function columnGrip(table, shownColumns, column, th) {
     const current = storedWidths();
     delete current[column];
     writeStored("widths", current);
+    // The set is no longer complete, so renderTable hands the table back to
+    // the browser's own layout and this column sizes itself again.
+    table.style.width = "";
     renderTable();
   });
 

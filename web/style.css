@@ -257,11 +257,20 @@ thead th {
 /* ---------- column widths ----------
    Once any column has been given a width, the table is laid out from those
    widths: otherwise widening one column silently narrows another. */
-#table-wrap table.fixed { table-layout: fixed; }
+#table-wrap table.fixed {
+  table-layout: fixed;
+  /* The table stretches to fill its box by default, and anything it gains
+     that way is handed to the last column. Once the columns have been given
+     widths, those widths are the whole truth. */
+  min-width: 0;
+}
 #table-wrap table.fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 thead th { position: relative; }
 .col-grip {
-  position: absolute; top: 0; right: -3px; bottom: 0; width: 7px;
+  /* Inside the heading, not hanging off it. At right: -3px the last column's
+     grip sat outside the table and could be clipped away by the scrolling
+     box around it, which made that one column impossible to grab. */
+  position: absolute; top: 0; right: 0; bottom: 0; width: 8px;
   cursor: col-resize; z-index: 4;
 }
 .col-grip:hover, .col-grip:active { background: var(--accent); opacity: .5; }

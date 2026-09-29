@@ -69,6 +69,11 @@ def trust_store() -> ssl.SSLContext:
     has to happen.
     """
     context = ssl.create_default_context()
+    # TLS 1.0 and 1.1 are long broken, and a default context still permits
+    # them. Saying so explicitly costs one line, and this is example code that
+    # gets copied. A server too old to speak 1.2 will now fail loudly rather
+    # than negotiate something nobody should still be using.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     if context.get_ca_certs():
         return context
 

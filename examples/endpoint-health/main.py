@@ -46,6 +46,9 @@ SYSTEM_BUNDLES = (
 
 def trust_store() -> ssl.SSLContext:
     context = ssl.create_default_context()
+    # TLS 1.0 and 1.1 are long broken, and a default context still permits
+    # them. One line to refuse, in code that gets copied.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     if context.get_ca_certs():
         return context
     for candidate in SYSTEM_BUNDLES:
