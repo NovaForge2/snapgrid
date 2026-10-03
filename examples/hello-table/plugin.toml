@@ -8,11 +8,20 @@ group       = "Examples"
 
 [run]
 command = ["python", "main.py"]
-timeout = 30
+timeout = "30s"
 every   = "1h"
 
-# Optional. Leave it out and the header line of the output decides the columns.
-# When it is here, the header must match it exactly, which catches a script
-# that quietly changed its output.
 [table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "service"
+
+# columns is a guard, not a declaration: the header line of the output always
+# decides what the columns are. Written here, the run fails when the header
+# stops matching, so a script that quietly renamed or reordered a column says
+# so instead of reshaping the table. The cost is this list and the script
+# having to agree for ever. This is the only example that uses it.
 columns = ["service", "team", "environment", "version", "instances", "cpu_percent", "last_deploy"]
+
+# The last twenty results that differ from the one before.
+[history]
+keep = 20

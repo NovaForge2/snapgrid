@@ -8,8 +8,12 @@ group       = "Examples"
 
 [run]
 command = ["python", "main.py"]
-timeout = 30
+timeout = "30s"
 every   = "1m"
+
+[table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "repo"
 
 # Keep the last 20 results that differ from the one before, so you can look
 # back at what the matrix said earlier.

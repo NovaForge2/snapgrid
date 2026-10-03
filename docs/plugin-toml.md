@@ -204,12 +204,20 @@ live API every thirty seconds is a bad neighbour; most reporting plugins want
 
 ## `[table] columns`
 
-Leave it out and the header line of the output decides the columns and their
-order.
+**Most plugins do not need this.** The header line of the output always decides
+the columns and their order; this does not declare them.
 
-When present, the header must match it exactly, in names and order. A mismatch
-fails the run and shows both lists - which catches a script that quietly
-changed its output instead of putting data under the wrong headings.
+What it is, is a guard. When present, the header must match it exactly, in
+names and order. A mismatch fails the run and shows both lists - which catches
+a script that quietly changed its output instead of putting data under the
+wrong headings, and leaves the last good result on screen.
+
+The cost is that the list and the script have to agree for ever: rename a
+column in one and the plugin stops until you rename it in the other. Worth it
+for a plugin whose output other people depend on, not worth it for most.
+
+`[table] key` is the one that changes what snapgrid does, and belongs in
+every manifest.
 
 ## `[plugin] group`
 

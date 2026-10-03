@@ -12,8 +12,8 @@ timeout = "30s"           # measuring a disk is instant; if it is not, something
 every   = "15m"           # disks do not fill up in seconds
 
 [table]
-columns = ["filesystem", "size_gb", "used_gb", "free_gb", "used_percent"]
-key     = "filesystem"    # what names a row, so two runs can be lined up
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "filesystem"
 
 # Keep the last twenty times the numbers actually changed, which is what makes
 # "when did this start filling up?" answerable.

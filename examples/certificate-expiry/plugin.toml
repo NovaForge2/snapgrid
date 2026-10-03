@@ -15,8 +15,8 @@ timeout = "5m"
 every   = "6h"
 
 [table]
-columns = ["host", "expires", "days_left", "issuer"]
-key     = "host"
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "host"
 
 # The interesting question is "when did this get renewed?", so keep history.
 [history]

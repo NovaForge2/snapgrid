@@ -21,6 +21,7 @@ file = "directory.csv"
 #   sheet = "Current"
 
 [table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
 key = "service"
 
 [history]

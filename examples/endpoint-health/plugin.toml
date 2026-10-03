@@ -12,8 +12,8 @@ timeout = "5m"            # each URL gets 8 seconds of its own
 every   = "5m"            # often enough to notice, rare enough to be polite
 
 [table]
-columns = ["endpoint", "host", "status", "ms"]
-key     = "endpoint"
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "endpoint"
 
 [history]
 keep = 20

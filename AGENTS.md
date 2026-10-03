@@ -57,7 +57,7 @@ timeout = "5m"                             # or a number of seconds
 every   = "15m"
 
 [table]
-columns = ["environment", "image", "version"]
+key = "environment"                        # the column that names a row
 
 [history]
 keep = 20

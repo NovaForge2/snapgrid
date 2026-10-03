@@ -62,6 +62,12 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   the widest value in it, and the table stops there. It used to be stretched to
   fill the window, and everything it gained that way became empty space inside
   the columns.
+- **Every example declares the same things.** Three of the six set `[table]
+  key`, three did not; one kept no history; two wrote the timeout as a bare
+  number. Copying one as a starting point gave a different template each time.
+  They all now set a key and a history, and only one declares `[table] columns`
+  - which is a guard against a script changing its output, not a declaration of
+  the columns, and the documentation now says so.
 - **`[run] timeout` accepts a duration** such as `"10m"` as well as a number of
   seconds, and `[run] every` understands days and weeks.
 
