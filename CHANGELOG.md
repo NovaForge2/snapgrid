@@ -14,7 +14,7 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 - **Comparing runs.** A second picker in the toolbar compares the result on
   screen with the last 2 to 5 runs. Every cell shows what it held in each one,
   newest on top; a dot means the same as the line above, so only what moved is
-  written out. Rows that appeared are marked `NEW`, rows that have gone are
+  written out. A cell that never moved is written once. Rows that appeared are marked `NEW`, rows that have gone are
   marked `GONE` and are shown even though they are absent from the current
   result. **Only what changed** narrows the table to the rows that moved.
 - **The history of one cell.** Clicking a value shows what it has been across
@@ -44,6 +44,20 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   take the only way of changing the theme with it.
 - **Columns can be hidden and their widths dragged**; both panels can be
   resized, and the left one hidden entirely.
+- **Only the cells that moved are stacked** while comparing. Every cell used to
+  hold one line per run, which filled most of the table with dots meaning
+  "nothing happened" and buried the values that had actually changed.
+- **An edge round the table**, so a narrow one on a wide screen has something
+  to sit in; digits of one width, so versions and dates line up; and a heading
+  that says it can be clicked to sort.
+- **Reset widths** in the Columns menu. Dragged widths are remembered, and
+  undoing them meant double-clicking every heading in turn - so a column left
+  wide weeks ago made the table look broken with no way back.
+- **The toolbar is in groups**, with one button carrying weight and the rest
+  quiet until wanted, and it no longer wraps onto a second line.
+- **How a plugin stands is next to its name** - when it last ran, when it runs
+  next, how much history is kept - rather than in the opposite corner in the
+  smallest type on the page.
 - **The table is only as wide as its contents.** Each column is the width of
   the widest value in it, and the table stops there. It used to be stretched to
   fill the window, and everything it gained that way became empty space inside

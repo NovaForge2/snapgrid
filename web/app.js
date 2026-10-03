@@ -1080,9 +1080,27 @@ function renderTable() {
         }
 
         const values = over.map((one) => (one ? cellValue(one, index) : null));
-        if (index !== key && values.some((value, at) =>
-              at > 0 && value !== null && value !== values[at - 1])) {
-          td.classList.add("moved");
+        // Whether this value ever changed, ignoring the runs the row was not
+        // in: a row arriving or leaving is a fact about the row, said once by
+        // the chip and the tint, not something each of its cells repeats.
+        const present = values.filter((value) => value !== null);
+        const moved = present.some((value, at) => at > 0 && value !== present[at - 1]);
+        if (moved) td.classList.add("moved");
+
+        // A cell that never moved is written once. Stacking every cell meant
+        // two thirds of the table was dots saying "same as above", and the
+        // rows that had actually moved were buried in it.
+        if (!moved) {
+          const line = document.createElement("span");
+          line.className = "v now";
+          line.textContent = cellValue(row, index);
+          line.addEventListener("click", (event) => {
+            event.stopPropagation();
+            openCellHistory(cellValue(row, key), columns[index], td);
+          });
+          td.appendChild(line);
+          tr.appendChild(td);
+          return;
         }
 
         for (let at = 0; at < depth; at += 1) {
@@ -1376,6 +1394,22 @@ function openColumns(anchor) {
     closeFilter();
   });
   foot.appendChild(all);
+
+  // Dragged widths are remembered, and until now the only way back was to
+  // double-click every heading in turn - which nothing tells you. A column
+  // left wide weeks ago then looks like the table is broken.
+  if (Object.keys(storedWidths()).length) {
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.textContent = "Reset widths";
+    reset.title = "Forget the column widths you have dragged, and fit each column to its contents";
+    reset.addEventListener("click", () => {
+      writeStored("widths", {});
+      closeFilter();
+      renderTable();
+    });
+    foot.appendChild(reset);
+  }
   popup.appendChild(foot);
 
   placePopup(popup, anchor);

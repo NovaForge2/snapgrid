@@ -202,20 +202,21 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   font-size: 12px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 #panel { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
-#panel-head {
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
-  padding: 16px 20px 10px;
-}
+/* Name, what it is, and how it stands - in that order, down the left. The
+   state used to sit in the far corner, a screen's width from the heading it
+   belonged to, in the smallest type on the page: it is the first thing anyone
+   opening this wants to know. */
+#panel-head { padding: 16px 20px 10px; }
 #p-name { margin: 0; font-size: 18px; }
 #p-desc { margin: 3px 0 0; color: var(--muted); }
-#p-meta { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
+#p-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
 
 #toolbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 0 20px 12px; border-bottom: 1px solid var(--line);
 }
-#spacer { flex: 1; }
 #row-note { color: var(--muted); font-size: 12px; }
+.sep { width: 1px; align-self: stretch; margin: 2px 2px; background: var(--line); }
 /* Something is being kept from view, so the button says so. */
 #btn-columns.active { color: var(--accent); border-color: var(--accent); }
 button, select, input[type=search], #btn-xlsx {
@@ -224,10 +225,24 @@ button, select, input[type=search], #btn-xlsx {
 }
 button, #btn-xlsx { cursor: pointer; text-decoration: none; }
 button:hover, #btn-xlsx:hover { background: var(--hover); }
+/* Nine controls of equal weight is a wall, so the ones that change the view
+   rather than the data are quieter - in their lettering only. Taking their
+   borders away as well left them looking like stray words rather than things
+   to press, and Log and Config disappeared altogether. */
+.quiet { color: var(--muted); }
+.quiet:hover { color: var(--text); }
 #btn-refresh { background: var(--accent); border-color: var(--accent); color: #fff; }
 #btn-refresh:hover { filter: brightness(1.08); }
 #btn-refresh[disabled] { opacity: .55; cursor: default; filter: none; }
-input[type=search] { min-width: 200px; }
+/* The search box takes up the slack, so the controls on the right stay on
+   the right and the row does not wrap the moment a picker gets a long label.
+   The pickers give way too: a long snapshot label is allowed to be clipped
+   rather than push Log and Config onto a line of their own. */
+input[type=search] { flex: 1 1 120px; min-width: 0; }
+/* A dropdown is as wide as its longest option unless it is told otherwise, and
+   these hold dated snapshot labels - 486px of the row went on two of them,
+   which is what pushed Config onto a line of its own. */
+#toolbar select { min-width: 0; max-width: 180px; flex: 0 1 auto; text-overflow: ellipsis; }
 
 #message {
   margin: 12px 20px 0; padding: 10px 12px; border-radius: 6px;
@@ -237,15 +252,27 @@ input[type=search] { min-width: 200px; }
 #message.info { border-color: var(--line); color: var(--muted); }
 
 /* ---------- table ---------- */
-#table-wrap { flex: 1; min-height: 0; overflow: auto; padding: 0; }
+/* The table shrinks to its contents because it is a flex item that is not
+   allowed to grow. `width: max-content` on a table was the obvious way to
+   say this and is not honoured everywhere: where it is ignored the table
+   fills the box instead and hands the whole surplus to the last column. */
+#table-wrap {
+  flex: 1; min-height: 0; overflow: auto; padding: 0;
+  display: flex; flex-direction: column; align-items: flex-start;
+}
 table {
   border-collapse: separate; border-spacing: 0; font-size: 13px;
   /* Exactly as wide as the widest value in each column, and no wider. It used
      to be stretched to fill the pane, and everything it gained that way became
      slack inside the columns. */
-  width: max-content; min-width: 0;
+  width: auto; min-width: 0; flex: 0 0 auto; max-width: none;
   margin: 0 20px 20px;
-  border-left: 1px solid var(--grid);
+  /* An edge all the way round. Without one a narrow table on a wide screen
+     has nothing to sit in, and the space beside it reads as missing content
+     rather than as space. */
+  border: 1px solid var(--grid); border-radius: 8px;
+  /* Numbers, versions and dates all line up when the digits are one width. */
+  font-variant-numeric: tabular-nums;
 }
 thead th {
   position: sticky; top: 0; z-index: 3;
@@ -256,6 +283,10 @@ thead th {
   text-align: left; padding: 0; white-space: nowrap;
 }
 .th-inner { display: flex; align-items: center; gap: 4px; padding: 8px 6px 8px 10px; }
+/* Clicking a heading sorts by it, which nothing on screen said: the only mark
+   in there is the filter caret, which means something else. */
+thead th .th-label { cursor: pointer; }
+thead th:hover .th-label { color: var(--accent); }
 
 /* ---------- column widths ----------
    Once any column has been given a width, the table is laid out from those
@@ -269,7 +300,7 @@ thead th { position: relative; }
   /* Inside the heading, not hanging off it. At right: -3px the last column's
      grip sat outside the table and could be clipped away by the scrolling
      box around it, which made that one column impossible to grab. */
-  position: absolute; top: 0; right: 0; bottom: 0; width: 8px;
+  position: absolute; top: 0; right: 0; bottom: 0; width: 16px;
   cursor: col-resize; z-index: 4;
 }
 .col-grip:hover, .col-grip:active { background: var(--accent); opacity: .5; }
@@ -311,7 +342,9 @@ td.stack .v {
 td.stack .v:last-child { border-bottom: 0; }
 td.stack .v.now { font-weight: 600; }
 td.stack .v.old { color: var(--muted); font-size: 12px; }
-td.stack .v.same { color: var(--muted); opacity: .35; }
+/* It says "the same as the line above", which is information, so it is not
+   allowed to fade into the background the way a decoration could. */
+td.stack .v.same { color: var(--muted); opacity: .6; }
 td.stack .v.gap { color: var(--muted); opacity: .55; font-size: 12px; }
 td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent); }
 /* The name is written once and sits at the top, beside its lines. */
@@ -371,12 +404,26 @@ tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
 .filter-btn.active { color: var(--accent); background: var(--accent-soft); }
 tbody td {
   padding: 6px 10px;
+  /* Lines on both axes. This is a grid for reading a value off a row and a
+     column at once, and taking the vertical rules away left the headings
+     ruled and the body not, which looks like a mistake rather than a choice. */
   border-bottom: 1px solid var(--grid); border-right: 1px solid var(--grid);
   background: var(--panel);
   /* Like a spreadsheet: one line per row, clipped, full value on hover.
      Wrapping turns a wide table into an unreadable block of text. */
   white-space: nowrap; max-width: 46ch; overflow: hidden; text-overflow: ellipsis;
 }
+/* The cells carry the rounding: the table cannot clip its own corners with
+   overflow without breaking the sticky heading. The last row drops its rule
+   so it does not sit a second line on top of the table's own edge. */
+thead th:first-child { border-top-left-radius: 7px; }
+thead th:last-child { border-top-right-radius: 7px; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:last-child td:first-child { border-bottom-left-radius: 7px; }
+tbody tr:last-child td:last-child { border-bottom-right-radius: 7px; }
+/* The table's own edge draws the right-hand side; a cell rule there doubles it. */
+tbody td:last-child, thead th:last-child { border-right: 0; }
+
 tbody tr:nth-child(even) td { background: var(--zebra); }
 tbody tr:hover td { background: var(--hover); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }

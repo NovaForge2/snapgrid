@@ -124,8 +124,9 @@ moved, and when** - and that is what the stored history is for.
   </picture>
 </p>
 
-Pick how far back to look - the run before, or up to five runs - and every cell
-fills in with what it held each time, newest on top:
+Pick how far back to look - the run before, or up to five runs - and any cell
+that moved fills in with what it held each time, newest on top. The ones that
+did not move stay as they were, so the deep cells are the changes:
 
 <p align="center">
   <picture>

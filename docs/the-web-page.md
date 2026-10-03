@@ -36,7 +36,9 @@ whatever the machine prefers, and pressing the button still wins.
   table is as narrow as its contents allow and stops where they stop rather
   than being stretched across the window. Drag the edge of a heading to change
   one, and double-click that edge to let the column size itself again. Both the
-  widths and the hidden columns are remembered per plugin, in your browser only.
+  widths and the hidden columns are remembered per plugin, in your browser only
+  - **Reset widths**, in the Columns menu, forgets them all and fits every
+  column to its contents again. It appears once there is something to forget.
 - **Export Excel** downloads an `.xlsx` of the result: the header row frozen
   and in bold on a filled background, a filter dropdown on every column, thin
   borders and banded rows, and column widths from the content. **CSV** next to
@@ -91,15 +93,20 @@ The second dropdown chooses how far back to look: **off**, **the one before**,
 or the **last 3, 4 or 5 runs**. It only offers as many as have been stored, and
 it is off until you ask.
 
-With it on, every cell in a row holds one line per run, newest on top. That is
-deliberate: if one cell stacked and its neighbour did not, line two would not
-mean the same thing across the row and you could not read sideways.
+With it on, a cell whose value moved holds one line per run, newest on top. A
+cell that never moved is written once, as it always is.
+
+Every cell used to stack, so that line two meant the same run the whole way
+across. In practice most cells do not change between runs, and stacking them
+all filled two thirds of the table with dots saying "nothing happened" while
+burying the handful of values that did move. Reading sideways along line two
+was worth less than seeing, at a glance, which cells are deep.
 
 | What you see | What it means |
 |---|---|
 | a value in bold, on top | what it is now |
 | a smaller, quieter value below | what it was in that earlier run |
-| **a dot** | the same as the line above - nothing happened |
+| **a dot** | the same as the line above - this run did not move it |
 | a tinted cell | something moved in that cell |
 | `NEW` and a green edge | the row was not there in the earlier runs |
 | `GONE` and a red edge | the row is not in the current result. It is shown anyway, because a thing disappearing is worth noticing |
