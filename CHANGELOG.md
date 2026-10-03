@@ -44,6 +44,10 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   take the only way of changing the theme with it.
 - **Columns can be hidden and their widths dragged**; both panels can be
   resized, and the left one hidden entirely.
+- **The table is only as wide as its contents.** Each column is the width of
+  the widest value in it, and the table stops there. It used to be stretched to
+  fill the window, and everything it gained that way became empty space inside
+  the columns.
 - **`[run] timeout` accepts a duration** such as `"10m"` as well as a number of
   seconds, and `[run] every` understands days and weeks.
 
@@ -64,6 +68,11 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 - **The cell history reads columns by name**, not by position. A plugin that
   reordered its columns had old values read out of whichever column now sat at
   that index and reported as this column's history.
+- **A column keeps the width you drag it to.** While a plugin was running the
+  table was rebuilt once a second, which threw away the heading under the
+  pointer and laid the columns out from the stored widths again - so a column
+  being narrowed sprang back and the rest of the drag did nothing. The redraw
+  now waits for the pointer to come up.
 - **Sorting works while comparing.**
 - **The comparison follows the result on screen.** Choosing an older snapshot
   used to leave it comparing that result with itself and reporting that nothing

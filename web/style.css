@@ -240,7 +240,10 @@ input[type=search] { min-width: 200px; }
 #table-wrap { flex: 1; min-height: 0; overflow: auto; padding: 0; }
 table {
   border-collapse: separate; border-spacing: 0; font-size: 13px;
-  width: max-content; min-width: calc(100% - 40px);
+  /* Exactly as wide as the widest value in each column, and no wider. It used
+     to be stretched to fill the pane, and everything it gained that way became
+     slack inside the columns. */
+  width: max-content; min-width: 0;
   margin: 0 20px 20px;
   border-left: 1px solid var(--grid);
 }
@@ -259,10 +262,6 @@ thead th {
    widths: otherwise widening one column silently narrows another. */
 #table-wrap table.fixed {
   table-layout: fixed;
-  /* The table stretches to fill its box by default, and anything it gains
-     that way is handed to the last column. Once the columns have been given
-     widths, those widths are the whole truth. */
-  min-width: 0;
 }
 #table-wrap table.fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 thead th { position: relative; }

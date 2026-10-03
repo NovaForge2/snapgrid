@@ -32,9 +32,11 @@ whatever the machine prefers, and pressing the button still wins.
   hidden, and the button is highlighted while any are. **Show all** puts them
   back. The last visible column cannot be hidden - an empty table is not a view
   of anything.
-- **Column widths** are dragged by the edge of a heading. Double-click an edge
-  to let that column size itself again. Both the widths and the hidden columns
-  are remembered per plugin, in your browser only.
+- **Column widths** start at exactly the widest value in each column, so the
+  table is as narrow as its contents allow and stops where they stop rather
+  than being stretched across the window. Drag the edge of a heading to change
+  one, and double-click that edge to let the column size itself again. Both the
+  widths and the hidden columns are remembered per plugin, in your browser only.
 - **Export Excel** downloads an `.xlsx` of the result: the header row frozen
   and in bold on a filled background, a filter dropdown on every column, thin
   borders and banded rows, and column widths from the content. **CSV** next to

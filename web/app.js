@@ -933,6 +933,13 @@ function visibleRows(columns, rows, skipColumn) {
 }
 
 function renderTable() {
+  // A run finishing redraws the table once a second. Doing that while a column
+  // is being dragged threw away the heading under the pointer and laid the
+  // table out from the stored widths again, so the column sprang back to where
+  // it started and the rest of the drag went to a detached element. Hold the
+  // redraw until the pointer is up; a drag lasts a moment.
+  if (draggingColumn) { redrawWanted = true; return; }
+
   const wrap = el("table-wrap");
   wrap.textContent = "";
 
@@ -1261,6 +1268,11 @@ function totalWidth(widths, shownColumns, replacing, replacement) {
 // matching headings by position has to count only the ones on screen.
 const MIN_COLUMN = 48;   // narrower than this and a heading cannot be read
 
+// Set while a column is being dragged, so nothing rebuilds the table underneath
+// the pointer. renderTable records that it wanted to run, and runs on pointerup.
+let draggingColumn = false;
+let redrawWanted = false;
+
 function columnGrip(table, shownColumns, column, th) {
   const grip = document.createElement("span");
   grip.className = "col-grip";
@@ -1279,6 +1291,7 @@ function columnGrip(table, shownColumns, column, th) {
     const startWidth = widths[column];
     grip.setPointerCapture(event.pointerId);
     document.body.classList.add("resizing");
+    draggingColumn = true;
 
     const onMove = (moved) => {
       const width = Math.max(MIN_COLUMN, Math.round(startWidth + moved.clientX - startX));
@@ -1295,6 +1308,8 @@ function columnGrip(table, shownColumns, column, th) {
       const current = storedWidths();
       current[column] = parseInt(th.style.width, 10);
       writeStored("widths", current);
+      draggingColumn = false;
+      if (redrawWanted) { redrawWanted = false; renderTable(); }
     };
     grip.addEventListener("pointermove", onMove);
     grip.addEventListener("pointerup", onUp);
