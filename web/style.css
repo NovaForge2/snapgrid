@@ -427,6 +427,53 @@ tbody td:last-child, thead th:last-child { border-right: 0; }
 tbody tr:nth-child(even) td { background: var(--zebra); }
 tbody tr:hover td { background: var(--hover); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- [colour] ----------
+   A value a plugin has given a colour to, drawn as a pill. Five shades and no
+   more: a plugin choosing its own would be a plugin deciding what the page
+   looks like, and both themes have to be able to live with the result.
+
+   The text keeps its own colour rather than going white on a strong fill,
+   because these sit in a dense table next to plain values and a row of loud
+   badges is harder to read than the words were. */
+.shade {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; line-height: 18px;
+  border: 1px solid transparent;
+}
+.shade.red    { color: var(--sh-red);   background: var(--sh-red-bg);   border-color: var(--sh-red-line); }
+.shade.amber  { color: var(--sh-amber); background: var(--sh-amber-bg); border-color: var(--sh-amber-line); }
+.shade.green  { color: var(--sh-green); background: var(--sh-green-bg); border-color: var(--sh-green-line); }
+.shade.blue   { color: var(--sh-blue);  background: var(--sh-blue-bg);  border-color: var(--sh-blue-line); }
+.shade.grey   { color: var(--sh-grey);  background: var(--sh-grey-bg);  border-color: var(--sh-grey-line); }
+
+/* An older value in a stacked cell is quieter than the current one, and its
+   pill goes with it rather than shouting from three rows down. */
+.v.old .shade { font-weight: 500; opacity: .75; }
+
+:root {
+  --sh-red: #9b2c2c;   --sh-red-bg: #fdecec;   --sh-red-line: #f3c9c9;
+  --sh-amber: #8a5a00; --sh-amber-bg: #fdf3e0; --sh-amber-line: #f0dcb4;
+  --sh-green: #1f6340; --sh-green-bg: #e7f5ed; --sh-green-line: #c2e3d2;
+  --sh-blue: #1f4e79;  --sh-blue-bg: #e8f1fa;  --sh-blue-line: #c4daf0;
+  --sh-grey: #4a5260;  --sh-grey-bg: #eef0f3;  --sh-grey-line: #d8dce2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sh-red: #f0a0a0;   --sh-red-bg: #3a2222;   --sh-red-line: #5a3030;
+    --sh-amber: #e6c173; --sh-amber-bg: #38301c; --sh-amber-line: #574828;
+    --sh-green: #8ed3ae; --sh-green-bg: #1e3329; --sh-green-line: #2f5040;
+    --sh-blue: #94c0e8;  --sh-blue-bg: #1d2c3a;  --sh-blue-line: #2d455c;
+    --sh-grey: #b3bcc8;  --sh-grey-bg: #282d34;  --sh-grey-line: #3c434d;
+  }
+}
+:root[data-theme="dark"] {
+  --sh-red: #f0a0a0;   --sh-red-bg: #3a2222;   --sh-red-line: #5a3030;
+  --sh-amber: #e6c173; --sh-amber-bg: #38301c; --sh-amber-line: #574828;
+  --sh-green: #8ed3ae; --sh-green-bg: #1e3329; --sh-green-line: #2f5040;
+  --sh-blue: #94c0e8;  --sh-blue-bg: #1d2c3a;  --sh-blue-line: #2d455c;
+  --sh-grey: #b3bcc8;  --sh-grey-bg: #282d34;  --sh-grey-line: #3c434d;
+}
 .empty-row { color: var(--muted); padding: 24px 10px; }
 
 /* ---------- filter popup ---------- */

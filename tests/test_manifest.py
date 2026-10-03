@@ -239,3 +239,55 @@ class LoadingFromDisk(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Colours(unittest.TestCase):
+    """[colour.<column>] - a value a plugin wants shown in a colour."""
+
+    BASE = '[plugin]\nname = "X"\n[run]\ncommand = ["x"]\n'
+
+    def test_a_manifest_without_colours_has_none(self):
+        self.assertEqual(parse(self.BASE).colours, {})
+
+    def test_values_are_matched_without_case(self):
+        plugin = parse(self.BASE + '[colour.status]\nOK = "green"\n"Expiring Soon" = "amber"\n')
+        # Stored lowered, because the match happens on a lowered value too.
+        self.assertEqual(plugin.colours,
+                         {"status": {"ok": "green", "expiring soon": "amber"}})
+
+    def test_every_colour_there_is(self):
+        lines = "".join(f'v{n} = "{name}"\n' for n, name
+                        in enumerate(("red", "amber", "green", "blue", "grey")))
+        plugin = parse(self.BASE + "[colour.status]\n" + lines)
+        self.assertEqual(sorted(plugin.colours["status"].values()),
+                         ["amber", "blue", "green", "grey", "red"])
+
+    def test_a_colour_that_does_not_exist_is_refused_and_lists_the_ones_that_do(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse(self.BASE + '[colour.status]\nok = "purple"\n')
+        self.assertIn("purple", str(caught.exception))
+        self.assertIn("red, amber, green, blue, grey", str(caught.exception))
+
+    def test_the_american_spelling_says_where_to_look(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse(self.BASE + '[color.status]\nok = "green"\n')
+        self.assertIn("[colour]", str(caught.exception))
+
+    def test_a_colour_for_a_column_that_is_not_declared_is_refused(self):
+        # Only catchable when the columns are declared; otherwise the result
+        # decides them and this cannot be known until the plugin has run.
+        with self.assertRaises(ManifestError) as caught:
+            parse(self.BASE + '[table]\ncolumns = ["a", "b"]\n[colour.c]\nok = "green"\n')
+        self.assertIn("a, b", str(caught.exception))
+
+    def test_a_colour_for_an_undeclared_column_is_allowed(self):
+        plugin = parse(self.BASE + '[colour.status]\nok = "green"\n')
+        self.assertIn("status", plugin.colours)
+
+    def test_a_column_mapping_has_to_be_a_section(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse(self.BASE + '[colour]\nstatus = "green"\n')
+        self.assertIn("[colour.status]", str(caught.exception))
+
+    def test_an_empty_mapping_is_dropped_rather_than_kept(self):
+        self.assertEqual(parse(self.BASE + "[colour.status]\n").colours, {})

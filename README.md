@@ -86,7 +86,7 @@ git clone https://github.com/NovaForge2/snapgrid.git && cd snapgrid
 ./server.py --dir examples
 ```
 
-Open the address it prints. **Six example plugins** are already there, and all
+Open the address it prints. **Seven example plugins** are already there, and all
 of them run anywhere with nothing to configure: free disk space, TLS
 certificate expiry, endpoint response times, a hand-maintained directory with
 no program at all, a script reading a JSON file, and one that invents versions
@@ -106,6 +106,7 @@ When you want to write your own, restart without `--dir`, which uses `plugins/`:
 | | |
 |---|---|
 | **A real grid** | click to sort, per-column filters with value counts, search everything, export to Excel |
+| **Colour where it helps** | a plugin can put red, amber, green, blue or grey on named values in a column, and the colour follows into the export |
 | **Runs by itself** | every plugin on a schedule, in the background, results cached so the page is instant |
 | **History** | every result kept, with a dropdown to look back. Identical runs do not use a slot, so twenty snapshots means the last twenty times something actually changed |
 | **What changed** | compare the last 2 to 5 runs in the table itself - values that moved, rows that appeared, rows that went - and click any value for its own history |
@@ -477,7 +478,7 @@ The rest is deliberate:
 - [SECURITY.md](SECURITY.md) - what snapgrid does and does not protect you from, and how to report something
 - [docs/secrets.md](docs/secrets.md) - `.env`, encryption, masking
 - [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
-- [examples/](examples/) - six plugins that run anywhere, each with its own explanation
+- [examples/](examples/) - seven plugins that run anywhere, each with its own explanation
 - [CHANGELOG.md](CHANGELOG.md) - what changed and why it might matter to you
 - [docs/the-web-page.md](docs/the-web-page.md) - what every control does: sorting, filters, showing and sizing columns, resizing and hiding the panels, following the log, light and dark
 - [AGENTS.md](AGENTS.md) - the plugin specification, written to hand to an AI assistant

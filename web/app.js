@@ -932,6 +932,30 @@ function visibleRows(columns, rows, skipColumn) {
   });
 }
 
+// [colour.<column>] in plugin.toml, as a class name or nothing. The value has
+// to match a named one exactly, ignoring case: a column of free text with a
+// few known words in it keeps the rest of its values plain.
+function colourFor(column, value) {
+  const map = state.detail && state.detail.colours && state.detail.colours[column];
+  if (!map) return "";
+  const shade = map[String(value).toLowerCase()];
+  return shade ? "shade " + shade : "";
+}
+
+// A value that has a colour is drawn as a pill rather than as coloured text,
+// which stays legible in both themes and against the banded rows.
+function putValue(td, column, value) {
+  const shade = colourFor(column, value);
+  if (!shade) {
+    td.textContent = value;
+    return;
+  }
+  const pill = document.createElement("span");
+  pill.className = shade;
+  pill.textContent = value;
+  td.appendChild(pill);
+}
+
 // "1 rows" was on every screenshot of a one-row table.
 function rowCount(n) {
   return n + (n === 1 ? " row" : " rows");
@@ -1052,7 +1076,7 @@ function renderTable() {
 
         if (!over) {
           const value = cellValue(row, index);
-          td.textContent = value;
+          putValue(td, columns[index], value);
           td.title = value;   // cells are clipped, so keep the full value reachable
           if (index === key && kind) {
             const chip = document.createElement("span");
@@ -1098,7 +1122,7 @@ function renderTable() {
         if (!moved) {
           const line = document.createElement("span");
           line.className = "v now";
-          line.textContent = cellValue(row, index);
+          putValue(line, columns[index], cellValue(row, index));
           line.addEventListener("click", (event) => {
             event.stopPropagation();
             openCellHistory(cellValue(row, key), columns[index], td);
@@ -1122,7 +1146,7 @@ function renderTable() {
             line.title = value;
           } else {
             line.className = at === 0 ? "v now" : "v old";
-            line.textContent = value;
+            putValue(line, columns[index], value);
           }
           line.addEventListener("click", (event) => {
             // Without this the same click reaches the document handler below

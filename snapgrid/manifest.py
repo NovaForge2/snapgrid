@@ -54,6 +54,8 @@ class Plugin:
     output_sheet: str = ""            # which sheet of a workbook, if not the first
     fresh_for: int | None = None      # skip the run while the file is younger than this
     history_keep: int = 0             # how many different snapshots to keep
+    colours: dict[str, dict[str, str]] = field(default_factory=dict)
+    # column -> {value in lower case: colour}, from [colour]
     mtime: float = 0.0
     error: str = ""                   # set when the manifest could not be read
 
@@ -124,12 +126,26 @@ KNOWN_KEYS = {
 }
 BELONGS_TO = {key: section for section, keys in KNOWN_KEYS.items() for key in keys}
 
+# [colour] is checked separately: the keys under it are column names, which
+# snapgrid cannot know in advance, so it cannot be a fixed list like the rest.
+COLOUR_SECTION = "colour"
+
+# The whole set. Fixed deliberately: a plugin naming its own shades would be a
+# plugin deciding what the page looks like, and the two themes would have to
+# cope with whatever it picked.
+COLOURS = ("red", "amber", "green", "blue", "grey")
+
 
 def _check_keys(data: dict) -> None:
     """Refuse a key that is misplaced or misspelt, rather than ignoring it."""
     for section in data:
+        if section == COLOUR_SECTION:
+            continue
+        if section == "color":
+            raise ManifestError("[color] is spelt [colour] here, like the rest "
+                                "of snapgrid")
         if section not in KNOWN_KEYS:
-            known = ", ".join(f"[{name}]" for name in KNOWN_KEYS)
+            known = ", ".join(f"[{name}]" for name in list(KNOWN_KEYS) + [COLOUR_SECTION])
             raise ManifestError(f"[{section}] is not a section snapgrid knows. "
                                 f"The sections are {known}")
 
@@ -156,6 +172,46 @@ def _table(data: dict, name: str) -> dict:
     if not isinstance(value, dict):
         raise ManifestError(f"[{name}] must be a section")
     return value
+
+
+def _colours(data: dict, columns: list[str] | None) -> dict[str, dict[str, str]]:
+    """[colour.<column>] maps a cell value to one of the colours there are.
+
+    Matching is on the whole value, ignoring case, so "OK" and "ok" are the
+    same thing. A value with no colour named for it is left alone, which is
+    what makes this safe to add to a column that can say anything.
+    """
+    section = data.get(COLOUR_SECTION, {})
+    if not isinstance(section, dict):
+        raise ManifestError("[colour] must be a section, with one for each "
+                            "column: [colour.status]")
+
+    out: dict[str, dict[str, str]] = {}
+    for column, mapping in section.items():
+        if not isinstance(mapping, dict):
+            raise ManifestError(
+                f"[colour] {column} must be a section of its own, naming a "
+                f"colour for each value: [colour.{column}] then \"ok\" = \"green\""
+            )
+        # Catchable here only when the columns are declared; otherwise the
+        # first result decides, and a colour for a column that is not there
+        # simply never matches anything.
+        if columns is not None and column not in columns:
+            raise ManifestError(
+                f"[colour.{column}] names a column that is not in "
+                f"[table] columns, which has {', '.join(columns)}"
+            )
+        shades: dict[str, str] = {}
+        for value, colour in mapping.items():
+            if not isinstance(colour, str) or colour.lower() not in COLOURS:
+                raise ManifestError(
+                    f"[colour.{column}] {value} is {colour!r}, which is not a "
+                    f"colour snapgrid has. They are {', '.join(COLOURS)}"
+                )
+            shades[value.lower()] = colour.lower()
+        if shades:
+            out[column] = shades
+    return out
 
 
 def _string_list(value: object, field_name: str) -> list[str]:
@@ -252,6 +308,8 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
     if not isinstance(history_keep, int) or isinstance(history_keep, bool) or history_keep < 0:
         raise ManifestError("[history] keep must be 0 or more")
 
+    colours = _colours(data, columns)
+
     return Plugin(
         id=plugin_id,
         dir=directory,
@@ -268,6 +326,7 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         output_sheet=output_sheet.strip(),
         fresh_for=fresh_for,
         history_keep=history_keep,
+        colours=colours,
         mtime=mtime,
     )
 

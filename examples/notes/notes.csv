@@ -1,0 +1,8 @@
+id,status,since,note
+7,red,2026-09-29,"ENV3 still on payments-api 2.12.6 - waiting on CHG0045123, chase Monday"
+6,amber,2026-09-28,github.com certificate expires 29 Nov - renewal not booked yet
+5,amber,2026-09-21,"disk-space: / was at 91%, logs rotated by hand. Needs a real fix"
+4,green,2026-09-20,endpoint-health has been clean for a fortnight
+3,idea,2026-09-14,"A plugin for open change tickets per environment - worth doing?"
+2,done,2026-09-02,orders-api rollback to 1.9.2 confirmed everywhere
+1,done,2026-08-30,First week of running this. Keeping it.

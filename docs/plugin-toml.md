@@ -58,6 +58,7 @@ keep = 20
 | `output.sheet` | text | the first sheet | which sheet of an `.xlsx` |
 | `output.fresh_for` | duration | none | skip the run while the file is younger than this |
 | `history.keep` | whole number | `0` | how many **differing** results to keep |
+| `colour.<column>` | section of text | none | a colour for named values in that column |
 
 \* not required when `output.file` is set - a folder with a manifest and a file
 is a valid plugin with nothing to run.
@@ -326,6 +327,56 @@ the last five hours.
 The most recent successful result is always kept even if every run since has
 failed, so a broken credential never costs you the last good table.
 
+## `[colour]`
+
+A column holding a small fixed set of values - a status, an environment, a
+severity - reads far faster with a colour on it than without.
+
+```toml
+[colour.status]
+ok         = "green"
+"expiring" = "amber"
+expired    = "red"
+```
+
+The section is named after the column, then each value that gets a colour.
+
+- **Matching is on the whole value, ignoring case.** `OK`, `Ok` and `ok` are
+  the same thing. There is no partial matching and no pattern: a value either
+  is one of these words or it is not.
+- **A value nobody named is left plain.** This is what makes it safe on a
+  column that can say anything: the words you care about stand out, and the
+  rest reads normally.
+- **One section per column.** Several columns can be coloured, each with its
+  own section: `[colour.status]`, `[colour.environment]`.
+
+### The colours there are
+
+**`red`, `amber`, `green`, `blue`, `grey`.** That is the whole set, and a
+manifest naming anything else is refused with the list.
+
+They are fixed on purpose. A plugin choosing its own shades would be a plugin
+deciding what the page looks like, and whatever it picked would have to work in
+the light theme and the dark one, against banded rows, and next to the marks
+the comparison already uses.
+
+| Colour | What it is for |
+|---|---|
+| `red` | wrong now, and somebody has to do something |
+| `amber` | not wrong yet |
+| `green` | right, and worth saying so |
+| `blue` | neither good nor bad - a note, a category, something informational |
+| `grey` | finished, dismissed, or no longer interesting |
+
+### Where it shows
+
+In the table, and in **Export Excel** - a workbook keeps the colours, so what
+you send somebody says what the screen said. A coloured cell also keeps its
+colour in a comparison, where an older value's is quieter, as the value is.
+
+The spelling is `colour` throughout, as in the rest of snapgrid; `[color]` is
+refused with a message saying so rather than being silently ignored.
+
 ## When it is wrong
 
 A manifest that cannot be read does not make the plugin disappear - it is
@@ -343,6 +394,10 @@ that says what is wrong with it.
 | `[run] every is "..." but should look like "30s", "15m", "2h", "10d", "2w" or "off"` | a unit that does not exist, or words |
 | `[table] columns cannot be an empty list` | `columns = []` |
 | `[output] file must be inside the plugin folder` | a path starting with `/` or containing `..` |
+| `[colour.x] y is '...', which is not a colour snapgrid has` | a colour outside the five. The message lists them |
+| `[colour.x] names a column that is not in [table] columns` | only catchable when the columns are declared |
+| `[colour] x must be a section of its own` | `[colour]` then `status = "green"`, instead of `[colour.status]` |
+| `[color] is spelt [colour] here` | the other spelling |
 | `[output] fresh_for only means something with [output] file` | the age of a file that was never named |
 | `[history] keep must be 0 or more` | a negative number |
 | `[plugin] enabled must be true or false` | `enabled = "yes"` |

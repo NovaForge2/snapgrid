@@ -39,6 +39,10 @@ whatever the machine prefers, and pressing the button still wins.
   widths and the hidden columns are remembered per plugin, in your browser only
   - **Reset widths**, in the Columns menu, forgets them all and fits every
   column to its contents again. It appears once there is something to forget.
+- **Coloured values** are values a plugin has asked for a colour on, through
+  `[colour]` in its manifest - red, amber, green, blue or grey. They are the
+  plugin's decision, not yours, and there is nothing to switch on here; see
+  [plugin-toml.md](plugin-toml.md) for how a plugin asks.
 - **Export Excel** downloads an `.xlsx` of the result: the header row frozen
   and in bold on a filled background, a filter dropdown on every column, thin
   borders and banded rows, and column widths from the content. **CSV** next to

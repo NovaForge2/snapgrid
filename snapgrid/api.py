@@ -127,6 +127,7 @@ class Application:
             "last_finished": last["finished_at"] if last else None,
             "last_status": last["status"] if last else None,
             "key": plugin.key,
+            "colours": plugin.colours,
             "failures": failures,
             "next_run": next_run,
             "row_count": last["row_count"] if last else None,
@@ -302,7 +303,8 @@ class Application:
 
     def export_xlsx(self, plugin_id: str, query: dict) -> tuple[bytes, str]:
         plugin, snapshot, stamp = self._to_export(plugin_id, query)
-        body = write_xlsx(snapshot["columns"], snapshot["rows"], sheet_name=plugin.name)
+        body = write_xlsx(snapshot["columns"], snapshot["rows"], sheet_name=plugin.name,
+                          colours=plugin.colours)
         return body, f"{plugin.id}-{stamp}.xlsx"
 
 

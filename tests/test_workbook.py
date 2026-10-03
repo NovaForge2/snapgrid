@@ -8,10 +8,13 @@ what is below is about proving that does not happen here, because a formatted
 file that quietly changed a version number would be worse than no file at all.
 """
 
+import io
+import re
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 from snapgrid.spreadsheet import read_xlsx
 from snapgrid.workbook import (
@@ -201,3 +204,51 @@ class Letters(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Colours(unittest.TestCase):
+    """A value the plugin gave a colour to keeps it in the spreadsheet."""
+
+    def parts(self, colours):
+        body = write_xlsx(["id", "status"],
+                          [["1", "red"], ["2", "amber"], ["3", "green"],
+                           ["4", "blue"], ["5", "grey"], ["6", "something else"]],
+                          colours=colours)
+        archive = zipfile.ZipFile(io.BytesIO(body))
+        return (archive.read("xl/worksheets/sheet1.xml").decode(),
+                archive.read("xl/styles.xml").decode())
+
+    MAP = {"status": {"red": "red", "amber": "amber", "green": "green",
+                      "blue": "blue", "grey": "grey"}}
+
+    def test_each_shade_gets_its_own_style(self):
+        sheet, _ = self.parts(self.MAP)
+        used = re.findall(r'<c r="B(\d+)" s="(\d+)"', sheet)
+        # Row 1 is the header. Then one style per shade, all different.
+        shades = [style for row, style in used if row != "1"][:5]
+        self.assertEqual(len(set(shades)), 5, "five shades, five styles")
+
+    def test_a_value_with_no_colour_keeps_the_ordinary_style(self):
+        sheet, _ = self.parts(self.MAP)
+        used = dict(re.findall(r'<c r="B(\d+)" s="(\d+)"', sheet))
+        self.assertIn(used["7"], ("2", "3"), "the plain text styles")
+
+    def test_the_style_sheet_counts_what_it_contains(self):
+        # Excel refuses a file whose counts do not match the elements.
+        _, styles = self.parts(self.MAP)
+        for part, pattern in (("fonts", r"<font"), ("fills", r"<fill>"),
+                              ("cellXfs", r"<xf ")):
+            declared = int(re.search(rf'<{part} count="(\d+)"', styles).group(1))
+            section = styles.split(f"<{part}")[1].split(f"</{part}>")[0]
+            self.assertEqual(declared, len(re.findall(pattern, section)),
+                             f"{part} says {declared}")
+
+    def test_no_colours_means_the_file_is_as_it_was(self):
+        plain, _ = self.parts(None)
+        self.assertNotIn('s="6"', plain)
+
+    def test_every_part_is_well_formed(self):
+        body = write_xlsx(["id", "status"], [["1", "red"]], colours=self.MAP)
+        archive = zipfile.ZipFile(io.BytesIO(body))
+        for name in archive.namelist():
+            ElementTree.fromstring(archive.read(name))

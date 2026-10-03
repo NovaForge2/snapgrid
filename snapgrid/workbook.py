@@ -37,6 +37,18 @@ BAND_FILL = "FFF3F6F4"         # a very light tint for every other row
 # gridlines, which this file switches off so these are the only lines drawn.
 LINE = "FF9AA4AF"
 
+# [colour] in plugin.toml, as Excel sees it: the same five, in the lighter of
+# the two themes, because a spreadsheet is printed and read on white.
+SHADES = {
+    "red":   ("FF9B2C2C", "FFFDECEC"),
+    "amber": ("FF8A5A00", "FFFDF3E0"),
+    "green": ("FF1F6340", "FFE7F5ED"),
+    "blue":  ("FF1F4E79", "FFE8F1FA"),
+    "grey":  ("FF4A5260", "FFEEF0F3"),
+}
+# Where each shade's style sits in cellXfs, after the six that were there.
+SHADE_STYLE = {name: 6 + index for index, name in enumerate(SHADES)}
+
 MAX_WIDTH = 60
 MIN_WIDTH = 8
 
@@ -96,7 +108,8 @@ def looks_numeric(values: list[str]) -> bool:
     return seen
 
 
-def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool]) -> str:
+def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool],
+               colours: dict[str, dict[str, str]] | None = None) -> str:
     out = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
@@ -123,6 +136,12 @@ def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool]) -
                   '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>'
                   '</sheetView></sheetViews>'
                   '<sheetFormatPr defaultRowHeight="15"/>')
+    shades = colours or {}
+
+    def shade_of(column: str, value: str) -> str:
+        mapping = shades.get(column)
+        return mapping.get(value.lower(), "") if mapping else ""
+
     out.append(f'<sheetData>')
 
     out.append('<row r="1" spans="1:%d" ht="20" customHeight="1">' % len(columns))
@@ -138,9 +157,15 @@ def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool]) -
         for index in range(len(columns)):
             value = row[index] if index < len(row) else ""
             reference = f"{column_letter(index)}{number}"
+            # A value the plugin gave a colour to keeps it here, so the
+            # spreadsheet says the same thing as the page. It overrides the
+            # banding, which is decoration, where this is meaning.
+            shade = shade_of(columns[index], value)
+            if shade:
+                style = str(SHADE_STYLE[shade])
             # A number carrying the text format makes Excel flag every cell
             # with a green corner, so the two kinds get their own styles.
-            if numeric[index]:
+            elif numeric[index]:
                 style = "5" if banded else "4"
             else:
                 style = "3" if banded else "2"
@@ -159,17 +184,34 @@ def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool]) -
     return "".join(out)
 
 
+_SHADE_FONTS = "".join(
+    f'<font><b/><sz val="11"/><color rgb="{text}"/><name val="Calibri"/></font>'
+    for text, _ in SHADES.values()
+)
+_SHADE_FILLS = "".join(
+    f'<fill><patternFill patternType="solid"><fgColor rgb="{fill}"/>'
+    f'<bgColor indexed="64"/></patternFill></fill>'
+    for _, fill in SHADES.values()
+)
+_SHADE_XFS = "".join(
+    f'<xf numFmtId="49" fontId="{2 + index}" fillId="{4 + index}" borderId="1" xfId="0" '
+    f'applyFont="1" applyFill="1" applyBorder="1"/>'
+    for index in range(len(SHADES))
+)
+
 STYLES = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="2">
+  <fonts count="{2 + len(SHADES)}">
     <font><sz val="11"/><name val="Calibri"/></font>
     <font><b/><sz val="11"/><color rgb="{HEADER_TEXT}"/><name val="Calibri"/></font>
+    {_SHADE_FONTS}
   </fonts>
-  <fills count="4">
+  <fills count="{4 + len(SHADES)}">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="{HEADER_FILL}"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="{BAND_FILL}"/><bgColor indexed="64"/></patternFill></fill>
+    {_SHADE_FILLS}
   </fills>
   <borders count="3">
     <border><left/><right/><top/><bottom/><diagonal/></border>
@@ -189,7 +231,7 @@ STYLES = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="6">
+  <cellXfs count="{6 + len(SHADES)}">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">
       <alignment vertical="center"/>
@@ -198,6 +240,7 @@ STYLES = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <xf numFmtId="49" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
     <xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1"/>
+    {_SHADE_XFS}
   </cellXfs>
   <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>'''
@@ -248,7 +291,8 @@ def safe_sheet_name(name: str) -> str:
     return cleaned[:31]
 
 
-def write_xlsx(columns: list[str], rows: list[list[str]], sheet_name: str = "Sheet1") -> bytes:
+def write_xlsx(columns: list[str], rows: list[list[str]], sheet_name: str = "Sheet1",
+               colours: dict[str, dict[str, str]] | None = None) -> bytes:
     """The table as an .xlsx file, ready to be sent."""
     import io
 
@@ -269,7 +313,7 @@ def write_xlsx(columns: list[str], rows: list[list[str]], sheet_name: str = "She
             ("xl/workbook.xml", _workbook_xml(name, len(columns), len(rows))),
             ("xl/_rels/workbook.xml.rels", WORKBOOK_RELS),
             ("xl/styles.xml", STYLES),
-            ("xl/worksheets/sheet1.xml", _sheet_xml(columns, rows, numeric)),
+            ("xl/worksheets/sheet1.xml", _sheet_xml(columns, rows, numeric, colours)),
         ):
             item = zipfile.ZipInfo(path, date_time=(1980, 1, 1, 0, 0, 0))
             item.compress_type = zipfile.ZIP_DEFLATED

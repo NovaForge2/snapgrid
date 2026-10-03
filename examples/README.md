@@ -2,7 +2,7 @@
 
 # Examples
 
-Six plugins that run anywhere, with nothing to configure and no credentials.
+Seven plugins that run anywhere, with nothing to configure and no credentials.
 
 ```bash
 ./server.py --dir examples
@@ -30,6 +30,7 @@ It appears in the page within ten seconds. No restart.
 | [team-directory](team-directory/) | who owns what | **a plugin with no program at all** - a manifest and a CSV |
 | [hello-table](hello-table/) | reads `data.json` next to it | the smallest complete script |
 | [version-matrix](version-matrix/) | invented versions that drift | watching the history and the comparison fill up |
+| [notes](notes/) | a list you keep yourself | **colouring a value** with `[colour]`, and why a hand-set status needs a date |
 
 Each folder has its own README with a picture of it running, an explanation of
 how it works, what to change, and which part of the contract it demonstrates.
@@ -56,6 +57,10 @@ something. Both are mostly about what to do when part of the work fails, which
 is most of what a real plugin's code turns out to be.
 
 **[team-directory](team-directory/)** when the data is not computed at all.
+
+**[notes](notes/)** for the same shape put to a different use, and for
+`[colour]` - which has nothing to do with notes and belongs on any column with
+a small fixed set of values.
 
 ## Then write your own
 

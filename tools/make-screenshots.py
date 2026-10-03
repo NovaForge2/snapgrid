@@ -54,7 +54,7 @@ SHOTS = [
 ] + [
     (f"examples/{name}/screenshot", 1440, 470, f"?plugin={name}", 1)
     for name in ("certificate-expiry", "disk-space", "endpoint-health",
-                 "hello-table", "team-directory", "version-matrix")
+                 "hello-table", "notes", "team-directory", "version-matrix")
 ]
 
 

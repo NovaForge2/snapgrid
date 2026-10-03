@@ -79,6 +79,29 @@ keep = 20
 | `output.fresh_for` | string | none | if the file is younger than this, use it and do not run the plugin. Run now runs it anyway |
 | `run.command` | | | not required when `output.file` is set - a folder with a manifest and a file is a valid plugin |
 | `history.keep` | int | `0` | how many *differing* results to keep. Omit for latest only |
+| `colour.<column>` | section | none | a colour for named values in that column. See below |
+
+### Colouring a value
+
+A column holding a small fixed set of values reads much faster with a colour on
+it. Name the column, then the values:
+
+```toml
+[colour.status]
+ok       = "green"
+expiring = "amber"
+expired  = "red"
+```
+
+Matching is on the whole value and ignores case. A value nobody named is left
+plain, so this is safe on a column that can also hold free text.
+
+The colours are **red, amber, green, blue and grey** - the whole set, and
+anything else is refused. Use them for what they mean: `red` wrong now, `amber`
+not wrong yet, `green` right, `blue` informational, `grey` finished or
+dismissed. Do not colour a column where every value would get the same colour,
+and do not colour more than one or two columns: the point is that the eye goes
+somewhere, which stops working if everything is coloured.
 
 Every key has to be written under its own section header: a `timeout` added at the
 end of the file belongs to whatever section came last and is refused, not ignored.
