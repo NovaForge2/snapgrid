@@ -32,24 +32,33 @@ afterwards. Where a setting accepts a fixed set of values, list all of them and
 what each one means. A README that trails the code is worse than no README,
 because people trust it.
 
-## The animation in the README
+## The pictures in the README
 
-`docs/demo.gif` and `docs/diff.gif` are built from screenshots with
-`tools/make-gif.py`, which joins
-PNG frames into an animated GIF using only the standard library - no ffmpeg, no
-ImageMagick, no Pillow. A GIF rather than an animated PNG because plenty of
-locked down machines will not animate the latter, and those machines are the
-audience.
-
-The frames come from headless Chrome against a running server, one per state,
-which is what the URL parameters make possible:
+Every screenshot, beside each example and in `docs/`, plus `docs/diff.gif`, is
+rebuilt in one go:
 
 ```bash
-chrome --headless=new --window-size=1100,545 --screenshot=f1.png \
-  "http://127.0.0.1:8765/?plugin=diff-demo&compare=3&theme=dark"
+./server.py start --dir examples
+./tools/make-screenshots.py
 ```
 
-so the pictures can be rebuilt exactly rather than recaptured by hand.
+It drives headless Chrome against the running server, one shot per state, and
+joins the animation's frames with `tools/make-gif.py` - which makes a GIF out
+of PNGs using only the standard library, no ffmpeg, no ImageMagick, no Pillow.
+A GIF rather than an animated PNG because plenty of locked down machines will
+not animate the latter, and those machines are the audience.
+
+Chrome is the one thing in this repository that has to be installed, and only
+to rebuild the pictures. It is a maintainer's tool: the results are committed,
+so nobody reading or running snapgrid needs it.
+
+**Redo them whenever the interface changes**, in the same change. A picture of
+something the program no longer does is worse than no picture, for the same
+reason a README that trails the code is.
+
+`docs/demo.gif` is the exception: its frames are a column being sorted, a
+filter opened, a search typed - states the address bar cannot name, so it is
+still recaptured by hand.
 
 ## Tests
 

@@ -475,7 +475,7 @@ function renderSnapshotPicker() {
     option.value = String(snapshot.id);
     const when = timeAgo(snapshot.last_seen);
     option.textContent =
-      index === 0 ? "latest (" + when + ")" : when + " - " + snapshot.row_count + " rows";
+      index === 0 ? "latest (" + when + ")" : when + " - " + rowCount(snapshot.row_count);
     if (state.snapshotId ? Number(state.snapshotId) === snapshot.id : index === 0) {
       option.selected = true;
     }
@@ -932,6 +932,11 @@ function visibleRows(columns, rows, skipColumn) {
   });
 }
 
+// "1 rows" was on every screenshot of a one-row table.
+function rowCount(n) {
+  return n + (n === 1 ? " row" : " rows");
+}
+
 function renderTable() {
   // A run finishing redraws the table once a second. Doing that while a column
   // is being dragged threw away the heading under the pointer and laid the
@@ -1173,10 +1178,8 @@ function renderTable() {
   // While comparing, what is on screen includes rows that have gone, so the
   // count is of lines drawn rather than of rows in this result.
   const drawn = tbody.querySelectorAll("tr").length;
-  const note = usable
-    ? (drawn === total ? total + " rows" : drawn + " of " + total + " rows")
-    : (rows.length === total ? total + " rows"
-                             : rows.length + " of " + total + " rows");
+  const shown = usable ? drawn : rows.length;
+  const note = shown === total ? rowCount(total) : shown + " of " + rowCount(total);
   const missing = columns.length - shownIndexes.length;
   el("row-note").textContent = missing ? `${note} - ${missing} column${missing > 1 ? "s" : ""} hidden`
                                        : note;

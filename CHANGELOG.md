@@ -62,6 +62,11 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   the widest value in it, and the table stops there. It used to be stretched to
   fill the window, and everything it gained that way became empty space inside
   the columns.
+- **The pictures show what the program does now.** Every screenshot and the
+  comparison animation were of the older interface. `tools/make-screenshots.py`
+  rebuilds all of them from a running server in one go, so they can be redone
+  with the change that makes them wrong rather than drifting.
+- **"1 row"**, not "1 rows".
 - **Every example declares the same things.** Three of the six set `[table]
   key`, three did not; one kept no history; two wrote the timeout as a bare
   number. Copying one as a starting point gave a different template each time.

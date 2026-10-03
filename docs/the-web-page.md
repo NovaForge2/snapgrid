@@ -85,7 +85,7 @@ whatever the machine prefers, and pressing the button still wins.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="diff-dark.png">
-    <img src="diff.png" alt="A table comparing four runs" width="900">
+    <img src="diff.png" alt="A table comparing four runs, with only the cells that changed stacked" width="900">
   </picture>
 </p>
 

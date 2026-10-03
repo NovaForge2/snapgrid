@@ -120,7 +120,7 @@ moved, and when** - and that is what the stored history is for.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.gif">
-    <img src="docs/diff.gif" alt="Turning on the comparison: each cell fills with the last few runs, changed values stand out, rows that appeared or disappeared are marked, and the table can be narrowed to only what changed" width="900">
+    <img src="docs/diff.gif" alt="Turning the comparison on one run at a time: the cells that changed deepen with what they held in each earlier run, and the table is then narrowed to only the rows that moved" width="900">
   </picture>
 </p>
 
@@ -131,7 +131,7 @@ did not move stay as they were, so the deep cells are the changes:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/diff-dark.png">
-    <img src="docs/diff.png" alt="A table comparing four runs. One cell shows four different versions stacked; unchanged cells show a dot; a row marked NEW and a row marked GONE" width="900">
+    <img src="docs/diff.png" alt="A table comparing four runs. The cells that changed hold one line per run, newest in bold on top; the cells that did not are written once" width="900">
   </picture>
 </p>
 
