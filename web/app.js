@@ -87,20 +87,38 @@ async function api(path, options = {}) {
 
 /* -------------------------------------------------------------- helpers */
 
+// One vocabulary for every length of time on the page: s, m, h, d - the same
+// letters plugin.toml uses. It used to say "every 15m" in one place, "5 min
+// ago" in the next and "in 12 min" in a third, which reads like three
+// different units rather than one written three ways.
+function duration(seconds) {
+  const n = Math.abs(Math.round(seconds));
+  if (n < 60) return n + "s";
+  if (n < 3600) return Math.round(n / 60) + "m";
+  if (n < 86400) return Math.round(n / 3600) + "h";
+  return Math.round(n / 86400) + "d";
+}
+
 function timeAgo(seconds) {
   if (!seconds) return "never";
   const delta = Date.now() / 1000 - seconds;
   if (delta < 45) return "just now";
-  if (delta < 5400) return Math.round(delta / 60) + " min ago";
-  if (delta < 172800) return Math.round(delta / 3600) + " h ago";
+  if (delta < 172800) return duration(delta) + " ago";
   return new Date(seconds * 1000).toLocaleString();
 }
 
 function timeUntil(seconds) {
   const delta = seconds - Date.now() / 1000;
   if (delta <= 30) return "any moment";
-  if (delta < 5400) return "in " + Math.round(delta / 60) + " min";
-  return "at " + new Date(seconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (delta < 5400) return "in " + duration(delta);
+
+  // A clock time is friendlier than "in 5h" for something happening today.
+  // For anything later it is a lie that reads as today, so the date comes too.
+  const when = new Date(seconds * 1000);
+  const clock = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (when.toDateString() === new Date().toDateString()) return "at " + clock;
+  return "in " + duration(delta) + ", " + when.toLocaleDateString([], { day: "numeric", month: "short" })
+         + " " + clock;
 }
 
 function humanInterval(seconds) {
@@ -183,9 +201,24 @@ function renderSidebar() {
       list.appendChild(label);
     }
 
-    const button = document.createElement("button");
-    button.className = "plugin" + (plugin.id === state.selected ? " selected" : "");
-    button.type = "button";
+    const row = document.createElement("div");
+    row.className = "plugin" + (plugin.id === state.selected ? " selected" : "")
+                             + (plugin.paused_since ? " paused" : "");
+
+    // In front of the name, because that is where the eye goes when the
+    // question is "why has this not changed?" - and because it has to be its
+    // own button, not part of the one that opens the plugin.
+    if (plugin.every !== null && plugin.enabled && !plugin.error) {
+      row.appendChild(pauseButton(plugin));
+    } else {
+      const gap = document.createElement("span");
+      gap.className = "pause-gap";     // keeps the names in a line
+      row.appendChild(gap);
+    }
+
+    const pick = document.createElement("button");
+    pick.className = "pick";
+    pick.type = "button";
 
     const dot = document.createElement("span");
     dot.className = "dot " + plugin.status;
@@ -195,9 +228,10 @@ function renderSidebar() {
     label.className = "label";
     label.textContent = plugin.name;
 
-    button.append(dot, label);
-    button.addEventListener("click", () => select(plugin.id));
-    list.appendChild(button);
+    pick.append(dot, label);
+    pick.addEventListener("click", () => select(plugin.id));
+    row.appendChild(pick);
+    list.appendChild(row);
   }
 }
 
@@ -296,8 +330,8 @@ async function loadPlugins() {
     state.plugins = data.plugins;
     renderServerInfo(data.server);
     renderEmptyState(data.server, data.plugins.length);
-    el("server-note").textContent = data.plugins.length + " plugins";
     renderSidebar();
+    renderPauseAll();      // sets the plugin count, with the paused one in it
     // Landing on "pick something" when there is a table ready to look at
     // wastes the first few seconds. Open the first one.
     if (!state.selected && state.plugins.length) {
@@ -414,6 +448,18 @@ function renderDetail() {
       : "next run " + timeUntil(detail.next_run));
   }
   el("p-meta").textContent = meta.join(" - ");
+
+  // A paused plugin shows a table that looks exactly like a current one, so
+  // the page has to be loud about it. This is the whole risk of the feature:
+  // a fortnight-old number read as today's is worse than no number.
+  const paused = detail.paused_since;
+  el("p-paused").hidden = !paused;
+  if (paused) {
+    el("p-paused").textContent =
+      `Paused ${timeAgo(paused)} - the schedule is leaving it alone. `
+      + `Run now still works.`;
+  }
+
 
   const busy = Boolean(live);
   el("btn-refresh").disabled = busy;
@@ -1640,6 +1686,89 @@ el("btn-clear").addEventListener("click", () => {
   el("search").value = "";
   renderTable();
 });
+
+/* ------------------------------------------------------------- pausing */
+
+// Drawn rather than typed. The pause and play characters render as colour
+// emoji on some systems, which is both the wrong size and the wrong colour
+// next to a plugin name.
+const PAUSE_ICON = '<svg viewBox="0 0 10 10" aria-hidden="true">'
+                 + '<rect x="2" y="1.5" width="2.2" height="7" rx="0.6"/>'
+                 + '<rect x="5.8" y="1.5" width="2.2" height="7" rx="0.6"/></svg>';
+const PLAY_ICON = '<svg viewBox="0 0 10 10" aria-hidden="true">'
+                + '<path d="M2.6 1.6 L8.2 5 L2.6 8.4 Z"/></svg>';
+
+function iconButton(className, paused, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className + (paused ? " on" : "");
+  button.innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  return button;
+}
+
+function pauseButton(plugin) {
+  const paused = Boolean(plugin.paused_since);
+  const button = iconButton("pause-btn", paused, paused
+    ? "Paused " + timeAgo(plugin.paused_since) + ". Put it back on its schedule"
+    : "Take it off the schedule. The last result stays, and Run now still works");
+  button.addEventListener("click", async (event) => {
+    // The row behind it opens the plugin, which is not what was clicked.
+    event.stopPropagation();
+    button.disabled = true;
+    try {
+      await api(`/api/plugins/${encodeURIComponent(plugin.id)}/`
+                + (paused ? "resume" : "pause"), { method: "POST" });
+      await loadPlugins();
+      if (state.selected === plugin.id) await loadDetail();
+    } catch (error) {
+      button.disabled = false;
+      showMessage(error.message, false);
+    }
+  });
+  return button;
+}
+
+// Ten plugins on a machine with little to spare, and two of them worth running
+// this fortnight. Pausing is snapgrid's own state: plugin.toml is yours and is
+// never written to, so a plugins folder under git stays clean.
+// The same control for the whole list, at the head of it. No confirmation:
+// pausing costs nothing and the same button puts it back.
+el("btn-pause-all").addEventListener("click", async () => {
+  const schedulable = state.plugins.filter((plugin) => plugin.every !== null);
+  const resuming = schedulable.length > 0 && schedulable.every((p) => p.paused_since);
+  try {
+    await api("/api/server/" + (resuming ? "resume" : "pause"), { method: "POST" });
+    await loadPlugins();
+    if (state.selected) await loadDetail();
+  } catch (error) {
+    showMessage(error.message, false);
+  }
+});
+
+function renderPauseAll() {
+  const schedulable = state.plugins.filter((plugin) => plugin.every !== null);
+  const paused = schedulable.filter((plugin) => plugin.paused_since);
+  const all = schedulable.length > 0 && paused.length === schedulable.length;
+
+  const button = el("btn-pause-all");
+  button.hidden = schedulable.length === 0;
+  button.innerHTML = all ? PLAY_ICON : PAUSE_ICON;
+  button.classList.toggle("on", all);
+  const label = all
+    ? "Put every plugin back on its schedule"
+    : `Take all ${schedulable.length} plugins off the schedule`;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+
+  // Said next to the plugin count rather than as a chip of its own: the foot
+  // of a 260px panel has no room for a third thing.
+  const note = el("server-note");
+  const plugins = state.plugins.length + " plugins";
+  note.textContent = paused.length ? `${plugins}, ${paused.length} paused` : plugins;
+  note.classList.toggle("some-paused", paused.length > 0 && !all);
+}
 
 /* --------------------------------------------------------- stopping it */
 

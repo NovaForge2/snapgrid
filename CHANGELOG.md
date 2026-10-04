@@ -45,6 +45,20 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 - **Continuous integration**: the tests run on Linux, macOS and Windows against
   Python 3.11 to 3.13, with CodeQL and a check that nothing has started
   importing a module that would have to be installed.
+- **Pausing.** A pause control in front of every plugin in the left panel takes
+  it off the schedule, and one at the head of the panel does the lot. The same
+  control, as a play triangle, puts them back. For a machine with little to
+  spare and more plugins than you need running this fortnight. The last result
+  stays, `Run now` still works, and nothing is written to `plugin.toml` - the
+  plugin folder is yours and is often a repository. Because a paused plugin
+  looks exactly like a current one, it is marked in the list, in the heading
+  and in the plugin count.
+- **One vocabulary for time.** The page said `every 15m` in one place,
+  `5 min ago` in the next and `in 12 min` in a third. It is now `s`, `m`, `h`
+  and `d` everywhere - the same letters `plugin.toml` uses - and an hour reads
+  as `1h` rather than `60m`, a day as `1d` rather than `24h`. A run due after
+  today carries its date, where it used to show a bare clock time that read as
+  this afternoon.
 - **A Stop button**, at the foot of the left panel. The terminal snapgrid was
   started from is usually somewhere else by the time you want it closed. It
   asks first, stops as cleanly as Ctrl+C does, and then shows the command to

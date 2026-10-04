@@ -123,6 +123,11 @@ by `every` only.
 Anything else is refused when the manifest is read, with a message naming the
 key and showing the forms it accepts, rather than being silently ignored.
 
+**The page uses the same letters.** `every 15m`, `5m ago`, `next run in 12m`,
+`paused 3d ago` - one vocabulary, whether the number came from a manifest or
+from a clock. Beyond a couple of days it shows the date instead, since `21d
+ago` is not something anyone reads as a date.
+
 ## `[run] timeout`
 
 How long one run of this plugin may take. When it is exceeded the process **and
@@ -195,6 +200,11 @@ interval that passed.
 
 This is an interval, not a clock: `"1d"` means "a day after the last one
 finished", not "at nine every morning".
+
+`"off"` is the permanent way of saying "do not run this on a schedule". For
+"not this fortnight", use **Pause** on the page instead - it does the same
+thing without editing the manifest, and says on screen that it is in force.
+See [the-web-page.md](the-web-page.md).
 
 After three failures in a row the interval doubles each time, up to an hour,
 and the first success puts it back to normal.

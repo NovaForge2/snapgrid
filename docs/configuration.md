@@ -113,9 +113,9 @@ plugins/.snapgrid/
 
 | File | What it is | If you delete it |
 |---|---|---|
-| `snapgrid.db` | a SQLite database: runs, results and per-plugin state | history is lost, everything else still works |
+| `snapgrid.db` | a SQLite database: runs, results, and per-plugin state including which plugins are paused | history is lost and everything paused resumes; nothing else is affected |
 | `server.log` | what the server itself printed, including startup problems | nothing |
-| `server.json` | how `stop` and `status` find the running server without searching | `stop` cannot find it; kill it by hand |
+| `server.json` | how `stop` and `status` find the running server without searching | they fall back to asking whatever is on the port, so both still work |
 
 While the server is running you may also see `snapgrid.db-wal` and
 `snapgrid.db-shm`. Those are SQLite's own working files - it runs in WAL mode

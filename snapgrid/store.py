@@ -60,6 +60,24 @@ CREATE TABLE IF NOT EXISTS state (
     last_finished        REAL,
     consecutive_failures INTEGER NOT NULL DEFAULT 0
 );
+
+-- Plugins the schedule is to leave alone, and since when. A table of its own
+-- rather than a column on state, so a database made by an older snapgrid
+-- gains it by being opened rather than by being migrated.
+--
+-- This is snapgrid's state, not the plugin's: pausing does not touch
+-- plugin.toml. The folder is yours, and a plugins folder is often a
+-- repository - snapgrid editing files in it would be a surprise, and a
+-- surprise in somebody else's git status.
+CREATE TABLE IF NOT EXISTS paused (
+    plugin_id TEXT PRIMARY KEY,
+    since     REAL NOT NULL,
+    -- 'hand' for one pressed on its own, 'all' for one swept up by the
+    -- control at the head of the panel. Resuming everything puts back only
+    -- the ones it paused: pausing the lot for an hour must not forget that
+    -- two of them were deliberately put aside a fortnight ago.
+    by        TEXT NOT NULL DEFAULT 'hand'
+);
 """
 
 # Statuses a run can end in. "ok" is the only one that produces a snapshot.
@@ -86,6 +104,12 @@ class Store:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.execute("PRAGMA synchronous=NORMAL")
             self._db.executescript(SCHEMA)
+            # A database from before pausing knew who had done it. Adding the
+            # column is the whole migration; the default says 'hand', which is
+            # the safe reading of a pause nobody can ask about any more.
+            columns = {row["name"] for row in self._db.execute("PRAGMA table_info(paused)")}
+            if "by" not in columns:
+                self._db.execute("ALTER TABLE paused ADD COLUMN by TEXT NOT NULL DEFAULT 'hand'")
             self._db.commit()
 
     def close(self) -> None:
@@ -305,6 +329,59 @@ class Store:
         return history
 
     # ----- scheduler state ----------------------------------------------
+
+    # ----- pausing ------------------------------------------------------
+
+    def set_paused(self, plugin_id: str, paused: bool, by: str = "hand") -> float | None:
+        """Pause or resume one plugin. Returns when it was paused, or None."""
+        with self._lock:
+            if not paused:
+                self._db.execute("DELETE FROM paused WHERE plugin_id=?", (plugin_id,))
+                self._db.commit()
+                return None
+            # Pausing something already paused must not reset the clock: how
+            # long it has been quiet is the thing worth knowing. Nor may it
+            # change who paused it - one already set aside by hand stays that
+            # way when the whole list is swept.
+            row = self._db.execute(
+                "SELECT since FROM paused WHERE plugin_id=?", (plugin_id,)
+            ).fetchone()
+            if row:
+                return float(row["since"])
+            now = time.time()
+            self._db.execute(
+                "INSERT INTO paused (plugin_id, since, by) VALUES (?,?,?)",
+                (plugin_id, now, by),
+            )
+            self._db.commit()
+            return now
+
+    def resume_all(self) -> list[str]:
+        """Undo a sweep, and only a sweep.
+
+        The ones paused on their own stay paused: "pause everything while I do
+        something heavy" is an hour, and "I am not using this one" is a
+        fortnight. Losing the second to the first would be noticed weeks later,
+        when the plugin started running again for no reason anybody remembers.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT plugin_id FROM paused WHERE by='all'").fetchall()
+            self._db.execute("DELETE FROM paused WHERE by='all'")
+            self._db.commit()
+        return [row["plugin_id"] for row in rows]
+
+    def paused_plugins(self) -> dict[str, float]:
+        """Every paused plugin, and when it was paused. Read on every tick."""
+        with self._lock:
+            rows = self._db.execute("SELECT plugin_id, since FROM paused").fetchall()
+        return {row["plugin_id"]: float(row["since"]) for row in rows}
+
+    def paused_by_hand(self) -> set[str]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT plugin_id FROM paused WHERE by='hand'").fetchall()
+        return {row["plugin_id"] for row in rows}
 
     def clear_failures(self, plugin_id: str) -> None:
         """Forget the run of failures, without touching when it last ran.

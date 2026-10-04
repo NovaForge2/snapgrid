@@ -57,6 +57,7 @@ CONTENT_TYPES = {
 
 PLUGIN_RUN_RE = re.compile(r"^/api/plugins/([^/]+)/run$")
 PLUGIN_RUNS_RE = re.compile(r"^/api/plugins/([^/]+)/runs$")
+PLUGIN_PAUSE_RE = re.compile(r"^/api/plugins/([^/]+)/(pause|resume)$")
 PLUGIN_SNAPS_RE = re.compile(r"^/api/plugins/([^/]+)/snapshots$")
 PLUGIN_XLSX_RE = re.compile(r"^/api/plugins/([^/]+)/export\.xlsx$")
 PLUGIN_CONFIG_RE = re.compile(r"^/api/plugins/([^/]+)/config$")
@@ -109,6 +110,35 @@ class Application:
             raise HttpError(404, f"no plugin called {plugin_id!r}")
         return plugin
 
+    def set_paused(self, plugin_id: str, paused: bool) -> dict:
+        """Pause or resume one plugin, by name."""
+        plugin = self._plugin(plugin_id)
+        since = self.store.set_paused(plugin.id, paused)
+        return {"id": plugin.id, "paused_since": since}
+
+    def pause_everything(self, paused: bool) -> dict:
+        """Quieten the whole machine, or let it go again.
+
+        Resuming releases only what this swept up. A plugin put aside on its
+        own stays put aside: "quiet while I do something heavy" is an hour,
+        and "I am not using this one" is a fortnight, and the second must not
+        be lost to the first.
+
+        What resuming does not do is run everything at once to catch up: each
+        plugin simply becomes due again, and the schedule picks them up a few
+        at a time as it always does.
+        """
+        if not paused:
+            return {"paused": False, "plugins": self.store.resume_all()}
+
+        touched = []
+        for plugin in self.registry.all():
+            if not plugin.runnable or plugin.every is None:
+                continue        # nothing the schedule would have run anyway
+            self.store.set_paused(plugin.id, True, by="all")
+            touched.append(plugin.id)
+        return {"paused": True, "plugins": touched}
+
     def stop_server(self) -> dict:
         """Stop snapgrid, from the page that is looking at it.
 
@@ -141,8 +171,10 @@ class Application:
         live = self.runner.live(plugin.id)
         last = self.store.last_finished_run(plugin.id)
         last_finished, failures = self.store.get_state(plugin.id)
+        paused_since = self.store.paused_plugins().get(plugin.id)
         next_run = None
-        if plugin.runnable and plugin.every is not None and last_finished:
+        if (plugin.runnable and plugin.every is not None and last_finished
+                and paused_since is None):
             next_run = last_finished + interval_for(plugin.every, failures)
         status = "never"
         if plugin.error:
@@ -171,6 +203,7 @@ class Application:
             "last_status": last["status"] if last else None,
             "key": plugin.key,
             "colours": plugin.colours,
+            "paused_since": paused_since,
             "failures": failures,
             "next_run": next_run,
             "row_count": last["row_count"] if last else None,
@@ -494,6 +527,14 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/server/stop":
                 return self._json(self.app.stop_server())
+
+            if path in ("/api/server/pause", "/api/server/resume"):
+                return self._json(self.app.pause_everything(path.endswith("pause")))
+
+            match = PLUGIN_PAUSE_RE.match(path)
+            if match:
+                return self._json(
+                    self.app.set_paused(match.group(1), match.group(2) == "pause"))
 
             raise HttpError(404, "no such endpoint")
         except HttpError as exc:

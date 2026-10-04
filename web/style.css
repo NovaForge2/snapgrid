@@ -165,14 +165,57 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   padding: 12px 16px 4px; font-size: 11px; text-transform: uppercase;
   letter-spacing: .08em; color: var(--muted);
 }
-.plugin {
-  display: flex; align-items: center; gap: 9px; width: 100%;
-  padding: 7px 16px; border: 0; background: none; color: inherit;
-  font: inherit; text-align: left; cursor: pointer;
-}
+/* A row, not a button: the pause control in front of the name has to be its
+   own button, and a button inside a button is not a thing. */
+.plugin { display: flex; align-items: center; width: 100%; }
 .plugin:hover { background: var(--hover); }
 .plugin.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.plugin .pick {
+  display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
+  padding: 7px 16px 7px 4px; border: 0; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer; border-radius: 0;
+}
 .plugin .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin.paused .label { color: var(--muted); }
+
+/* ---------- pause and resume ----------
+   One control, two shapes: bars while it is running to its schedule, a
+   triangle while it is not. The triangle is the louder of the two on purpose -
+   a paused plugin shows a table that looks exactly like a current one, and
+   that is the thing worth noticing from across the list. */
+.icon-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  /* 24x24: the smallest a pointer target is allowed to be. The mark inside
+     is 10px, so it looks the same and is easier to hit. */
+  width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px;
+  background: none; color: var(--muted); cursor: pointer; opacity: .7;
+}
+.icon-btn:hover { opacity: 1; }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+.icon-btn svg { width: 10px; height: 10px; fill: currentColor; }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn.on { color: var(--changed); }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+
+.pause-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; margin-left: 6px; padding: 0;
+  border: 0; border-radius: 4px; background: none; cursor: pointer;
+  /* Always there, so the control is where you expect it rather than appearing
+     under the pointer - but quiet, so ten plugins read as a list of names with
+     something beside them rather than as a row of buttons. Not quieter than
+     .6, which is where it stops meeting the 3:1 a control has to have. */
+  color: var(--muted); opacity: .6;
+}
+.pause-btn svg { width: 9px; height: 9px; fill: currentColor; }
+.plugin:hover .pause-btn { opacity: .85; }
+.pause-btn:hover { background: var(--panel); color: var(--text); opacity: 1; }
+.pause-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; opacity: 1; }
+/* A paused one is not quiet: the table it is showing looks exactly like a
+   current one, and this is what says otherwise from across the list. */
+.pause-btn.on, .plugin:hover .pause-btn.on { color: var(--changed); opacity: 1; }
+.pause-btn:disabled { opacity: .5; cursor: default; }
+.pause-gap { flex: none; width: 24px; margin-left: 6px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.ok { background: var(--ok); }
 .dot.failed, .dot.timeout, .dot.broken { background: var(--fail); }
@@ -183,12 +226,17 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
 #sidebar-foot {
   padding: 8px 10px 8px 16px; border-top: 1px solid var(--line);
   color: var(--muted); font-size: 12px;
-  display: flex; align-items: center; gap: 8px;
+  /* Wraps rather than squeezes: at 260px the count and two buttons do not sit
+     on one line, and two tidy rows beat three cramped columns. */
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px;
 }
 #sidebar-foot .grow { flex: 1; }
 /* Small, out of the way, and nowhere near anything used often. Stopping is
    cheap to undo but annoying to do by accident. */
-#btn-quit { font-size: 12px; padding: 2px 8px; }
+#btn-quit, #btn-pause-all { font-size: 12px; padding: 2px 8px; }
+#server-note.some-paused { color: var(--changed); }
+
+#p-paused { margin-top: 6px; font-size: 12px; color: var(--changed); }
 #btn-quit:hover { color: var(--fail); border-color: var(--fail); }
 
 /* ---------- after the server has gone ----------

@@ -126,3 +126,124 @@ class EditingClearsTheBackoff(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Pausing(unittest.TestCase):
+    """A plugin the schedule is to leave alone.
+
+    Ten plugins on a machine with little to spare, two of them worth running
+    this fortnight. Pausing is snapgrid's own state and never touches
+    plugin.toml, so a plugins folder under git stays clean.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.store = Store(root / "test.db")
+        self.addCleanup(self.store.close)
+        self.registry = Registry(root / "plugins")
+        self.runner = NothingRunning()
+        self.scheduler = Scheduler(self.store, self.registry, self.runner)
+        self.registry.scan = lambda: None
+        self.plugin = Plugin(id="p", dir=Path("."), name="P", command=["x"],
+                             every=1, mtime=100.0)
+        self.registry._plugins = {"p": self.plugin}
+
+    def test_an_unpaused_plugin_is_submitted(self):
+        self.scheduler._tick()
+        self.assertEqual(self.runner.submitted, [("p", "schedule")])
+
+    def test_a_paused_plugin_is_not(self):
+        self.store.set_paused("p", True)
+        self.scheduler._tick()
+        self.assertEqual(self.runner.submitted, [], "paused means the schedule leaves it")
+
+    def test_resuming_puts_it_back(self):
+        self.store.set_paused("p", True)
+        self.scheduler._tick()
+        self.store.set_paused("p", False)
+        self.scheduler._tick()
+        self.assertEqual(self.runner.submitted, [("p", "schedule")])
+
+    def test_pausing_one_does_not_pause_another(self):
+        self.registry._plugins["q"] = Plugin(id="q", dir=Path("."), name="Q",
+                                             command=["x"], every=1, mtime=100.0)
+        self.store.set_paused("p", True)
+        self.scheduler._tick()
+        self.assertEqual([one for one, _ in self.runner.submitted], ["q"])
+
+    def test_pausing_twice_does_not_restart_the_clock(self):
+        # How long it has been quiet is the thing worth knowing, so pressing
+        # pause again - or Pause all over something already paused - must not
+        # make it look like it just happened.
+        first = self.store.set_paused("p", True)
+        again = self.store.set_paused("p", True)
+        self.assertEqual(first, again)
+
+    def test_an_edit_does_not_resume_it(self):
+        # Editing a manifest clears the failure backoff. Pausing is not a
+        # failure, and a plugin paused for a fortnight must not come back
+        # because it was tidied up in the meantime.
+        self.store.set_paused("p", True)
+        self.plugin.mtime = 200.0
+        self.scheduler._tick()
+        self.assertEqual(self.runner.submitted, [])
+        self.assertIn("p", self.store.paused_plugins())
+
+
+class PausingEverythingKeepsTheOnesYouChose(unittest.TestCase):
+    """The bug this exists to prevent.
+
+    Two plugins are put aside for a fortnight. A week later the machine is
+    needed for something heavy, so everything is paused for an hour and then
+    let go again - and the two come back with it. Nobody notices for days,
+    because a plugin running is not an event.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(Path(self.tmp.name) / "test.db")
+        self.addCleanup(self.store.close)
+
+    def test_resuming_everything_leaves_the_hand_paused_alone(self):
+        self.store.set_paused("set-aside", True, by="hand")
+        for name in ("a", "b"):
+            self.store.set_paused(name, True, by="all")
+
+        released = self.store.resume_all()
+        self.assertEqual(sorted(released), ["a", "b"])
+        self.assertEqual(sorted(self.store.paused_plugins()), ["set-aside"])
+
+    def test_a_sweep_does_not_take_over_one_already_set_aside(self):
+        self.store.set_paused("set-aside", True, by="hand")
+        self.store.set_paused("set-aside", True, by="all")   # swept over it
+        self.assertEqual(self.store.paused_by_hand(), {"set-aside"})
+        self.store.resume_all()
+        self.assertIn("set-aside", self.store.paused_plugins())
+
+    def test_resuming_one_by_hand_releases_it_whatever_paused_it(self):
+        # Pressing a plugin's own control is explicit, and beats whatever
+        # bookkeeping says about how it came to be paused.
+        self.store.set_paused("a", True, by="all")
+        self.store.set_paused("a", False)
+        self.assertEqual(self.store.paused_plugins(), {})
+
+    def test_an_older_database_gains_the_column(self):
+        # Pausing shipped before this, so a database already in use has rows
+        # with no 'by'. They are read as paused by hand, which is the safe
+        # reading of a pause nobody can ask about any more.
+        import sqlite3
+        path = Path(self.tmp.name) / "old.db"
+        old = sqlite3.connect(path)
+        old.executescript(
+            "CREATE TABLE paused (plugin_id TEXT PRIMARY KEY, since REAL NOT NULL);"
+            "INSERT INTO paused VALUES ('ancient', 1.0);")
+        old.commit()
+        old.close()
+
+        store = Store(path)
+        self.addCleanup(store.close)
+        self.assertEqual(store.paused_by_hand(), {"ancient"})
+        self.assertEqual(store.resume_all(), [], "it was not swept, so it stays")

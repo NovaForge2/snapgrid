@@ -327,3 +327,73 @@ class TheCommandToStartAgain(unittest.TestCase):
     def test_another_folder_is_named(self):
         self.assertEqual(start_command(Config(plugins_dir=Path("examples"))),
                          "./server.py --dir examples")
+
+
+class PausingThroughTheApi(ApiTest):
+    def post(self, path):
+        status, body, _ = self.request(path, method="POST", headers={"X-Snapgrid": "1"})
+        return status, json.loads(body or b"{}")
+
+    def test_pausing_and_resuming_one_plugin(self):
+        status, payload = self.post("/api/plugins/demo/pause")
+        self.assertEqual(status, 200)
+        self.assertIsNotNone(payload["paused_since"])
+
+        status, listing = self.get_json("/api/plugins")
+        self.assertIsNotNone(listing["plugins"][0]["paused_since"])
+
+        status, payload = self.post("/api/plugins/demo/resume")
+        self.assertIsNone(payload["paused_since"])
+
+    def test_a_paused_plugin_has_no_next_run(self):
+        # The page shows "next run in ..." from this, and a paused plugin has
+        # no next run - saying one would be a lie that looks like data.
+        self.post("/api/plugins/demo/pause")
+        _, listing = self.get_json("/api/plugins")
+        self.assertIsNone(listing["plugins"][0]["next_run"])
+
+    def test_pausing_something_that_is_not_there(self):
+        status, _ = self.post("/api/plugins/nope/pause")
+        self.assertEqual(status, 404)
+
+    def test_it_needs_the_header(self):
+        status, _, _ = self.request("/api/plugins/demo/pause", method="POST")
+        self.assertEqual(status, 403)
+
+    def test_get_does_not_pause_anything(self):
+        status, _ = self.get_json("/api/plugins/demo/pause")
+        self.assertEqual(status, 404)
+        _, listing = self.get_json("/api/plugins")
+        self.assertIsNone(listing["plugins"][0]["paused_since"])
+
+    def scheduled_plugin(self, name="timed"):
+        """The demo plugin is every = "off", which Pause all rightly skips."""
+        folder = self.config.plugins_dir / name
+        folder.mkdir()
+        (folder / "plugin.toml").write_text(
+            f'[plugin]\nname = "{name}"\n[run]\n'
+            'command = ["python", "-c", "print(1)"]\nevery = "1h"\n',
+            encoding="utf-8")
+        self.registry.scan()
+        return name
+
+    def test_pausing_everything_and_letting_it_go(self):
+        self.scheduled_plugin()
+        status, payload = self.post("/api/server/pause")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["plugins"], ["timed"])
+
+        _, listing = self.get_json("/api/plugins")
+        paused = {p["id"]: p["paused_since"] for p in listing["plugins"]}
+        self.assertIsNotNone(paused["timed"])
+
+        self.post("/api/server/resume")
+        _, listing = self.get_json("/api/plugins")
+        self.assertTrue(all(p["paused_since"] is None for p in listing["plugins"]))
+
+    def test_pausing_everything_leaves_out_what_has_no_schedule(self):
+        # every = "off" is already as paused as a plugin gets, and listing it
+        # would make Resume all look like it had something to undo.
+        self.scheduled_plugin()
+        _, payload = self.post("/api/server/pause")
+        self.assertEqual(payload["plugins"], ["timed"], "demo is every = off")

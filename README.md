@@ -108,6 +108,7 @@ When you want to write your own, restart without `--dir`, which uses `plugins/`:
 | **A real grid** | click to sort, per-column filters with value counts, search everything, export to Excel |
 | **Colour where it helps** | a plugin can put red, amber, green, blue or grey on named values in a column, and the colour follows into the export |
 | **Runs by itself** | every plugin on a schedule, in the background, results cached so the page is instant |
+| **Pause what you are not using** | one plugin or all of them, off the schedule and back on, without editing anything. The last result stays and `Run now` still works |
 | **History** | every result kept, with a dropdown to look back. Identical runs do not use a slot, so twenty snapshots means the last twenty times something actually changed |
 | **What changed** | compare the last 2 to 5 runs in the table itself - values that moved, rows that appeared, rows that went - and click any value for its own history |
 | **Secrets handled** | `.env` per plugin, values can be encrypted, and they are masked everywhere they would otherwise be shown or stored |

@@ -55,6 +55,10 @@ class Scheduler(threading.Thread):
             self.registry.scan()
             self._last_scan = now
 
+        # Read once per tick rather than per plugin: ten plugins would be ten
+        # queries for something that changes when somebody presses a button.
+        paused = self.store.paused_plugins()
+
         for plugin in self.registry.all():
             # An edited manifest clears the backoff. Someone changing a plugin
             # is trying to fix it, and should not have to wait out an hour of
@@ -64,6 +68,11 @@ class Scheduler(threading.Thread):
             self._seen_mtime[plugin.id] = plugin.mtime
 
             if not plugin.runnable or plugin.every is None:
+                continue
+            # Paused means the schedule leaves it alone. Run now still works:
+            # pressing it is saying so deliberately, which is different from
+            # a timer going off.
+            if plugin.id in paused:
                 continue
             if self.runner.is_busy(plugin.id):
                 continue

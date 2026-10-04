@@ -13,13 +13,15 @@ whatever the machine prefers, and pressing the button still wins.
 
 - **Left panel** - plugins grouped by `group`, with a status dot: green for a
   good run, red for a failure or a broken `plugin.toml`, blue while running.
+  In front of each name is a **pause** control, and one at the head of the
+  panel pauses the lot; see [Pausing a plugin](#pausing-a-plugin) below.
   The **&#171;** in its corner hides it, and the **&#187;** that appears brings
   it back; `[` does both from the keyboard. Worth it on a laptop, where 260px
   of plugin names is 260px not spent on the table.
 - **Run now** runs the plugin **now**, in the background, whatever the schedule
   says. It jumps the queue ahead of anything waiting, ignores `fresh_for`, and
-  ignores the slowdown after repeated failures - asking by hand means wanting
-  new data. You can go to another plugin while it works. **Cancel** stops it,
+  ignores the slowdown after repeated failures, and runs a paused plugin -
+  asking by hand means wanting new data. You can go to another plugin while it works. **Cancel** stops it,
   including anything it started, and the previous good table stays.
 - **The table** does what a spreadsheet does: click a heading to sort, click the
   small arrow next to it for a checkbox list of every value in that column with
@@ -163,6 +165,40 @@ http://127.0.0.1:8765/?plugin=image-versions&compare=3&changed=1&theme=dark
 
 The theme button still overrides it, and your own choice is what is remembered
 afterwards.
+
+## Pausing a plugin
+
+Every plugin in the left panel has a small **pause** control in front of its
+name. Pressing it takes that plugin off the schedule, and the control becomes a
+**play** triangle for putting it back. The same control at the head of the
+panel does it for all of them at once.
+
+Neither asks for confirmation. Pausing costs nothing and the same button
+undoes it.
+
+A paused plugin keeps its place in the list, keeps the result it last
+collected, and **Run now still works** - pressing it is saying so deliberately,
+which is different from a timer going off. What stops is only the schedule.
+
+It is meant for "not this fortnight": ten plugins on a machine with little to
+spare, two of them worth running at the moment. If a plugin is simply too eager
+rather than unwanted, raise its `[run] every` instead - that is a decision that
+survives being forgotten about, and pausing is not.
+
+Because **a paused plugin shows a table that looks exactly like a current
+one**, the page says so in three places: its control is a play triangle and
+coloured rather than grey, the heading says how long it has been paused, and
+the plugin count at the foot says how many are. Without that, a fortnight-old
+number gets read as today's, which is worse than no number.
+
+Pausing is snapgrid's own state and **does not touch `plugin.toml`**. The
+plugin folder is yours, and is often a repository - snapgrid editing files in
+it would turn up in somebody's `git status`. It is kept in the database beside
+the plugins, which means deleting `.snapgrid` resumes everything.
+
+`[run] every = "off"` in the manifest is the permanent version of the same
+thing, and a plugin set that way is left out of Pause all - there is nothing to
+pause.
 
 ## Stopping it
 
