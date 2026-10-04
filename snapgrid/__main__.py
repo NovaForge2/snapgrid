@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import functools
 import json
 import os
 import signal
@@ -151,6 +152,26 @@ def process_alive(pid: int) -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=8)
+def numeric_forms(host: str) -> frozenset[str]:
+    """Every numeric address a host name stands for.
+
+    lsof and netstat report numbers. --host localhost is a name, and is one
+    snapgrid accepts, so comparing the two as text said no to the very server
+    it was looking for.
+    """
+    forms = {host}
+    try:
+        for family, _, _, _, sockaddr in socket.getaddrinfo(host, None):
+            forms.add(sockaddr[0])
+    except (OSError, UnicodeError):
+        pass            # not resolvable: the literal is all there is
+    return frozenset(forms)
+
+
+WILDCARDS = ("*", "0.0.0.0", "::", "")
+
+
 def address_matches(address: str, host: str) -> bool:
     """Is this listening address the one snapgrid was told to listen on?
 
@@ -158,7 +179,9 @@ def address_matches(address: str, host: str) -> bool:
     127.0.0.1:8765, and is the one to stop.
     """
     address = address.rsplit(":", 1)[0].strip("[]")
-    return address in (host, "*", "0.0.0.0", "::", "")
+    # A scope, as in fe80::1%en0, is not part of the address being compared.
+    address = address.split("%", 1)[0]
+    return address in WILDCARDS or address in numeric_forms(host)
 
 
 def listeners_on(port: int) -> list[tuple[int, str]]:
@@ -488,7 +511,12 @@ def command_stop(args: argparse.Namespace) -> int:
     if not process_alive(pid):
         # The record is unusable but something is still answering, so ask the
         # operating system who actually holds the port.
-        holder = pid_listening_on(int(state.get("port") or 0), config.host)
+        # The host this server listens on is in its own record. Matching
+        # against the one on the command line instead would look for a
+        # listener on 127.0.0.1 for a server bound elsewhere, and whatever
+        # answered there would be stopped in its place.
+        holder = pid_listening_on(int(state.get("port") or 0),
+                                  state.get("host") or config.host)
         if holder:
             pid = holder
 

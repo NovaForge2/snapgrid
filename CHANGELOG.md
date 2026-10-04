@@ -118,6 +118,14 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   failing was slowed to hourly retries, and fixing it did not bring it back -
   deleting the database was the only way out. The page now also says when a
   plugin is being tried less often, and when it is next due.
+- **`stop` matches the host the server wrote down**, not the one on the
+  command line. For a server bound to something other than loopback, the
+  check looked for a listener on 127.0.0.1 and would have stopped whatever
+  answered there instead.
+- **A host given by name is recognised.** `start --host localhost` records
+  that name, while the operating system reports numbers - so the listener was
+  rejected as a stranger and `stop` said "snapgrid is not running" while it
+  ran. Names are resolved before they are compared.
 - **`stop` never stops the wrong thing.** Finding the server by port picked
   whichever process the operating system listed first, so with something else
   listening on the same port on a different address, `stop` could end that
@@ -132,9 +140,10 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   came out coloured in the Excel export and plain on the page - the one thing
   colouring in two places must never do.
 - **The command the stopped page shows can be typed.** A plugins folder with a
-  space in its name produced a command that fails, and a port given on the
-  command line was dropped, which moves the address out from under the
-  bookmark.
+  space in its name produced a command that fails, and the port was dropped
+  whenever it happened to be 8765 - even with `snapgrid.toml` saying something
+  else, in which case following the instruction moved the address. The port is
+  now named whenever a bare restart would land somewhere different.
 - **`stop` stops the server it can see.** It read the state file inside the
   plugins folder, so `./server.py stop` typed without the `--dir` that
   `start` was given looked in the wrong place, printed "snapgrid is not

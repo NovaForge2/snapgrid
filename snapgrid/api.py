@@ -82,7 +82,7 @@ def shell_quote(text: str) -> str:
     return "'" + text.replace("'", "'\\''") + "'"
 
 
-def start_command(config: Config, default_port: int = 8765) -> str:
+def start_command(config: Config, default_port: int | None = None) -> str:
     """What to type to start this server again, as the page should show it.
 
     The same shape as the hint the command line prints, and worked out here
@@ -94,8 +94,14 @@ def start_command(config: Config, default_port: int = 8765) -> str:
     where = display_path(config.plugins_dir)
     if where not in ("plugins", "."):
         parts += ["--dir", shell_quote(where)]
-    # A port given on the command line is not written anywhere the restarted
-    # server would read, so leaving it out would move the address.
+    # The port is named whenever a bare restart would land somewhere else -
+    # which is not the same as "not 8765". snapgrid.toml can say 8770, and a
+    # server started with --port 8765 would then be told to restart without a
+    # port and come back on 8770, moving the address out from under whoever
+    # was reading the page. So the comparison is against what the file says,
+    # not against a constant.
+    if default_port is None:
+        default_port = load_settings()["port"]
     if config.port != default_port:
         parts += ["--port", str(config.port)]
     return " ".join(parts)

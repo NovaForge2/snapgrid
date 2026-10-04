@@ -114,3 +114,79 @@ class WhichProcessHoldsThePort(unittest.TestCase):
             ("[::]:8765", "::1", True),
         ):
             self.assertIs(cli.address_matches(address, host), expected, address)
+
+
+class HostNamesAndNumbers(unittest.TestCase):
+    """lsof and netstat report numbers; --host takes names.
+
+    Comparing the two as text said no to the very server it was looking for,
+    so `stop --host localhost` reported "snapgrid is not running" while it ran.
+    """
+
+    def test_a_name_matches_the_number_it_stands_for(self):
+        self.assertTrue(cli.address_matches("127.0.0.1:8765", "localhost"))
+
+    def test_the_number_still_matches_itself(self):
+        self.assertTrue(cli.address_matches("127.0.0.1:8765", "127.0.0.1"))
+
+    def test_another_machine_on_the_same_port_does_not_match(self):
+        self.assertFalse(cli.address_matches("192.168.1.5:8765", "localhost"))
+
+    def test_a_wildcard_is_the_one_answering(self):
+        for wildcard in ("*:8765", "0.0.0.0:8765", "[::]:8765"):
+            self.assertTrue(cli.address_matches(wildcard, "localhost"), wildcard)
+
+    def test_an_address_with_a_scope_is_compared_without_it(self):
+        self.assertFalse(cli.address_matches("fe80::1%en0:8765", "localhost"))
+
+    def test_a_name_that_resolves_to_nothing_falls_back_to_the_text(self):
+        # Mocked rather than looked up: a test that waits on a name server is
+        # a test that fails on a train.
+        cli.numeric_forms.cache_clear()
+        self.addCleanup(cli.numeric_forms.cache_clear)
+        with mock.patch("socket.getaddrinfo", side_effect=OSError("no")):
+            self.assertTrue(cli.address_matches("unresolvable:8765", "unresolvable"))
+            self.assertFalse(cli.address_matches("127.0.0.1:8765", "unresolvable"))
+
+
+class StopUsesTheHostTheServerRecorded(unittest.TestCase):
+    """The server writes down the host it listens on. Matching against the one
+    typed on the command line instead looks for a listener on 127.0.0.1 for a
+    server bound elsewhere - and stops whatever answers there."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config = Config(plugins_dir=Path(self.tmp.name), host="127.0.0.1", port=8765)
+        self.config.prepare()
+
+    def test_the_recorded_host_is_the_one_matched(self):
+        import json
+        self.config.state_file.write_text(json.dumps({
+            "pid": 999999, "port": 8765, "host": "192.168.1.5",
+            "url": "http://192.168.1.5:8765", "started": 1.0,
+        }), encoding="utf-8")
+
+        seen = {}
+
+        class Enough(Exception):
+            """Stops the test before the killing and waiting, which is not
+            what is being tested and takes fifteen seconds."""
+
+        def remember(port, host=""):
+            seen["host"] = host
+            raise Enough
+
+        args = type("Args", (), {"dir": self.tmp.name, "data": None, "port": 8765,
+                                 "host": "127.0.0.1", "force": False})()
+        with mock.patch.object(cli, "process_alive", return_value=False), \
+             mock.patch.object(cli, "state_is_live", return_value=True), \
+             mock.patch.object(cli, "pid_listening_on", side_effect=remember), \
+             mock.patch.object(cli, "snapgrid_on_port", return_value=None):
+            with self.assertRaises(Enough):
+                cli.command_stop(args)
+
+        self.assertEqual(seen.get("host"), "192.168.1.5",
+                         "the host from the record, not the one on the command line")
