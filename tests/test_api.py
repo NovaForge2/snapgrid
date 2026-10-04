@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from snapgrid.api import make_server
+from snapgrid.api import make_server, start_command
 from snapgrid.config import Config
 from snapgrid.manifest import Registry
 from snapgrid.runner import Runner
@@ -272,3 +272,58 @@ class NotEscapingTheWebFolder(ApiTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StoppingFromThePage(ApiTest):
+    """The Stop button in the sidebar, and what guards it.
+
+    This endpoint ends the process, so the interesting tests are the ones
+    about not ending it: it is behind the same guards as every other write,
+    and a page on another site cannot reach it.
+    """
+
+    def test_it_needs_the_header_every_write_needs(self):
+        # Without the custom header a browser will not send this cross-origin
+        # without asking first, which is the whole point of requiring it.
+        status, _, _ = self.request("/api/server/stop", method="POST")
+        self.assertEqual(status, 403)
+        self.assertTrue(self.httpd.__dict__ is not None, "nothing was stopped")
+
+    def test_a_request_from_another_site_is_refused(self):
+        status, _, _ = self.request(
+            "/api/server/stop", method="POST",
+            headers={"X-Snapgrid": "1", "Origin": "http://evil.example"})
+        self.assertEqual(status, 403)
+
+    def test_a_request_addressed_to_another_name_is_refused(self):
+        status, _, _ = self.request(
+            "/api/server/stop", method="POST",
+            headers={"X-Snapgrid": "1", "Host": "evil.example"})
+        self.assertEqual(status, 403)
+
+    def test_get_does_not_stop_anything(self):
+        # A link, an image tag or a prefetch must never be able to do this.
+        status, _, _ = self.request("/api/server/stop", headers={"X-Snapgrid": "1"})
+        self.assertEqual(status, 404)
+
+    def test_it_answers_with_how_to_start_again(self):
+        # The page has nothing to go back to afterwards, so the reply carries
+        # the command. Asserted here rather than in the browser because this
+        # is where the folder is known.
+        status, payload = self.get_json_post("/api/server/stop")
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["stopping"])
+        self.assertIn("./server.py", payload["start_again"])
+
+    def get_json_post(self, path):
+        status, body, _ = self.request(path, method="POST", headers={"X-Snapgrid": "1"})
+        return status, json.loads(body or b"{}")
+
+
+class TheCommandToStartAgain(unittest.TestCase):
+    def test_the_default_folder_needs_no_dir(self):
+        self.assertEqual(start_command(Config(plugins_dir=Path("plugins"))), "./server.py")
+
+    def test_another_folder_is_named(self):
+        self.assertEqual(start_command(Config(plugins_dir=Path("examples"))),
+                         "./server.py --dir examples")

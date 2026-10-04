@@ -45,6 +45,11 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 - **Continuous integration**: the tests run on Linux, macOS and Windows against
   Python 3.11 to 3.13, with CodeQL and a check that nothing has started
   importing a module that would have to be installed.
+- **A Stop button**, at the foot of the left panel. The terminal snapgrid was
+  started from is usually somewhere else by the time you want it closed. It
+  asks first, stops as cleanly as Ctrl+C does, and then shows the command to
+  start it again - there being nothing left on the page that works. It is
+  behind the same guards as every other write, so no other site can reach it.
 - **`SECURITY.md`**, stating plainly that a plugin is code that runs as you.
 
 ### Changed
@@ -99,6 +104,13 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   failing was slowed to hourly retries, and fixing it did not bring it back -
   deleting the database was the only way out. The page now also says when a
   plugin is being tried less often, and when it is next due.
+- **`stop` stops the server it can see.** It read the state file inside the
+  plugins folder, so `./server.py stop` typed without the `--dir` that
+  `start` was given looked in the wrong place, printed "snapgrid is not
+  running" and left it running. `status` said the same. Both now fall back to
+  asking whatever is on the port, and `status` names the folder that server
+  was actually started from. Only something that answers as snapgrid is ever
+  acted on, so another program on 8765 is still left alone.
 - **A stopped run keeps what it printed.** A timeout used to discard the
   output, which was the only evidence of where it got to.
 - **Standard input is closed**, so a script that prompts fails immediately

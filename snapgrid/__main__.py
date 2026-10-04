@@ -213,16 +213,52 @@ def port_is_free(host: str, port: int) -> bool:
             return False
 
 
-def looks_like_snapgrid(host: str, port: int) -> bool:
-    """Is the thing already on this port one of ours?"""
+def snapgrid_on_port(host: str, port: int) -> dict | None:
+    """Ask whatever is on this port whether it is a snapgrid, and which one.
+
+    The state file is the usual way of finding the running server, but it
+    lives inside the plugins folder - so `stop` typed without the --dir that
+    `start` was given looked in the wrong place and reported nothing running
+    while the server carried on serving. The port is the one thing both
+    commands agree on, so it is what to fall back to.
+    """
     try:
         request = urllib.request.Request(
             f"http://{host}:{port}/api/plugins", headers={"X-Snapgrid": "1"}
         )
         with urllib.request.urlopen(request, timeout=1) as response:
-            return "plugins" in json.loads(response.read().decode("utf-8", "replace"))
+            payload = json.loads(response.read().decode("utf-8", "replace"))
     except Exception:
-        return False
+        return None
+    if "plugins" not in payload:
+        return None
+    return payload.get("server") or {}
+
+
+def looks_like_snapgrid(host: str, port: int) -> bool:
+    """Is the thing already on this port one of ours?"""
+    return snapgrid_on_port(host, port) is not None
+
+
+def found_by_port(config: Config) -> dict | None:
+    """A running server this config has no state file for, found on its port.
+
+    Shaped like the state file so the callers can treat the two the same.
+    """
+    server = snapgrid_on_port(config.host, config.port)
+    if server is None:
+        return None
+    pid = pid_listening_on(config.port)
+    if not pid:
+        return None
+    return {
+        "pid": pid,
+        "port": config.port,
+        "url": f"http://{config.host}:{config.port}",
+        "started": 0,
+        "plugins_dir": server.get("plugins_dir", ""),
+        "elsewhere": True,          # started with a different plugins folder
+    }
 
 
 def require_port(config: Config) -> None:
@@ -403,7 +439,10 @@ def command_start(args: argparse.Namespace) -> int:
 
 def command_stop(args: argparse.Namespace) -> int:
     config = config_from(args)
-    state = running_state(config)
+    # Falling back to the port matters here more than anywhere: a stop that
+    # says "not running" while the server keeps serving is worse than an
+    # error, because it is believed.
+    state = running_state(config) or found_by_port(config)
     if not state:
         print("snapgrid is not running")
         return 0
@@ -474,12 +513,21 @@ def command_stop(args: argparse.Namespace) -> int:
 
 def command_status(args: argparse.Namespace) -> int:
     config = config_from(args)
-    state = running_state(config)
+    state = running_state(config) or found_by_port(config)
     if not state:
         print("snapgrid is not running")
         return 1
-    started = time.strftime("%H:%M:%S", time.localtime(state.get("started", 0)))
     print(f"snapgrid is running at {state['url']}")
+    if state.get("elsewhere"):
+        # Running, but started from another plugins folder, so this config
+        # knows nothing about it beyond what it just answered.
+        print(f"  pid     {state['pid']}")
+        print(f"  plugins {state['plugins_dir'] or 'somewhere else'}")
+        print(f"  note    started with a different plugins folder, so its log "
+              f"is not {display_path(config.log_file)}")
+        print(f"  stop    ./server.py stop")
+        return 0
+    started = time.strftime("%H:%M:%S", time.localtime(state.get("started", 0)))
     print(f"  pid     {state['pid']}, since {started}")
     print(f"  plugins {display_path(config.plugins_dir)}")
     print(f"  log     {display_path(config.log_file)}")

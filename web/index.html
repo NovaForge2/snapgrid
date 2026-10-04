@@ -20,6 +20,9 @@
     <div id="plugin-list"></div>
     <div id="sidebar-foot">
       <span id="server-note"></span>
+      <span class="grow"></span>
+      <button id="btn-quit" type="button" class="quiet"
+              title="Stop snapgrid. The page will say how to start it again">Stop</button>
     </div>
   </aside>
 
@@ -95,5 +98,17 @@
 <script src="colour.js"></script>
 <script src="compare.js"></script>
 <script src="app.js"></script>
+<!-- Shown after the server has been asked to stop. There is nothing to go
+     back to at that point, so it has to say how to start it again. -->
+<div id="stopped" hidden>
+  <div class="card">
+    <h2>snapgrid has stopped</h2>
+    <p>Nothing is running and nothing is listening on this address.</p>
+    <p class="how">To start it again, in the folder you cloned it into:</p>
+    <pre id="stopped-command"></pre>
+    <p class="small">Then reload this page.</p>
+  </div>
+</div>
+
 </body>
 </html>

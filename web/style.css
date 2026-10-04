@@ -186,6 +186,33 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   display: flex; align-items: center; gap: 8px;
 }
 #sidebar-foot .grow { flex: 1; }
+/* Small, out of the way, and nowhere near anything used often. Stopping is
+   cheap to undo but annoying to do by accident. */
+#btn-quit { font-size: 12px; padding: 2px 8px; }
+#btn-quit:hover { color: var(--fail); border-color: var(--fail); }
+
+/* ---------- after the server has gone ----------
+   Over everything, because nothing underneath it works any more and a page
+   that looks alive but answers nothing is worse than a plain message. */
+#stopped {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+}
+#stopped[hidden] { display: none; }
+#stopped .card {
+  max-width: 460px; padding: 24px 28px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel);
+}
+#stopped h2 { margin: 0 0 10px; font-size: 18px; }
+#stopped p { margin: 0 0 10px; color: var(--muted); }
+#stopped .how { margin-top: 16px; color: var(--text); }
+#stopped pre {
+  margin: 0; padding: 10px 12px; border-radius: 6px;
+  background: var(--hover); border: 1px solid var(--line);
+  font-size: 13px; overflow-x: auto;
+}
+#stopped .small { margin: 10px 0 0; font-size: 12px; }
 /* In the toolbar rather than the sidebar foot, because hiding the sidebar
    used to take the only way of changing the theme with it. */
 #theme { color: var(--muted); min-width: 5.5em; text-align: left; }

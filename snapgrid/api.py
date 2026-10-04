@@ -24,6 +24,7 @@ import io
 import json
 import re
 import ssl
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -73,6 +74,19 @@ class HttpError(Exception):
         self.message = message
 
 
+def start_command(config: Config) -> str:
+    """What to type to start this server again, as the page should show it.
+
+    The same shape as the hint the command line prints, and worked out here
+    because the page is the one place where the folder is not already in front
+    of you.
+    """
+    where = display_path(config.plugins_dir)
+    if where in ("plugins", "."):
+        return "./server.py"
+    return f"./server.py --dir {where}"
+
+
 class Application:
     """Turns requests into data. Kept separate from the HTTP plumbing."""
 
@@ -82,6 +96,7 @@ class Application:
         self.registry = registry
         self.runner = runner
         self.started = time.time()
+        self.httpd = None          # set by make_server, so the page can stop it
 
     # ----- helpers ------------------------------------------------------
 
@@ -93,6 +108,34 @@ class Application:
         if plugin is None:
             raise HttpError(404, f"no plugin called {plugin_id!r}")
         return plugin
+
+    def stop_server(self) -> dict:
+        """Stop snapgrid, from the page that is looking at it.
+
+        The terminal it was started from is usually somewhere else by now, and
+        hunting for it to type one command is the kind of friction that makes
+        a tool annoying to live with.
+
+        Nothing is forced: shutdown() lets serve_forever return and the
+        ordinary tidying up happens - the scheduler and any running plugin are
+        stopped, the database is closed and the state file is removed, exactly
+        as for Ctrl+C. It runs on a thread of its own because this one still
+        has a reply to deliver, and a server that has stopped cannot answer.
+        """
+        if self.httpd is None:      # not serving, which only happens in tests
+            raise HttpError(409, "this server cannot stop itself")
+
+        httpd = self.httpd
+
+        def shut_down() -> None:
+            time.sleep(0.25)        # long enough for the reply to be on its way
+            httpd.shutdown()
+
+        threading.Thread(target=shut_down, daemon=True).start()
+        return {
+            "stopping": True,
+            "start_again": start_command(self.config),
+        }
 
     def _summary(self, plugin) -> dict:
         live = self.runner.live(plugin.id)
@@ -449,6 +492,9 @@ class Handler(BaseHTTPRequestHandler):
             if match:
                 return self._json(self.app.cancel_run(int(match.group(1))))
 
+            if path == "/api/server/stop":
+                return self._json(self.app.stop_server())
+
             raise HttpError(404, "no such endpoint")
         except HttpError as exc:
             return self._error(exc.status, exc.message)
@@ -460,4 +506,9 @@ def make_server(config: Config, store, registry, runner) -> ThreadingHTTPServer:
     handler = type("BoundHandler", (Handler,), {"app": Application(config, store, registry, runner)})
     httpd = ThreadingHTTPServer((config.host, config.port), handler)
     httpd.daemon_threads = True
+    # So the page can stop the server it is looking at. Giving the application
+    # the server rather than the other way round keeps the stopping in one
+    # place: shutdown() makes serve_forever return, and the ordinary tidying
+    # up in __main__ runs exactly as it does for Ctrl+C.
+    handler.app.httpd = httpd
     return httpd

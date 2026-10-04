@@ -215,9 +215,14 @@ examples folder. That message goes away as soon as there is one plugin.
 ./server.py stop
 ```
 
+Or press **Stop**, at the bottom of the left panel. The page then says how to
+start it again, because by then there is nothing left to click.
+
 The address does not move, so it is worth bookmarking. It is 8765 unless you
-say otherwise, and `status` and `stop` find the running server without you
-having to remember anything. Add `--open` to open your browser as well.
+say otherwise. `status` and `stop` find the server on that port even when it
+was started from a different plugins folder - you do not have to remember
+which `--dir` you typed, only which port. Add `--open` to open your browser as
+well.
 
 If that port is already taken, snapgrid says so and stops, rather than quietly
 moving to another one and changing the address under your bookmark. It also

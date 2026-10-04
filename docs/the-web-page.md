@@ -164,6 +164,21 @@ http://127.0.0.1:8765/?plugin=image-versions&compare=3&changed=1&theme=dark
 The theme button still overrides it, and your own choice is what is remembered
 afterwards.
 
+## Stopping it
+
+**Stop**, at the bottom of the left panel, stops snapgrid itself - not a
+plugin, the whole thing. It asks first, because the terminal it was started
+from is probably not in front of you and starting it again means finding one.
+
+Nothing stored is lost. A plugin part way through a run is stopped, the
+database is closed properly and the record of the running server is removed,
+exactly as if you had pressed Ctrl+C or run `./server.py stop`. The page then
+shows the command to start it again, since there is nothing left on it that
+works.
+
+The button is in the panel's footer, away from everything used often, and it
+is the only control on the page that affects the server rather than a plugin.
+
 ## Resizing
 
 Three things can be dragged: the left panel, the Log/Config panel, and the edge

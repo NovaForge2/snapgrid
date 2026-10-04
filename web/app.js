@@ -1641,11 +1641,44 @@ el("btn-clear").addEventListener("click", () => {
   renderTable();
 });
 
+/* --------------------------------------------------------- stopping it */
+
+// The terminal snapgrid was started from is usually somewhere else by the time
+// you want it closed, so the page can do it. Afterwards there is nothing to go
+// back to, which is why this ends on a screen saying how to start it again
+// rather than on a page that quietly stops answering.
+el("btn-quit").addEventListener("click", async () => {
+  if (!confirm("Stop snapgrid?\n\nAny plugin part way through a run is stopped "
+               + "too. Nothing stored is lost, and the page will say how to "
+               + "start it again.")) return;
+
+  const button = el("btn-quit");
+  button.disabled = true;
+  button.textContent = "Stopping";
+  try {
+    const answer = await api("/api/server/stop", { method: "POST" });
+    showStopped(answer.start_again);
+  } catch (error) {
+    // It may well have stopped anyway and taken the reply with it. Either way
+    // the page is no longer talking to anything, so say so.
+    showStopped("./server.py");
+  }
+});
+
+function showStopped(command) {
+  el("stopped-command").textContent = command || "./server.py";
+  el("stopped").hidden = false;
+  // Nothing underneath is alive any more; asking it questions would only fill
+  // the console with failures.
+  clearInterval(pluginPoll);
+  clearInterval(detailPoll);
+}
+
 /* ------------------------------------------------------------- polling */
 
 loadPlugins();
-setInterval(loadPlugins, 5000);
-setInterval(() => {
+const pluginPoll = setInterval(loadPlugins, 5000);
+const detailPoll = setInterval(() => {
   if (state.detail && state.detail.live) loadDetail();
 }, 1000);
 

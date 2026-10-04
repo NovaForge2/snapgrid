@@ -234,13 +234,38 @@ class Runner:
             worker.start()
             self._workers.append(worker)
 
-    def stop(self) -> None:
+    def stop(self, wait: float = 5.0) -> None:
+        """Stop everything, and give the workers a moment to finish writing.
+
+        Killing a plugin leaves its worker with a record to store - that the
+        run was cancelled, and whatever it printed first. Closing the database
+        out from under that thread cannot corrupt anything, because every
+        write is one transaction and the store is closed behind the same lock
+        the writes take. It would lose that last record, though, and put a
+        "cannot operate on a closed database" in the log for something that is
+        not an error. So the workers are given a bounded moment to land.
+        """
         self._stopping.set()
         with self._lock:
             for active in self._active.values():
                 active.cancelled = True
                 if active.proc:
                     _kill_tree(active.proc)
+
+        # A worker sitting on an empty queue would otherwise wait out its own
+        # timeout before noticing, which makes every shutdown slower than it
+        # needs to be. One wake-up each, and they leave at once.
+        for _ in self._workers:
+            self._queue.put((-1, -1, None, None))
+
+        # Bounded on purpose. A worker wedged on something that will not
+        # return must not be able to stop snapgrid from shutting down.
+        deadline = time.monotonic() + wait
+        for worker in self._workers:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            worker.join(timeout=left)
 
     # ----- public state -------------------------------------------------
 
@@ -305,6 +330,8 @@ class Runner:
                 priority, seq, run_id, plugin_id = self._queue.get(timeout=0.5)
             except queue.Empty:
                 continue
+            if run_id is None:      # the wake-up stop() puts in, one per worker
+                return
 
             try:
                 with self._lock:
