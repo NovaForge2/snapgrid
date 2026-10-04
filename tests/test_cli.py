@@ -73,3 +73,44 @@ class LooksLikeSnapgrid(unittest.TestCase):
             self.assertTrue(cli.looks_like_snapgrid("127.0.0.1", 8765))
         with mock.patch.object(cli, "snapgrid_on_port", return_value=None):
             self.assertFalse(cli.looks_like_snapgrid("127.0.0.1", 8765))
+
+
+class WhichProcessHoldsThePort(unittest.TestCase):
+    """Two processes can listen on one port, on different addresses.
+
+    Answering on 127.0.0.1 says nothing about which of them the operating
+    system lists first, so picking the first would sometimes stop a stranger
+    and leave snapgrid running - while reporting success.
+    """
+
+    def test_the_one_on_our_address_is_chosen(self):
+        with mock.patch.object(cli, "listeners_on",
+                               return_value=[(10, "192.168.1.5:8765"),
+                                             (11, "127.0.0.1:8765")]):
+            self.assertEqual(cli.pid_listening_on(8765, "127.0.0.1"), 11)
+
+    def test_nothing_on_our_address_is_nothing(self):
+        with mock.patch.object(cli, "listeners_on",
+                               return_value=[(10, "192.168.1.5:8765")]):
+            self.assertIsNone(cli.pid_listening_on(8765, "127.0.0.1"))
+
+    def test_two_that_cannot_be_told_apart_are_left_alone(self):
+        with mock.patch.object(cli, "listeners_on",
+                               return_value=[(10, "127.0.0.1:8765"),
+                                             (11, "*:8765")]):
+            self.assertIsNone(cli.pid_listening_on(8765, "127.0.0.1"),
+                              "doing nothing beats stopping the wrong one")
+
+    def test_a_wildcard_listener_is_the_one_answering(self):
+        with mock.patch.object(cli, "listeners_on", return_value=[(10, "0.0.0.0:8765")]):
+            self.assertEqual(cli.pid_listening_on(8765, "127.0.0.1"), 10)
+
+    def test_addresses(self):
+        for address, host, expected in (
+            ("127.0.0.1:8765", "127.0.0.1", True),
+            ("192.168.1.5:8765", "127.0.0.1", False),
+            ("*:8765", "127.0.0.1", True),
+            ("[::1]:8765", "::1", True),
+            ("[::]:8765", "::1", True),
+        ):
+            self.assertIs(cli.address_matches(address, host), expected, address)

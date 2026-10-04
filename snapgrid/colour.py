@@ -13,6 +13,7 @@ or {"is": "ok"}. Nothing here has to understand the syntax.
 
 from __future__ import annotations
 
+import math
 import re
 
 # The whole set. Fixed deliberately: a plugin naming its own shades would be a
@@ -38,6 +39,12 @@ def shade_for(rules: list[dict] | None, value: str) -> str:
         number = float(text)
     except ValueError:
         pass
+    # float() accepts "NaN", "inf" and "Infinity"; a browser's Number() does
+    # not treat them as numbers to compare. Left in, a cell saying NaN came out
+    # red in the spreadsheet and plain on the page - the one thing colouring in
+    # two places must never do.
+    if number is not None and not math.isfinite(number):
+        number = None
 
     for rule in rules:
         if "is" in rule:

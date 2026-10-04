@@ -151,13 +151,19 @@ def process_alive(pid: int) -> bool:
         return False
 
 
-def pid_listening_on(port: int) -> int | None:
-    """Which process holds this port, asked of the operating system.
+def address_matches(address: str, host: str) -> bool:
+    """Is this listening address the one snapgrid was told to listen on?
 
-    The pid written down can become unusable - a stale file, or a number this
-    shell cannot see. The port is the more reliable handle, provided whatever
-    holds it has already identified itself as snapgrid.
+    A wildcard counts: a process on 0.0.0.0:8765 is the one answering on
+    127.0.0.1:8765, and is the one to stop.
     """
+    address = address.rsplit(":", 1)[0].strip("[]")
+    return address in (host, "*", "0.0.0.0", "::", "")
+
+
+def listeners_on(port: int) -> list[tuple[int, str]]:
+    """Every process listening on this port, with the address it listens on."""
+    found: list[tuple[int, str]] = []
     try:
         if os.name == "nt":
             output = quiet_run(["netstat", "-ano"]).stdout
@@ -166,14 +172,45 @@ def pid_listening_on(port: int) -> int | None:
                 if (len(parts) >= 5 and parts[0].upper() == "TCP"
                         and parts[1].endswith(f":{port}")
                         and parts[3].upper() == "LISTENING"):
-                    return int(parts[4])
+                    found.append((int(parts[4]), parts[1]))
         else:
-            output = quiet_run(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"]).stdout
-            found = output.split()
-            if found:
-                return int(found[0])
+            # -F gives one field per line: p<pid> then n<address>, which is
+            # parsed without guessing at column positions.
+            output = quiet_run(
+                ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fpn"]).stdout
+            pid = None
+            for line in output.splitlines():
+                if line.startswith("p"):
+                    pid = int(line[1:])
+                elif line.startswith("n") and pid is not None:
+                    found.append((pid, line[1:]))
     except (OSError, ValueError):
         pass
+    return found
+
+
+def pid_listening_on(port: int, host: str = "") -> int | None:
+    """Which process holds this port, asked of the operating system.
+
+    The pid written down can become unusable - a stale file, or a number this
+    shell cannot see. The port is the more reliable handle, provided whatever
+    holds it has already identified itself as snapgrid.
+
+    The address matters as well as the port. Two processes can listen on the
+    same port on different addresses, and answering on 127.0.0.1 says nothing
+    about which of them lsof happens to list first - so without a host to match
+    this could pick a stranger and stop that instead. Given one, nothing is
+    returned unless exactly one listener matches it.
+    """
+    found = listeners_on(port)
+    if not host:
+        return found[0][0] if found else None
+
+    matching = [pid for pid, address in found if address_matches(address, host)]
+    if len(matching) == 1:
+        return matching[0]
+    # None, or more than one and no way to tell them apart. Doing nothing and
+    # saying so beats stopping something that was not asked about.
     return None
 
 
@@ -248,7 +285,7 @@ def found_by_port(config: Config) -> dict | None:
     server = snapgrid_on_port(config.host, config.port)
     if server is None:
         return None
-    pid = pid_listening_on(config.port)
+    pid = pid_listening_on(config.port, config.host)
     if not pid:
         return None
     return {
@@ -451,7 +488,7 @@ def command_stop(args: argparse.Namespace) -> int:
     if not process_alive(pid):
         # The record is unusable but something is still answering, so ask the
         # operating system who actually holds the port.
-        holder = pid_listening_on(int(state.get("port") or 0))
+        holder = pid_listening_on(int(state.get("port") or 0), config.host)
         if holder:
             pid = holder
 

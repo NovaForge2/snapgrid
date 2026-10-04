@@ -397,3 +397,32 @@ class PausingThroughTheApi(ApiTest):
         self.scheduled_plugin()
         _, payload = self.post("/api/server/pause")
         self.assertEqual(payload["plugins"], ["timed"], "demo is every = off")
+
+
+class TheCommandToStartAgainIsTypeable(unittest.TestCase):
+    """The page is the one place where a wrong command cannot be checked
+    against what you typed before, because you did not type anything."""
+
+    def command(self, folder, port=8765):
+        return start_command(Config(plugins_dir=Path(folder), port=port))
+
+    def test_a_folder_with_a_space_is_quoted(self):
+        self.assertIn("'", self.command("/tmp/my plugins"))
+
+    def test_a_folder_with_a_quote_in_it_survives(self):
+        # Not a path anybody plans, but one that silently produces an
+        # unrunnable command is worse than one that looks odd.
+        command = self.command("/tmp/it's here")
+        self.assertIn("it", command)
+        self.assertNotIn("it's here", command, "the quote has to be escaped")
+
+    def test_an_ordinary_folder_is_not_quoted(self):
+        self.assertEqual(self.command("examples"), "./server.py --dir examples")
+
+    def test_a_port_given_on_the_command_line_is_kept(self):
+        # It is not written anywhere the restarted server would read, so
+        # leaving it out moves the address out from under the bookmark.
+        self.assertIn("--port 8770", self.command("examples", port=8770))
+
+    def test_the_usual_port_is_not_repeated(self):
+        self.assertNotIn("--port", self.command("examples", port=8765))

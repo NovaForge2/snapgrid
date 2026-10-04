@@ -118,6 +118,23 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   failing was slowed to hourly retries, and fixing it did not bring it back -
   deleting the database was the only way out. The page now also says when a
   plugin is being tried less often, and when it is next due.
+- **`stop` never stops the wrong thing.** Finding the server by port picked
+  whichever process the operating system listed first, so with something else
+  listening on the same port on a different address, `stop` could end that
+  instead and report success while snapgrid carried on. The listening address
+  has to match now, and where two cannot be told apart nothing is stopped.
+- **Resume all works when a plugin is disabled.** The page counted a disabled
+  plugin as one the schedule would run; the server did not. "Everything is
+  paused" never became true, so the control stayed on Pause and there was no
+  way back.
+- **A value that is not a real number is not compared.** `NaN`, `inf` and
+  `Infinity` are numbers to Python and not to a browser, so a cell saying `NaN`
+  came out coloured in the Excel export and plain on the page - the one thing
+  colouring in two places must never do.
+- **The command the stopped page shows can be typed.** A plugins folder with a
+  space in its name produced a command that fails, and a port given on the
+  command line was dropped, which moves the address out from under the
+  bookmark.
 - **`stop` stops the server it can see.** It read the state file inside the
   plugins folder, so `./server.py stop` typed without the `--dir` that
   `start` was given looked in the wrong place, printed "snapgrid is not

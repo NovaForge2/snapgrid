@@ -357,3 +357,28 @@ class Thresholds(unittest.TestCase):
 
     def test_an_empty_mapping_is_dropped_rather_than_kept(self):
         self.assertEqual(parse(self.BASE + "[colour.status]\n").colours, {})
+
+
+class TheSameAnswerAsTheBrowser(unittest.TestCase):
+    """shade_for and web/colour.js shadeFor have to agree on every case.
+
+    A workbook that colours different cells from the screen it came from is
+    worse than one with no colour at all. The cases below are the ones the two
+    languages disagree about naturally, and tests/colour.test.js runs the
+    identical list.
+    """
+
+    RULES = [{"op": "!=", "n": 200, "colour": "red"}]
+
+    def test_not_a_real_number_is_not_compared(self):
+        # float() takes all of these; a browser's Number() does not treat them
+        # as numbers to compare against.
+        for odd in ("NaN", "nan", "inf", "-inf", "Infinity"):
+            self.assertEqual(shade_for(self.RULES, odd), "", odd)
+
+    def test_a_real_number_still_counts(self):
+        self.assertEqual(shade_for(self.RULES, "503"), "red")
+
+    def test_blank_and_space_are_not_zero(self):
+        for blank in ("", "   ", None):
+            self.assertEqual(shade_for([{"op": "<", "n": 10, "colour": "red"}], blank), "")

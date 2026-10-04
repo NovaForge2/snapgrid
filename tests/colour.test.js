@@ -101,3 +101,14 @@ test("a number written as a value is matched as text, not as a number", () => {
   assert.equal(shadeFor(rules, "0"), "green");
   assert.equal(shadeFor(rules, "0.0"), "");
 });
+
+test("a value that is not a real number is not compared", () => {
+  // float("NaN") succeeds in Python, Number("NaN") is NaN here. Left alone,
+  // a cell saying NaN came out red in the spreadsheet and plain on the page.
+  // snapgrid/colour.py has the same cases.
+  const rules = [{ op: "!=", n: 200, colour: "red" }];
+  for (const odd of ["NaN", "nan", "inf", "-inf", "Infinity"]) {
+    assert.equal(shadeFor(rules, odd), "", odd);
+  }
+  assert.equal(shadeFor(rules, "503"), "red", "a real number still counts");
+});

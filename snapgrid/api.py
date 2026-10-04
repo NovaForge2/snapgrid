@@ -75,17 +75,30 @@ class HttpError(Exception):
         self.message = message
 
 
-def start_command(config: Config) -> str:
+def shell_quote(text: str) -> str:
+    """A path as it has to be typed, quoted only when it needs to be."""
+    if text and not any(ch in text for ch in " \t\"'\\$`*?[]{}()<>|&;#~!"):
+        return text
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def start_command(config: Config, default_port: int = 8765) -> str:
     """What to type to start this server again, as the page should show it.
 
     The same shape as the hint the command line prints, and worked out here
     because the page is the one place where the folder is not already in front
-    of you.
+    of you - which also means it is the one place where a wrong command cannot
+    be corrected by looking at what you typed before.
     """
+    parts = ["./server.py"]
     where = display_path(config.plugins_dir)
-    if where in ("plugins", "."):
-        return "./server.py"
-    return f"./server.py --dir {where}"
+    if where not in ("plugins", "."):
+        parts += ["--dir", shell_quote(where)]
+    # A port given on the command line is not written anywhere the restarted
+    # server would read, so leaving it out would move the address.
+    if config.port != default_port:
+        parts += ["--port", str(config.port)]
+    return " ".join(parts)
 
 
 class Application:

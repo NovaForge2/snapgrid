@@ -208,7 +208,7 @@ function renderSidebar() {
     // In front of the name, because that is where the eye goes when the
     // question is "why has this not changed?" - and because it has to be its
     // own button, not part of the one that opens the plugin.
-    if (plugin.every !== null && plugin.enabled && !plugin.error) {
+    if (onASchedule(plugin)) {
       row.appendChild(pauseButton(plugin));
     } else {
       const gap = document.createElement("span");
@@ -1708,6 +1708,14 @@ function iconButton(className, paused, label) {
   return button;
 }
 
+// What the server means by a plugin the schedule would run, said once. The
+// control in front of each name used this; the one for all of them used only
+// half of it, so a disabled plugin with a schedule was counted but never
+// paused - and "all paused" never became true, leaving no way to resume.
+function onASchedule(plugin) {
+  return plugin.every !== null && plugin.enabled && !plugin.error;
+}
+
 function pauseButton(plugin) {
   const paused = Boolean(plugin.paused_since);
   const button = iconButton("pause-btn", paused, paused
@@ -1736,7 +1744,7 @@ function pauseButton(plugin) {
 // The same control for the whole list, at the head of it. No confirmation:
 // pausing costs nothing and the same button puts it back.
 el("btn-pause-all").addEventListener("click", async () => {
-  const schedulable = state.plugins.filter((plugin) => plugin.every !== null);
+  const schedulable = state.plugins.filter(onASchedule);
   const resuming = schedulable.length > 0 && schedulable.every((p) => p.paused_since);
   try {
     await api("/api/server/" + (resuming ? "resume" : "pause"), { method: "POST" });
@@ -1748,7 +1756,7 @@ el("btn-pause-all").addEventListener("click", async () => {
 });
 
 function renderPauseAll() {
-  const schedulable = state.plugins.filter((plugin) => plugin.every !== null);
+  const schedulable = state.plugins.filter(onASchedule);
   const paused = schedulable.filter((plugin) => plugin.paused_since);
   const all = schedulable.length > 0 && paused.length === schedulable.length;
 
