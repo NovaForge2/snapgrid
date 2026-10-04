@@ -12,6 +12,7 @@ from snapgrid.manifest import (
     load_plugin,
     parse_duration,
     parse_manifest,
+    shade_for,
 )
 
 HERE = Path(".")
@@ -252,15 +253,80 @@ class Colours(unittest.TestCase):
     def test_values_are_matched_without_case(self):
         plugin = parse(self.BASE + '[colour.status]\nOK = "green"\n"Expiring Soon" = "amber"\n')
         # Stored lowered, because the match happens on a lowered value too.
-        self.assertEqual(plugin.colours,
-                         {"status": {"ok": "green", "expiring soon": "amber"}})
+        self.assertEqual(plugin.colours, {"status": [
+            {"is": "ok", "colour": "green"},
+            {"is": "expiring soon", "colour": "amber"},
+        ]})
 
     def test_every_colour_there_is(self):
         lines = "".join(f'v{n} = "{name}"\n' for n, name
                         in enumerate(("red", "amber", "green", "blue", "grey")))
         plugin = parse(self.BASE + "[colour.status]\n" + lines)
-        self.assertEqual(sorted(plugin.colours["status"].values()),
+        self.assertEqual(sorted(rule["colour"] for rule in plugin.colours["status"]),
                          ["amber", "blue", "green", "grey", "red"])
+
+    def test_rules_keep_the_order_they_were_written_in(self):
+        # The first match wins, so the order in the file is the meaning.
+        plugin = parse(self.BASE + '[colour.n]\n"> 90" = "red"\n"> 80" = "amber"\n')
+        self.assertEqual([rule["n"] for rule in plugin.colours["n"]], [90.0, 80.0])
+
+
+class Thresholds(unittest.TestCase):
+    """A comparison against a number, rather than a value matched whole."""
+
+    BASE = Colours.BASE
+    DISK = '[colour.used]\n"> 90" = "red"\n"> 80" = "amber"\n'
+
+    def rules(self, written=None):
+        return parse(self.BASE + (written or self.DISK)).colours["used"]
+
+    def test_the_first_rule_that_matches_wins(self):
+        rules = self.rules()
+        self.assertEqual(shade_for(rules, "95"), "red")
+        self.assertEqual(shade_for(rules, "85"), "amber")
+        self.assertEqual(shade_for(rules, "70"), "")
+
+    def test_the_boundary_is_not_included_by_a_strict_comparison(self):
+        self.assertEqual(shade_for(self.rules(), "90"), "amber")
+
+    def test_a_blank_cell_is_not_zero(self):
+        # float("") raises, but a careless implementation reads it as 0 and
+        # paints every empty cell in a column with "< 10" on it.
+        rules = self.rules('[colour.used]\n"< 10" = "red"\n')
+        for blank in ("", "   "):
+            self.assertEqual(shade_for(rules, blank), "")
+
+    def test_a_word_is_not_a_number(self):
+        self.assertEqual(shade_for(self.rules(), "n/a"), "")
+
+    def test_decimals_and_negatives(self):
+        self.assertEqual(shade_for(self.rules(), "90.5"), "red")
+        self.assertEqual(shade_for(self.rules('[colour.used]\n"< 0" = "red"\n'), "-3"), "red")
+
+    def test_every_operator(self):
+        for written, value in (("> 5", "6"), (">= 5", "5"), ("< 5", "4"),
+                               ("<= 5", "5"), ("= 5", "5"), ("!= 5", "6")):
+            rules = self.rules(f'[colour.used]\n"{written}" = "red"\n')
+            self.assertEqual(shade_for(rules, value), "red", written)
+
+    def test_words_and_numbers_in_one_column(self):
+        rules = self.rules('[colour.used]\nunknown = "grey"\n"> 90" = "red"\n')
+        self.assertEqual(shade_for(rules, "unknown"), "grey")
+        self.assertEqual(shade_for(rules, "95"), "red")
+
+    def test_something_that_starts_like_a_comparison_but_is_not_one(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse(self.BASE + '[colour.used]\n"> eighty" = "red"\n')
+        self.assertIn("starts like a comparison", str(caught.exception))
+
+    def test_the_spacing_around_the_operator_does_not_matter(self):
+        for written in (">90", "> 90", ">  90"):
+            rules = self.rules(f'[colour.used]\n"{written}" = "red"\n')
+            self.assertEqual(shade_for(rules, "95"), "red", written)
+
+    def test_no_rules_means_no_colour(self):
+        self.assertEqual(shade_for([], "95"), "")
+        self.assertEqual(shade_for(None, "95"), "")
 
     def test_a_colour_that_does_not_exist_is_refused_and_lists_the_ones_that_do(self):
         with self.assertRaises(ManifestError) as caught:

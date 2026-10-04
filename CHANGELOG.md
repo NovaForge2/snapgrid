@@ -17,11 +17,15 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   written out. A cell that never moved is written once. Rows that appeared are marked `NEW`, rows that have gone are
   marked `GONE` and are shown even though they are absent from the current
   result. **Only what changed** narrows the table to the rows that moved.
-- **`[colour]`**, which puts a colour on named values in a column: a `status`
-  of `expired` in red, `expiring` in amber. Five colours and no more - red,
-  amber, green, blue, grey - matched on the whole value, ignoring case, with
-  everything else left plain. The colour follows the value into the Excel
-  export.
+- **`[colour]`**, which colours a value worth noticing: a disk `"> 90"` percent
+  full in red, a certificate with `"< 7"` days left in red, a `status` of
+  `expired` in red. Either a comparison against a number or a value matched
+  whole, tried in the order written, with the first match winning. Five colours
+  and no more - red, amber, green, blue, grey - and anything no rule matches is
+  left plain, including empty cells and words tested against a number. The
+  colour follows the value into the Excel export, and a column of numbers keeps
+  its alignment. The disk space, certificate expiry and endpoint health
+  examples all use it.
 - **A seventh example, `notes`**: a list you keep yourself in a CSV, coloured
   by status. It is where to write down *why* a table says what it says - and
   it is deliberately not a comment system, since snapgrid has no second user

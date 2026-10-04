@@ -83,18 +83,26 @@ keep = 20
 
 ### Colouring a value
 
-A column holding a small fixed set of values reads much faster with a colour on
-it. Name the column, then the values:
+A number past a limit, or a value out of a small fixed set, reads much faster
+with a colour on it. Name the column, then the rules:
 
 ```toml
+[colour.used_percent]
+"> 90" = "red"
+"> 80" = "amber"
+
 [colour.status]
-ok       = "green"
-expiring = "amber"
-expired  = "red"
+expired = "red"
 ```
 
-Matching is on the whole value and ignores case. A value nobody named is left
-plain, so this is safe on a column that can also hold free text.
+On the left: a comparison against a number - `>`, `>=`, `<`, `<=`, `=`, `!=` -
+or a value matched whole, ignoring case. **The first rule that matches wins**,
+so write the severe one first: with `> 80` above `> 90`, everything over 90
+would be amber.
+
+Nothing else is coloured - not a value no rule matches, not an empty cell, and
+not a word tested against a comparison. That is what makes this safe to put on
+a column that can also hold free text.
 
 The colours are **red, amber, green, blue and grey** - the whole set, and
 anything else is refused. Use them for what they mean: `red` wrong now, `amber`

@@ -81,6 +81,11 @@ you want only the full ones, filter the column in the page instead.
   arrived".
 - **`[history] keep = 20`** makes "when did this start filling up?" a question
   the page can answer.
+- **`[colour.used_percent]`** turns the number red past 90 and amber past 80,
+  so a disk filling up says so rather than waiting to be read. The rules are
+  tried in the order written and the first match wins, which is why 90 is
+  above 80: the other way round, 95 would be amber. A column of numbers keeps
+  its alignment - the colour goes on the figures, not into a badge.
 
 ## The same thing as a shell script
 

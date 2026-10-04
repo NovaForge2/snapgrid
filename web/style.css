@@ -451,6 +451,15 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
    pill goes with it rather than shouting from three rows down. */
 .v.old .shade { font-weight: 500; opacity: .75; }
 
+/* In a column of numbers the pill is wrong: its padding pushes the digits out
+   of line, so a coloured 95 no longer sits above a plain 70 and the column
+   stops being readable as a column. The colour goes on the figures instead,
+   which is enough to find them and costs nothing. */
+td.num .shade {
+  padding: 0; background: none; border-color: transparent;
+  font-size: inherit; line-height: inherit;
+}
+
 :root {
   --sh-red: #9b2c2c;   --sh-red-bg: #fdecec;   --sh-red-line: #f3c9c9;
   --sh-amber: #8a5a00; --sh-amber-bg: #fdf3e0; --sh-amber-line: #f0dcb4;

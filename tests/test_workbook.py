@@ -218,8 +218,8 @@ class Colours(unittest.TestCase):
         return (archive.read("xl/worksheets/sheet1.xml").decode(),
                 archive.read("xl/styles.xml").decode())
 
-    MAP = {"status": {"red": "red", "amber": "amber", "green": "green",
-                      "blue": "blue", "grey": "grey"}}
+    MAP = {"status": [{"is": name, "colour": name}
+                      for name in ("red", "amber", "green", "blue", "grey")]}
 
     def test_each_shade_gets_its_own_style(self):
         sheet, _ = self.parts(self.MAP)
@@ -246,6 +246,21 @@ class Colours(unittest.TestCase):
     def test_no_colours_means_the_file_is_as_it_was(self):
         plain, _ = self.parts(None)
         self.assertNotIn('s="6"', plain)
+
+    def test_a_threshold_colours_the_cells_the_page_would(self):
+        # The same rules the browser is given, tested on the same numbers, so
+        # a workbook never disagrees with the screen it came from.
+        body = write_xlsx(
+            ["host", "used"],
+            [["a", "95"], ["b", "85"], ["c", "70"], ["d", ""], ["e", "n/a"]],
+            colours={"used": [{"op": ">", "n": 90, "colour": "red"},
+                              {"op": ">", "n": 80, "colour": "amber"}]},
+        )
+        sheet = zipfile.ZipFile(io.BytesIO(body)).read("xl/worksheets/sheet1.xml").decode()
+        styles = dict(re.findall(r'<c r="B(\d+)" s="(\d+)"', sheet))
+        self.assertNotEqual(styles["2"], styles["4"], "95 is coloured, 70 is not")
+        self.assertNotEqual(styles["2"], styles["3"], "95 and 85 differ")
+        self.assertEqual(styles["4"], styles["6"], "70 and a word are both plain")
 
     def test_every_part_is_well_formed(self):
         body = write_xlsx(["id", "status"], [["1", "red"]], colours=self.MAP)

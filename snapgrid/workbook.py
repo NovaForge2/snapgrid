@@ -30,6 +30,8 @@ import re
 import zipfile
 from xml.sax.saxutils import escape
 
+from .colour import shade_for
+
 HEADER_FILL = "FF2F6F4E"       # the same green as the page
 HEADER_TEXT = "FFFFFFFF"
 BAND_FILL = "FFF3F6F4"         # a very light tint for every other row
@@ -109,7 +111,7 @@ def looks_numeric(values: list[str]) -> bool:
 
 
 def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool],
-               colours: dict[str, dict[str, str]] | None = None) -> str:
+               colours: dict[str, list[dict]] | None = None) -> str:
     out = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
@@ -139,8 +141,7 @@ def _sheet_xml(columns: list[str], rows: list[list[str]], numeric: list[bool],
     shades = colours or {}
 
     def shade_of(column: str, value: str) -> str:
-        mapping = shades.get(column)
-        return mapping.get(value.lower(), "") if mapping else ""
+        return shade_for(shades.get(column), value)
 
     out.append(f'<sheetData>')
 
@@ -292,7 +293,7 @@ def safe_sheet_name(name: str) -> str:
 
 
 def write_xlsx(columns: list[str], rows: list[list[str]], sheet_name: str = "Sheet1",
-               colours: dict[str, dict[str, str]] | None = None) -> bytes:
+               colours: dict[str, list[dict]] | None = None) -> bytes:
     """The table as an .xlsx file, ready to be sent."""
     import io
 

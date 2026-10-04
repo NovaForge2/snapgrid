@@ -932,13 +932,11 @@ function visibleRows(columns, rows, skipColumn) {
   });
 }
 
-// [colour.<column>] in plugin.toml, as a class name or nothing. The value has
-// to match a named one exactly, ignoring case: a column of free text with a
-// few known words in it keeps the rest of its values plain.
+// [colour.<column>] in plugin.toml, as a class name or nothing. The rules
+// themselves are tested by shadeFor, in colour.js.
 function colourFor(column, value) {
-  const map = state.detail && state.detail.colours && state.detail.colours[column];
-  if (!map) return "";
-  const shade = map[String(value).toLowerCase()];
+  const rules = state.detail && state.detail.colours && state.detail.colours[column];
+  const shade = shadeFor(rules, value);
   return shade ? "shade " + shade : "";
 }
 

@@ -25,6 +25,7 @@ except ModuleNotFoundError:  # pragma: no cover - only on Python older than 3.11
     )
     raise
 
+from .colour import COLOURS, THRESHOLD_RE, shade_for
 from .config import DEFAULT_EVERY
 
 MANIFEST_NAME = "plugin.toml"
@@ -54,8 +55,8 @@ class Plugin:
     output_sheet: str = ""            # which sheet of a workbook, if not the first
     fresh_for: int | None = None      # skip the run while the file is younger than this
     history_keep: int = 0             # how many different snapshots to keep
-    colours: dict[str, dict[str, str]] = field(default_factory=dict)
-    # column -> {value in lower case: colour}, from [colour]
+    colours: dict[str, list[dict]] = field(default_factory=dict)
+    # column -> rules in the order written, from [colour]. See shade_for.
     mtime: float = 0.0
     error: str = ""                   # set when the manifest could not be read
 
@@ -130,10 +131,6 @@ BELONGS_TO = {key: section for section, keys in KNOWN_KEYS.items() for key in ke
 # snapgrid cannot know in advance, so it cannot be a fixed list like the rest.
 COLOUR_SECTION = "colour"
 
-# The whole set. Fixed deliberately: a plugin naming its own shades would be a
-# plugin deciding what the page looks like, and the two themes would have to
-# cope with whatever it picked.
-COLOURS = ("red", "amber", "green", "blue", "grey")
 
 
 def _check_keys(data: dict) -> None:
@@ -174,19 +171,49 @@ def _table(data: dict, name: str) -> dict:
     return value
 
 
-def _colours(data: dict, columns: list[str] | None) -> dict[str, dict[str, str]]:
-    """[colour.<column>] maps a cell value to one of the colours there are.
+def _rule(written: str, column: str) -> dict:
+    """One rule from the left of the = sign, as something that can be tested.
 
-    Matching is on the whole value, ignoring case, so "OK" and "ok" are the
-    same thing. A value with no colour named for it is left alone, which is
-    what makes this safe to add to a column that can say anything.
+    Either a comparison against a number - "> 90", "<= 7" - or a value to
+    match whole, ignoring case. Parsed here rather than where it is used, so
+    the page and the spreadsheet both test the same thing without each having
+    to understand the syntax.
+    """
+    match = THRESHOLD_RE.match(written.strip())
+    if match:
+        return {"op": match.group(1), "n": float(match.group(2))}
+
+    # A key that starts with an operator but is not a valid comparison is a
+    # mistake worth catching: "> eighty" is not a value anybody means.
+    if written.strip()[:1] in "<>=!":
+        raise ManifestError(
+            f"[colour.{column}] \"{written}\" starts like a comparison but is "
+            f"not one. Write it as \"> 90\", \">= 90\", \"< 7\", \"<= 7\", "
+            f"\"= 0\" or \"!= 0\""
+        )
+    return {"is": written.lower()}
+
+
+def _colours(data: dict, columns: list[str] | None) -> dict[str, list[dict]]:
+    """[colour.<column>] - what to colour in a column, and what colour.
+
+    Each line is a test and a colour. The test is either a value matched whole
+    and without case, or a comparison against a number:
+
+        [colour.used_percent]
+        "> 90" = "red"
+        "> 80" = "amber"
+
+    **The first rule that matches wins**, in the order written, which is why
+    the severe one goes first. Anything no rule matches is left plain, which
+    is what makes this safe on a column that can hold anything at all.
     """
     section = data.get(COLOUR_SECTION, {})
     if not isinstance(section, dict):
         raise ManifestError("[colour] must be a section, with one for each "
                             "column: [colour.status]")
 
-    out: dict[str, dict[str, str]] = {}
+    out: dict[str, list[dict]] = {}
     for column, mapping in section.items():
         if not isinstance(mapping, dict):
             raise ManifestError(
@@ -201,16 +228,16 @@ def _colours(data: dict, columns: list[str] | None) -> dict[str, dict[str, str]]
                 f"[colour.{column}] names a column that is not in "
                 f"[table] columns, which has {', '.join(columns)}"
             )
-        shades: dict[str, str] = {}
-        for value, colour in mapping.items():
+        rules: list[dict] = []
+        for written, colour in mapping.items():
             if not isinstance(colour, str) or colour.lower() not in COLOURS:
                 raise ManifestError(
-                    f"[colour.{column}] {value} is {colour!r}, which is not a "
+                    f"[colour.{column}] {written} is {colour!r}, which is not a "
                     f"colour snapgrid has. They are {', '.join(COLOURS)}"
                 )
-            shades[value.lower()] = colour.lower()
-        if shades:
-            out[column] = shades
+            rules.append({**_rule(written, column), "colour": colour.lower()})
+        if rules:
+            out[column] = rules
     return out
 
 

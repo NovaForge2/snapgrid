@@ -15,6 +15,13 @@ every   = "15m"           # disks do not fill up in seconds
 # What names a row, so two runs can be lined up. Defaults to the first column.
 key = "filesystem"
 
+# A disk filling up is the thing this plugin exists to notice, so the number
+# says so itself rather than waiting to be read. The first rule that matches
+# wins, which is why 90 is written above 80.
+[colour.used_percent]
+"> 90" = "red"
+"> 80" = "amber"
+
 # Keep the last twenty times the numbers actually changed, which is what makes
 # "when did this start filling up?" answerable.
 [history]

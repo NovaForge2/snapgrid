@@ -108,6 +108,22 @@ no date in it to report.
   minute would be rude to the servers and tell you nothing new.
 - **`[history] keep`**, which makes "when was this renewed?" answerable.
 
+## Colour
+
+```toml
+[colour.days_left]
+"< 7"  = "red"
+"< 30" = "amber"
+```
+
+Under a week is an emergency; under a month is something to book in. An
+expired certificate is a negative number of days, so `"< 7"` catches it too
+without a rule of its own.
+
+The first rule that matches wins, so `"< 7"` has to be above `"< 30"` - three
+days is under thirty as well, and the other order would make every emergency
+amber.
+
 ## When it is not working
 
 Run the program by hand. What it prints is exactly what snapgrid sees, with

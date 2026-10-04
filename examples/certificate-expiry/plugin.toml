@@ -18,6 +18,13 @@ every   = "6h"
 # What names a row, so two runs can be lined up. Defaults to the first column.
 key = "host"
 
+# Under a week is an emergency, under a month is something to book in. A
+# certificate that has already expired is a negative number, so it is caught
+# by "< 7" as well.
+[colour.days_left]
+"< 7"  = "red"
+"< 30" = "amber"
+
 # The interesting question is "when did this get renewed?", so keep history.
 [history]
 keep = 20

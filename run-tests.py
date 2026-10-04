@@ -113,8 +113,8 @@ def summarise(result: Timed, seconds: float) -> None:
 def browser_tests(pattern: str | None) -> int | None:
     """Run the JavaScript tests, if node is here.
 
-    What changed between two runs is worked out in the browser, so the tests
-    for it have to run there too. node's own test runner needs nothing
+    What changed between two runs, and which cell gets which colour, are both
+    worked out in the browser, so the tests for them have to run there too. node's own test runner needs nothing
     installed, and node is not required to *use* snapgrid - only to run this
     part of its suite. A machine without it gets a clear line saying which
     tests did not run, rather than a green total that quietly covered less.
@@ -147,7 +147,7 @@ def browser_tests(pattern: str | None) -> int | None:
     if finished.returncode != 0:
         print(finished.stdout)
         print(finished.stderr, file=sys.stderr)
-    print(f"  {passed} browser tests (comparing runs) - "
+    print(f"  {passed} browser tests (what changed, and what gets a colour) - "
           f"{'all passed' if failed == 0 else f'{failed} FAILED'}")
     return finished.returncode
 

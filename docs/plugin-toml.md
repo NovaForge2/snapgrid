@@ -58,7 +58,7 @@ keep = 20
 | `output.sheet` | text | the first sheet | which sheet of an `.xlsx` |
 | `output.fresh_for` | duration | none | skip the run while the file is younger than this |
 | `history.keep` | whole number | `0` | how many **differing** results to keep |
-| `colour.<column>` | section of text | none | a colour for named values in that column |
+| `colour.<column>` | section of text | none | a colour for values past a threshold, or matched whole |
 
 \* not required when `output.file` is set - a folder with a manifest and a file
 is a valid plugin with nothing to run.
@@ -329,26 +329,55 @@ failed, so a broken credential never costs you the last good table.
 
 ## `[colour]`
 
-A column holding a small fixed set of values - a status, an environment, a
-severity - reads far faster with a colour on it than without.
+A number past a limit, or a value out of a small fixed set, reads far faster
+with a colour on it than without.
 
 ```toml
+[colour.used_percent]
+"> 90" = "red"
+"> 80" = "amber"
+
 [colour.status]
-ok         = "green"
-"expiring" = "amber"
-expired    = "red"
+ok      = "green"
+expired = "red"
 ```
 
-The section is named after the column, then each value that gets a colour.
+The section is named after the column, then one line per rule: what to look
+for, and what colour it gets.
 
-- **Matching is on the whole value, ignoring case.** `OK`, `Ok` and `ok` are
-  the same thing. There is no partial matching and no pattern: a value either
-  is one of these words or it is not.
-- **A value nobody named is left plain.** This is what makes it safe on a
-  column that can say anything: the words you care about stand out, and the
-  rest reads normally.
-- **One section per column.** Several columns can be coloured, each with its
-  own section: `[colour.status]`, `[colour.environment]`.
+### What can be on the left
+
+**A comparison against a number** - `> 90`, `>= 90`, `< 7`, `<= 7`, `= 0`,
+`!= 0`. Spacing around the operator does not matter. It has to be in quotes,
+because TOML keys with spaces and symbols in them do.
+
+**A value matched whole**, ignoring case and surrounding space. `OK`, `Ok` and
+`ok` are the same thing. There is no partial matching and no pattern: a value
+either is that word or it is not, so `expired` does not match `expired soon`.
+
+The two can be mixed in one section - useful for a column that is numbers most
+of the time and says `unknown` when it cannot tell.
+
+### The first rule that matches wins
+
+**Rules are tried in the order they are written**, which is why `> 90` goes
+above `> 80`. The other way round, everything over 90 would be amber, because
+it is over 80 too and that rule was reached first.
+
+### What is never coloured
+
+- **Anything no rule matches.** This is what makes it safe on a column that can
+  say anything: the values worth noticing stand out, the rest reads normally.
+- **An empty cell, against a comparison.** A blank is not zero, so `"< 10"`
+  does not paint every row that has no value yet.
+- **A word, against a comparison.** `n/a` is not a number and is left alone.
+
+### One section per column
+
+Several columns can be coloured, each with its own section: `[colour.status]`,
+`[colour.ms]`. A column of numbers keeps its alignment - the colour goes on
+the figures rather than into a badge, so a coloured row still lines up with
+the plain ones.
 
 ### The colours there are
 
@@ -395,6 +424,7 @@ that says what is wrong with it.
 | `[table] columns cannot be an empty list` | `columns = []` |
 | `[output] file must be inside the plugin folder` | a path starting with `/` or containing `..` |
 | `[colour.x] y is '...', which is not a colour snapgrid has` | a colour outside the five. The message lists them |
+| `[colour.x] "> eighty" starts like a comparison but is not one` | an operator followed by something that is not a number |
 | `[colour.x] names a column that is not in [table] columns` | only catchable when the columns are declared |
 | `[colour] x must be a section of its own` | `[colour]` then `status = "green"`, instead of `[colour.status]` |
 | `[color] is spelt [colour] here` | the other spelling |

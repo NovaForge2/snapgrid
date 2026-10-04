@@ -99,6 +99,26 @@ endpoint is down at 3am you will find out when you look.
 If you need alerting, you need a monitoring system. This is for the question
 "has that been slow all week, or only now?"
 
+## Colour
+
+```toml
+[colour.status]
+"= 200"  = "green"
+"!= 200" = "red"
+
+[colour.ms]
+"> 2000" = "red"
+"> 800"  = "amber"
+```
+
+Anything that is not a `200` is worth looking at, and slow is worth noticing
+before it becomes down.
+
+A host that could not be reached at all has an empty `status`, and **an empty
+cell matches neither rule**, so it stays plain - which is right. `!= 200` is a
+statement about a status code that came back; no status at all is a different
+thing, and the row being there is what says so.
+
 ## When it is not working
 
 Run the program by hand. What it prints is exactly what snapgrid sees, with
