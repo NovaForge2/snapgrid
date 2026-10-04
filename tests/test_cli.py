@@ -124,6 +124,8 @@ class HostNamesAndNumbers(unittest.TestCase):
     """
 
     def test_a_name_matches_the_number_it_stands_for(self):
+        cli.numeric_forms.cache_clear()
+        self.addCleanup(cli.numeric_forms.cache_clear)
         self.assertTrue(cli.address_matches("127.0.0.1:8765", "localhost"))
 
     def test_the_number_still_matches_itself(self):
@@ -135,6 +137,16 @@ class HostNamesAndNumbers(unittest.TestCase):
     def test_a_wildcard_is_the_one_answering(self):
         for wildcard in ("*:8765", "0.0.0.0:8765", "[::]:8765"):
             self.assertTrue(cli.address_matches(wildcard, "localhost"), wildcard)
+
+    def test_the_ipv6_loopback_is_never_snapgrid(self):
+        # ThreadingHTTPServer binds AF_INET, so ::1 is somebody else however
+        # localhost resolves. Counting it made a stranger on [::1]:8765 a
+        # second candidate, and two candidates means stopping neither - so
+        # this is what used to turn a running server into "not running".
+        cli.numeric_forms.cache_clear()
+        self.addCleanup(cli.numeric_forms.cache_clear)
+        self.assertFalse(cli.address_matches("[::1]:8765", "localhost"))
+        self.assertTrue(cli.address_matches("127.0.0.1:8765", "localhost"))
 
     def test_an_address_with_a_scope_is_compared_without_it(self):
         self.assertFalse(cli.address_matches("fe80::1%en0:8765", "localhost"))

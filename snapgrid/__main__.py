@@ -154,15 +154,21 @@ def process_alive(pid: int) -> bool:
 
 @functools.lru_cache(maxsize=8)
 def numeric_forms(host: str) -> frozenset[str]:
-    """Every numeric address a host name stands for.
+    """Every numeric address a host name stands for, for this server.
 
     lsof and netstat report numbers. --host localhost is a name, and is one
     snapgrid accepts, so comparing the two as text said no to the very server
     it was looking for.
+
+    Only IPv4, because ThreadingHTTPServer binds AF_INET and snapgrid does not
+    change that - so ::1 is never snapgrid, however `localhost` resolves.
+    Counting it made a stranger on [::1]:8765 look like a second candidate,
+    and two candidates means stopping neither. If snapgrid ever listens on
+    IPv6, this restriction has to go with it.
     """
     forms = {host}
     try:
-        for family, _, _, _, sockaddr in socket.getaddrinfo(host, None):
+        for _, _, _, _, sockaddr in socket.getaddrinfo(host, None, socket.AF_INET):
             forms.add(sockaddr[0])
     except (OSError, UnicodeError):
         pass            # not resolvable: the literal is all there is
