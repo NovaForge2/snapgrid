@@ -26,6 +26,11 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   colour follows the value into the Excel export, and a column of numbers keeps
   its alignment. The disk space, certificate expiry and endpoint health
   examples all use it.
+- **An eighth example, `listening-ports`**: what holds which port, with the
+  pid and the command that ends it - `kill -9 n` or `taskkill /F /PID n`,
+  whichever this machine uses. It asks `lsof`, then `ss`, then `netstat`,
+  trying what is there rather than deciding by the name of the operating
+  system. It reports and does not act: the command is text in a cell.
 - **A seventh example, `notes`**: a list you keep yourself in a CSV, coloured
   by status. It is where to write down *why* a table says what it says - and
   it is deliberately not a comment system, since snapgrid has no second user
@@ -53,6 +58,11 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   plugin folder is yours and is often a repository. Because a paused plugin
   looks exactly like a current one, it is marked in the list, in the heading
   and in the plugin count.
+- **The text in the table can be made bigger or smaller**, 10px to 20px, with
+  `A-` and `A+` in the toolbar. The browser's own zoom moves the whole page,
+  including the panels that were already right; this is the grid alone, and
+  the padding and row heights scale with it. Smaller text fits more columns on
+  screen at once, which is usually why anybody wants it.
 - **One vocabulary for time.** The page said `every 15m` in one place,
   `5 min ago` in the next and `in 12 min` in a third. It is now `s`, `m`, `h`
   and `d` everywhere - the same letters `plugin.toml` uses - and an hour reads
@@ -163,6 +173,13 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
   pointer and laid the columns out from the stored widths again - so a column
   being narrowed sprang back and the rest of the drag did nothing. The redraw
   now waits for the pointer to come up.
+- **The headings stay put while the rows scroll.** They were declared sticky
+  and then quietly un-stuck: a later rule gave them `position: relative` so the
+  resize grip had something to anchor to, which replaced the sticky position
+  set above it. Both rules read correctly on their own, and the headings
+  scrolled away for ten days without anything looking broken. There is now a
+  test that reads the stylesheet and refuses a later rule that takes the
+  property away again.
 - **Sorting works while comparing.**
 - **The comparison follows the result on screen.** Choosing an older snapshot
   used to leave it comparing that result with itself and reporting that nothing

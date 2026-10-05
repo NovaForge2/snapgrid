@@ -45,6 +45,14 @@ whatever the machine prefers, and pressing the button still wins.
   `[colour]` in its manifest - red, amber, green, blue or grey. They are the
   plugin's decision, not yours, and there is nothing to switch on here; see
   [plugin-toml.md](plugin-toml.md) for how a plugin asks.
+- **A&#8722; and A+** change the size of the text **in the table**, from 10px to
+  20px. The browser's own zoom takes the whole page with it, including the
+  panels that were already the right size; this is the grid alone, and the row
+  heights and padding move with it rather than leaving a bigger font in a box
+  built for a smaller one. Smaller text also means more columns at once, which
+  is often the actual reason for reaching for it. The choice is remembered in
+  your browser and is **not** per plugin - how big text should be is about your
+  eyes and your screen, not about which table you are looking at.
 - **Export Excel** downloads an `.xlsx` of the result: the header row frozen
   and in bold on a filled background, a filter dropdown on every column, thin
   borders and banded rows, and column widths from the content. **CSV** next to

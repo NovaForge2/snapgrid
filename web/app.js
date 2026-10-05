@@ -1687,6 +1687,52 @@ el("btn-clear").addEventListener("click", () => {
   renderTable();
 });
 
+/* ------------------------------------- how big the text in the grid is */
+
+// The browser's own zoom takes the whole page with it, including the panels
+// that were already the right size. This is the table only.
+//
+// Not per plugin: how big text should be is about the eyes and the screen,
+// and nobody wants to set that again for every plugin they open.
+const TEXT_SIZES = [10, 11, 12, 13, 15, 17, 20];
+const TEXT_KEY = "snapgrid-text";
+const DEFAULT_TEXT = 13;
+
+function textSize() {
+  let saved = null;
+  try {
+    saved = parseInt(localStorage.getItem(TEXT_KEY), 10);
+  } catch (error) {
+    saved = null;                       // private window, or storage refused
+  }
+  return TEXT_SIZES.includes(saved) ? saved : DEFAULT_TEXT;
+}
+
+function applyTextSize(size) {
+  document.documentElement.style.setProperty("--grid-text", size + "px");
+  const at = TEXT_SIZES.indexOf(size);
+  el("btn-smaller").disabled = at <= 0;
+  el("btn-bigger").disabled = at >= TEXT_SIZES.length - 1;
+  const label = `Text in the table: ${size}px`;
+  el("btn-smaller").title = at <= 0 ? "Already the smallest" : label;
+  el("btn-bigger").title = at >= TEXT_SIZES.length - 1 ? "Already the biggest" : label;
+}
+
+function stepTextSize(by) {
+  const at = TEXT_SIZES.indexOf(textSize());
+  const next = TEXT_SIZES[Math.min(TEXT_SIZES.length - 1, Math.max(0, at + by))];
+  try {
+    localStorage.setItem(TEXT_KEY, String(next));
+  } catch (error) {
+    /* it still applies for this page; it just will not be remembered */
+  }
+  applyTextSize(next);
+}
+
+el("btn-smaller").addEventListener("click", () => stepTextSize(-1));
+el("btn-bigger").addEventListener("click", () => stepTextSize(1));
+applyTextSize(textSize());
+
 /* ------------------------------------------------------------- pausing */
 
 // Drawn rather than typed. The pause and play characters render as colour

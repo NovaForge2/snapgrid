@@ -336,7 +336,10 @@ input[type=search] { flex: 1 1 120px; min-width: 0; }
   display: flex; flex-direction: column; align-items: flex-start;
 }
 table {
-  border-collapse: separate; border-spacing: 0; font-size: 13px;
+  /* The one place the grid's text size is set. Everything inside is in em, so
+     changing this moves the padding and the smaller type with it rather than
+     leaving a bigger font in a box built for a smaller one. */
+  border-collapse: separate; border-spacing: 0; font-size: var(--grid-text, 13px);
   /* Exactly as wide as the widest value in each column, and no wider. It used
      to be stretched to fill the pane, and everything it gained that way became
      slack inside the columns. */
@@ -357,7 +360,7 @@ thead th {
   box-shadow: inset 0 1px 0 var(--grid), inset 0 -2px 0 var(--grid);
   text-align: left; padding: 0; white-space: nowrap;
 }
-.th-inner { display: flex; align-items: center; gap: 4px; padding: 8px 6px 8px 10px; }
+.th-inner { display: flex; align-items: center; gap: .3em; padding: .62em .46em .62em .77em; }
 /* Clicking a heading sorts by it, which nothing on screen said: the only mark
    in there is the filter caret, which means something else. */
 thead th .th-label { cursor: pointer; }
@@ -370,7 +373,11 @@ thead th:hover .th-label { color: var(--accent); }
   table-layout: fixed;
 }
 #table-wrap table.fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-thead th { position: relative; }
+/* No `position: relative` here. It was added so the resize grip inside a
+   heading had something to anchor to, and it silently replaced the sticky
+   position set above - so the headings scrolled away with the rows, which is
+   the one thing a heading must not do. `sticky` is already a positioned
+   value, so the grip anchors to it just the same. */
 .col-grip {
   /* Inside the heading, not hanging off it. At right: -3px the last column's
      grip sat outside the table and could be clipped away by the scrolling
@@ -411,16 +418,16 @@ thead th { position: relative; }
    cells that actually moved. */
 td.stack { padding: 0; vertical-align: top; }
 td.stack .v {
-  display: block; padding: 5px 10px; border-bottom: 1px solid var(--line);
+  display: block; padding: .38em .77em; border-bottom: 1px solid var(--line);
   font-variant-numeric: tabular-nums; cursor: pointer;
 }
 td.stack .v:last-child { border-bottom: 0; }
 td.stack .v.now { font-weight: 600; }
-td.stack .v.old { color: var(--muted); font-size: 12px; }
+td.stack .v.old { color: var(--muted); font-size: .92em; }
 /* It says "the same as the line above", which is information, so it is not
    allowed to fade into the background the way a decoration could. */
 td.stack .v.same { color: var(--muted); opacity: .6; }
-td.stack .v.gap { color: var(--muted); opacity: .55; font-size: 12px; }
+td.stack .v.gap { color: var(--muted); opacity: .55; font-size: .92em; }
 td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent); }
 /* The name is written once and sits at the top, beside its lines. */
 td.stack.name .v { border-bottom: 0; cursor: default; }
@@ -478,16 +485,25 @@ tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
 .filter-btn:hover { background: var(--hover); color: var(--text); }
 .filter-btn.active { color: var(--accent); background: var(--accent-soft); }
 tbody td {
-  padding: 6px 10px;
+  padding: .46em .77em;
   /* Lines on both axes. This is a grid for reading a value off a row and a
      column at once, and taking the vertical rules away left the headings
      ruled and the body not, which looks like a mistake rather than a choice. */
   border-bottom: 1px solid var(--grid); border-right: 1px solid var(--grid);
   background: var(--panel);
+  /* In em as well, so a wide column stays proportionate when the text grows. */
   /* Like a spreadsheet: one line per row, clipped, full value on hover.
      Wrapping turns a wide table into an unreadable block of text. */
   white-space: nowrap; max-width: 46ch; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* ---------- the size of the text in the grid ----------
+   A table is read, not glanced at, and how big its text should be depends on
+   the eyes and the screen rather than on anything snapgrid can work out. The
+   browser's own zoom would take the whole page with it, including the panels
+   that are already the right size. */
+#btn-smaller, #btn-bigger { font-size: 12px; padding: 2px 7px; min-width: 26px; }
+#btn-bigger { font-size: 15px; line-height: 1; padding: 0 7px 2px; }
 /* The cells carry the rounding: the table cannot clip its own corners with
    overflow without breaking the sticky heading. The last row drops its rule
    so it does not sit a second line on top of the table's own edge. */
@@ -513,7 +529,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
    badges is harder to read than the words were. */
 .shade {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
-  font-size: 12px; font-weight: 600; line-height: 18px;
+  font-size: .92em; font-weight: 600; line-height: 1.5;
   border: 1px solid transparent;
 }
 .shade.red    { color: var(--sh-red);   background: var(--sh-red-bg);   border-color: var(--sh-red-line); }
