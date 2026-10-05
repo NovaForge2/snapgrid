@@ -1,0 +1,30 @@
+# What is listening on which port, and the pid to end it with.
+# Nothing to configure: it reads the operating system's own tools.
+
+[plugin]
+name        = "Listening ports"
+description = "Which program holds which port, with the command that would end it"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = "1m"            # lsof is quick; a minute is already generous
+# Ten seconds, because what this is for is watching a port change hands: start
+# something, see it appear; end it, see it go. That is a different use from
+# most plugins, which report on a world that moves in hours.
+#
+# It is the shortest interval in any of these examples and it is not free -
+# lsof walks every open file on the machine each time. Nothing outside this
+# machine is touched, so there is no remote system to be rude to, but on a
+# laptop running on its battery this is worth raising to "1m".
+every   = "10s"
+
+[table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "listener"
+
+# Twenty differing results, so the comparison can show a port that has just
+# been taken or just been let go - which is usually the thing you came to find
+# out. An identical table does not use a slot, so this is twenty real changes.
+[history]
+keep = 20

@@ -2,7 +2,7 @@
 
 # Examples
 
-Seven plugins that run anywhere, with nothing to configure and no credentials.
+Eight plugins that run anywhere, with nothing to configure and no credentials.
 
 ```bash
 ./server.py --dir examples
@@ -30,6 +30,7 @@ It appears in the page within ten seconds. No restart.
 | [team-directory](team-directory/) | who owns what | **a plugin with no program at all** - a manifest and a CSV |
 | [hello-table](hello-table/) | reads `data.json` next to it | the smallest complete script |
 | [version-matrix](version-matrix/) | invented versions that drift | watching the history and the comparison fill up |
+| [listening-ports](listening-ports/) | what holds which port | **running anywhere** - three ways of asking, and a kill command written for the machine it is on |
 | [notes](notes/) | a list you keep yourself | **colouring a value** with `[colour]`, and why a hand-set status needs a date |
 
 Each folder has its own README with a picture of it running, an explanation of
