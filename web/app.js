@@ -1698,7 +1698,15 @@ const TEXT_SIZES = [10, 11, 12, 13, 15, 17, 20];
 const TEXT_KEY = "snapgrid-text";
 const DEFAULT_TEXT = 13;
 
-function textSize() {
+// What is on screen now. Browser storage seeds it once and is written to
+// afterwards if it will have it - but it is never asked again. Reading the
+// size back from storage on every press meant that where storage refused the
+// write, the next press stepped from the old value: A+ twice gave 15px twice,
+// and A- after it went to 12px. Remembering is the optional part; knowing
+// what the size currently is, is not.
+let currentText = DEFAULT_TEXT;
+
+function savedTextSize() {
   let saved = null;
   try {
     saved = parseInt(localStorage.getItem(TEXT_KEY), 10);
@@ -1709,6 +1717,7 @@ function textSize() {
 }
 
 function applyTextSize(size) {
+  currentText = size;
   document.documentElement.style.setProperty("--grid-text", size + "px");
   const at = TEXT_SIZES.indexOf(size);
   el("btn-smaller").disabled = at <= 0;
@@ -1719,19 +1728,19 @@ function applyTextSize(size) {
 }
 
 function stepTextSize(by) {
-  const at = TEXT_SIZES.indexOf(textSize());
+  const at = TEXT_SIZES.indexOf(currentText);
   const next = TEXT_SIZES[Math.min(TEXT_SIZES.length - 1, Math.max(0, at + by))];
+  applyTextSize(next);
   try {
     localStorage.setItem(TEXT_KEY, String(next));
   } catch (error) {
     /* it still applies for this page; it just will not be remembered */
   }
-  applyTextSize(next);
 }
 
 el("btn-smaller").addEventListener("click", () => stepTextSize(-1));
 el("btn-bigger").addEventListener("click", () => stepTextSize(1));
-applyTextSize(textSize());
+applyTextSize(savedTextSize());
 
 /* ------------------------------------------------------------- pausing */
 
