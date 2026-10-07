@@ -120,6 +120,14 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 
 ### Fixed
 
+- **The listening ports example now fills in the command line on Windows.** It
+  was empty on every row there, which also left the `program` column saying
+  `java.exe` and `python.exe` - the real name is read out of the command line,
+  and there was none. `wmic` is asked, or PowerShell where `wmic` has been
+  removed, and a quoted program path with a space in it is kept in one piece.
+  All the ways of asking are tried rather than one being picked by the name of
+  the operating system: a Python under Git Bash reports a Windows machine as
+  `posix`, and its `ps` answers nothing about a Windows pid.
 - **A key written under the wrong section header is refused** rather than
   ignored. In TOML a key belongs to the section above it, so `timeout = 600`
   appended to the end of a file quietly became `history.timeout` and did

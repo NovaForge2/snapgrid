@@ -30,6 +30,17 @@ import sys
 COLUMNS = ["listener", "port", "pid", "user", "program", "kill", "command"]
 TIMEOUT = 20
 
+def on_windows() -> bool:
+    """Windows, including a Python there that calls itself something else.
+
+    A plain python.exe says `os.name == "nt"`, but the Python a shell like Git
+    Bash may put first on PATH comes from MSYS or Cygwin and says `posix`
+    while the machine underneath it is still Windows - with Windows pids,
+    taskkill rather than kill, and no ps worth asking.
+    """
+    return os.name == "nt" or sys.platform.startswith(("cygwin", "msys"))
+
+
 def kill_command(pids: list[str]) -> str:
     """How this machine ends these processes, as a line to copy.
 
@@ -42,7 +53,7 @@ def kill_command(pids: list[str]) -> str:
     """
     if not pids:
         return ""
-    if os.name == "nt":
+    if on_windows():
         return "taskkill /F " + " ".join(f"/PID {pid}" for pid in pids)
     return "kill -9 " + " ".join(pids)
 
@@ -65,6 +76,20 @@ def decode(raw: bytes) -> str:
     return raw.decode("utf-8", "replace")
 
 
+def found(program: str) -> str | None:
+    """Where this program is, if it is anywhere.
+
+    shutil.which appends the `.exe` only when Python believes it is running
+    on Windows, and the Python a shell like Git Bash may be using does not
+    believe that. Without the second look, wmic and powershell appear to be
+    missing on precisely the machine that needs them.
+    """
+    where = shutil.which(program)
+    if where is None and on_windows():
+        where = shutil.which(program + ".exe")
+    return where
+
+
 def run(command: list[str], nothing_found: tuple[int, ...] = ()) -> str | None:
     """A helper's output, or None when it could not be run.
 
@@ -78,8 +103,12 @@ def run(command: list[str], nothing_found: tuple[int, ...] = ()) -> str | None:
     a whole one is the worse of the two outcomes. `nothing_found` lists the
     exit codes that mean "ran, matched nothing", which is lsof's 1.
     """
-    if not shutil.which(command[0]):
+    name, where = command[0], found(command[0])
+    if not where:
         return None
+    # The resolved path, not the bare name: a name that only matched with an
+    # .exe added would not start again without it.
+    command = [where, *command[1:]]
     try:
         # Bytes, not text. text=True decodes with the locale's encoding and
         # refuses anything it does not recognise - and a console tool on a
@@ -89,7 +118,7 @@ def run(command: list[str], nothing_found: tuple[int, ...] = ()) -> str | None:
         done = subprocess.run(command, capture_output=True, timeout=TIMEOUT,
                               check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"{command[0]}: {exc}", file=sys.stderr)
+        print(f"{name}: {exc}", file=sys.stderr)
         return None
 
     out, err = decode(done.stdout), decode(done.stderr)
@@ -97,7 +126,7 @@ def run(command: list[str], nothing_found: tuple[int, ...] = ()) -> str | None:
         if done.returncode in nothing_found and not err.strip():
             return out                  # it ran and matched nothing
         complaint = err.strip().splitlines()
-        print(f"{command[0]}: exit {done.returncode}"
+        print(f"{name}: exit {done.returncode}"
               + (f": {complaint[0]}" if complaint else ""), file=sys.stderr)
         return None
     return out
@@ -271,23 +300,108 @@ def from_netstat() -> list[dict] | None:
 WAYS = (("lsof", from_lsof), ("ss", from_ss), ("netstat", from_netstat))
 
 
-def full_commands(pids: set[str]) -> dict[str, str]:
-    """The whole command line per pid - what tells two copies of `java` apart
-    before you end one. Allowed to fail: a blank cell beats a failed run, and
-    a pid that has already gone is the usual reason."""
-    # An empty one would make the argument ",7312", which ps rejects outright -
-    # losing the command line of every process, including the ones that could
-    # have been looked up.
-    pids = {pid for pid in pids if pid}
-    if os.name == "nt" or not pids:
-        return {}
+def pid_then_command(output: str) -> dict[str, str]:
+    """Lines of `7312 /usr/bin/python3 -m snapgrid` into pid and command.
+
+    The three tools below are all asked to print in this one shape, so there
+    is one thing to parse rather than three. A line with nothing after the
+    pid is dropped: it is the same as not having been answered, and keeping
+    it would stop a later tool being tried.
+    """
     commands = {}
-    output = run(["ps", "-o", "pid=,command=", "-p", ",".join(sorted(pids))]) or ""
     for line in output.splitlines():
         pid, _, command = line.strip().partition(" ")
-        if pid.isdigit():
+        if pid.isdigit() and command.strip():
             commands[pid] = command.strip()
     return commands
+
+
+def from_ps(pids: set[str]) -> dict[str, str]:
+    """macOS and Linux. An empty pid list would make the argument ",7312",
+    which ps rejects outright - losing the command line of every process,
+    including the ones that could have been looked up."""
+    return pid_then_command(
+        run(["ps", "-o", "pid=,command=", "-p", ",".join(sorted(pids))]) or "")
+
+
+def from_wmic(pids: set[str]) -> dict[str, str]:
+    """Windows. `/value` rather than `/format:csv`, because the CSV wmic
+    writes does not quote a command line containing a comma - and a command
+    line is the one field most likely to hold one.
+
+    `/value` prints `Key=value` lines in alphabetical order, so CommandLine
+    arrives before the ProcessId it belongs to. A process whose command line
+    cannot be read has no CommandLine line at all, which is why the value is
+    cleared after each pid rather than carried into the next.
+
+    wmic is deprecated and is absent from a recent Windows, hence the
+    PowerShell way below.
+    """
+    where = " or ".join(f"ProcessId={pid}" for pid in sorted(pids))
+    output = run(["wmic", "process", "where", where,
+                  "get", "ProcessId,CommandLine", "/value"]) or ""
+    commands, line = {}, ""
+    for text in output.splitlines():
+        key, equals, value = text.partition("=")
+        if not equals:
+            continue
+        if key.strip() == "CommandLine":
+            line = value.strip()
+        elif key.strip() == "ProcessId" and value.strip().isdigit():
+            commands[value.strip()] = line
+            line = ""
+    return {pid: line for pid, line in commands.items() if line}
+
+
+# Printed as `pid command`, the same shape ps uses, so one parser reads both.
+# ConvertTo-Csv would have to be unquoted again, and the default table output
+# truncates a long command line with an ellipsis.
+PS_COMMAND_LINES = ("Get-CimInstance Win32_Process | ForEach-Object "
+                    "{ '{0} {1}' -f $_.ProcessId, $_.CommandLine }")
+
+
+def from_powershell(pids: set[str]) -> dict[str, str]:
+    """Windows without wmic. -NoProfile so a user's profile cannot print
+    anything into the answer, -NonInteractive so nothing can ever prompt.
+
+    Every process is asked for and the ones wanted are picked out here: the
+    filtering costs a second machine-readable list to build, and a where
+    clause of twenty pids written into a command line is a quoting problem
+    on the one platform whose quoting cannot be relied on.
+    """
+    for shell in ("pwsh", "powershell"):
+        output = run([shell, "-NoProfile", "-NonInteractive",
+                      "-Command", PS_COMMAND_LINES])
+        if output:
+            found = pid_then_command(output)
+            return {pid: found[pid] for pid in pids if pid in found}
+    return {}
+
+
+def full_commands(pids: set[str]) -> dict[str, str]:
+    """The whole command line per pid - what tells two copies of `java` apart
+    before you end one, and what the program column needs to say anything
+    better than "java" in the first place.
+
+    Three ways again, in the order most likely to answer on this machine but
+    all of them tried: a Python running under Git Bash reports a Windows
+    machine as posix, and asking its ps for a Windows pid answers nothing.
+
+    Allowed to fail entirely: a blank cell beats a failed run, and a process
+    that has already gone is the usual reason.
+    """
+    pids = {pid for pid in pids if pid}
+    if not pids:
+        return {}
+    ways = (from_wmic, from_powershell, from_ps) if on_windows() else \
+           (from_ps, from_wmic, from_powershell)
+    for ask in ways:
+        commands = ask(pids)
+        if commands:
+            return commands
+    print("no command lines: none of ps, wmic or powershell answered",
+          file=sys.stderr)
+    return {}
 
 
 # Programs whose own name tells you nothing: what matters is what they were
@@ -309,6 +423,28 @@ TAKES_A_VALUE = {
 RUNS_WHAT_FOLLOWS = {"-m", "--module", "-jar", "-c", "--eval"}
 
 
+def base_name(path: str) -> str:
+    """The last segment of a path written with either separator.
+
+    os.path.basename knows only the separator of the machine it is running
+    on, and these command lines come from Windows while the tests read them
+    on a Unix - where `C:\\tools\\jdk\\bin\\java.exe` is one long file name.
+    """
+    return re.split(r"[\\/]", path)[-1]
+
+
+def words_of(command: str) -> list[str]:
+    """A command line as its words, with a quoted path kept in one piece.
+
+    Windows writes the program as its full path and that path has a space in
+    it. `"C:\\Program Files\\Java\\bin\\java.exe" -jar billing.jar` split on
+    spaces begins `"C:\\Program`, and `Files\\Java\\bin\\java.exe"` would then
+    be read as the thing being run - a wrong name rather than a useless one.
+    """
+    return [word.replace('"', "")
+            for word in re.findall(r'"[^"]*"|\S+', command)]
+
+
 def running_what(program: str, command: str) -> str:
     """A name worth reading, taken from the command line when the program's
     own name is only the interpreter that happens to be running it.
@@ -326,11 +462,11 @@ def running_what(program: str, command: str) -> str:
     Only the name is changed; the whole command line is in the next column, so
     nothing is hidden - it is moved to where there is room for it.
     """
-    stem = os.path.basename(program).lower().removesuffix(".exe")
+    stem = base_name(program).lower().removesuffix(".exe")
     if stem not in INTERPRETERS or not command:
         return program
 
-    words = command.split()[1:]         # the interpreter itself is not news
+    words = words_of(command)[1:]       # the interpreter itself is not news
     skip = False
     for index, word in enumerate(words):
         if skip:
@@ -338,7 +474,7 @@ def running_what(program: str, command: str) -> str:
             continue
         if word in RUNS_WHAT_FOLLOWS:
             if index + 1 < len(words):
-                return os.path.basename(words[index + 1])
+                return base_name(words[index + 1])
             return program
         if word.startswith("-"):
             # -cp /a/b and -Xmx2g are both flags; only the first kind eats
@@ -346,7 +482,7 @@ def running_what(program: str, command: str) -> str:
             if word in TAKES_A_VALUE and "=" not in word:
                 skip = True
             continue
-        name = os.path.basename(word)
+        name = base_name(word)
         if name and name.lower().removesuffix(".exe") not in INTERPRETERS:
             return name
     return program

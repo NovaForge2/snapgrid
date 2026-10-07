@@ -524,3 +524,156 @@ class TheTable(unittest.TestCase):
                                   ("*:5000", ("*", "5000")),
                                   (":::445", ("::", "445"))):
             self.assertEqual(self.lp.split_address(address), expected, address)
+
+
+WMIC = (
+    "\r\n\r\nCommandLine=\"C:\\Program Files\\Java\\jdk-21\\bin\\java.exe\" "
+    "-Xmx2g -cp C:\\app\\lib\\* com.acme.Billing --port 8080\r\n"
+    "ProcessId=7312\r\n\r\n\r\n"
+    "ProcessId=4\r\n\r\n\r\n"                       # a System process: no command line
+    "CommandLine=C:\\Windows\\system32\\svchost.exe -k RPCSS\r\n"
+    "ProcessId=1024\r\n\r\n"
+)
+
+POWERSHELL = (
+    "7312 \"C:\\Program Files\\Java\\jdk-21\\bin\\java.exe\" -jar billing.jar\n"
+    "1024 C:\\Windows\\system32\\svchost.exe -k RPCSS\n"
+    "9999 C:\\Windows\\explorer.exe\n"
+)
+
+
+class TheCommandLineOnWindows(unittest.TestCase):
+    """The column was empty on Windows throughout, and that emptiness also
+    left the program column saying `java.exe` - there was nothing to read the
+    real name out of."""
+
+    def setUp(self):
+        self.lp = load()
+
+    def test_wmic_is_read_as_key_equals_value(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: WMIC):
+            found = self.lp.from_wmic({"7312", "1024", "4"})
+        self.assertEqual(found["1024"], "C:\\Windows\\system32\\svchost.exe -k RPCSS")
+        self.assertIn("com.acme.Billing", found["7312"])
+
+    def test_a_comma_in_a_command_line_survives(self):
+        # The reason for /value rather than /format:csv: the CSV wmic writes
+        # does not quote a field containing a comma.
+        output = ("CommandLine=C:\\app\\run.exe --tags one,two,three\r\n"
+                  "ProcessId=55\r\n")
+        with mock.patch.object(self.lp, "run", lambda *a, **k: output):
+            found = self.lp.from_wmic({"55"})
+        self.assertEqual(found["55"], "C:\\app\\run.exe --tags one,two,three")
+
+    def test_a_process_with_no_command_line_does_not_borrow_the_last_one(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: WMIC):
+            found = self.lp.from_wmic({"7312", "1024", "4"})
+        self.assertNotIn("4", found, "pid 4 has no command line of its own")
+
+    def test_powershell_answers_only_about_the_pids_asked_for(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: POWERSHELL):
+            found = self.lp.from_powershell({"7312", "1024"})
+        self.assertEqual(set(found), {"7312", "1024"})
+
+    def test_powershell_is_asked_without_a_profile_or_a_prompt(self):
+        asked = []
+        def answer(command, **_):
+            asked.append(command)
+            return POWERSHELL
+        with mock.patch.object(self.lp, "run", side_effect=answer):
+            self.lp.from_powershell({"7312"})
+        self.assertIn("-NoProfile", asked[0])
+        self.assertIn("-NonInteractive", asked[0])
+
+    def test_windows_asks_wmic_before_ps(self):
+        asked = []
+        def answer(command, **_):
+            asked.append(command[0])
+            return WMIC if command[0] == "wmic" else ""
+        with mock.patch.object(self.lp, "run", side_effect=answer), \
+             mock.patch.object(self.lp.os, "name", "nt"):
+            found = self.lp.full_commands({"7312"})
+        self.assertEqual(asked, ["wmic"], "nothing else needed asking")
+        self.assertIn("com.acme.Billing", found["7312"])
+
+    def test_a_posix_python_on_a_windows_machine_still_gets_there(self):
+        # Git Bash: os.name is posix, ps exists and knows nothing about a
+        # Windows pid. Falling through rather than stopping at the first way
+        # is what fills the column there.
+        def answer(command, **_):
+            return WMIC if command[0] == "wmic" else ""
+        with mock.patch.object(self.lp, "run", side_effect=answer), \
+             mock.patch.object(self.lp.os, "name", "posix"), \
+             mock.patch.object(self.lp.sys, "platform", "linux"):
+            found = self.lp.full_commands({"7312"})
+        self.assertIn("com.acme.Billing", found["7312"])
+
+    def test_nothing_answering_is_an_empty_cell_not_a_failure(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: None):
+            self.assertEqual(self.lp.full_commands({"7312"}), {})
+
+    def test_msys_counts_as_windows_for_the_kill_command(self):
+        with mock.patch.object(self.lp.os, "name", "posix"), \
+             mock.patch.object(self.lp.sys, "platform", "msys"):
+            self.assertTrue(self.lp.on_windows())
+            self.assertEqual(self.lp.kill_command(["990"]), "taskkill /F /PID 990")
+
+
+class AWindowsCommandLine(unittest.TestCase):
+    """Written with the program's full path, and that path has a space in it."""
+
+    def setUp(self):
+        self.lp = load()
+
+    def test_a_quoted_path_stays_one_word(self):
+        words = self.lp.words_of('"C:\\Program Files\\Java\\bin\\java.exe" -jar b.jar')
+        self.assertEqual(words, ["C:\\Program Files\\Java\\bin\\java.exe", "-jar", "b.jar"])
+
+    def test_the_class_name_is_found_past_the_class_path(self):
+        name = self.lp.running_what(
+            "java.exe",
+            '"C:\\Program Files\\Java\\jdk-21\\bin\\java.exe" -Xmx2g '
+            '-cp C:\\app\\lib\\* com.acme.Billing --port 8080')
+        self.assertEqual(name, "com.acme.Billing")
+
+    def test_the_script_is_found_behind_a_windows_python(self):
+        name = self.lp.running_what(
+            "python.exe",
+            'C:\\Python313\\python.exe C:\\tools\\report\\main.py --once')
+        self.assertEqual(name, "main.py")
+
+    def test_a_jar_is_found_behind_a_quoted_java(self):
+        name = self.lp.running_what(
+            "java.exe",
+            '"C:\\Program Files\\Java\\bin\\java.exe" -jar C:\\app\\billing.jar')
+        self.assertEqual(name, "billing.jar")
+
+    def test_a_program_that_is_its_own_name_is_left_alone(self):
+        self.assertEqual(
+            self.lp.running_what("nginx.exe", "C:\\nginx\\nginx.exe -g daemon off;"),
+            "nginx.exe")
+
+    def test_a_windows_program_is_found_with_its_extension(self):
+        # Git Bash: shutil.which adds the .exe only when Python thinks it is
+        # on Windows, and an MSYS Python does not.
+        def which(program):
+            return "C:\\Windows\\system32\\wmic.exe" if program.endswith(".exe") else None
+        with mock.patch("shutil.which", side_effect=which), \
+             mock.patch.object(self.lp.os, "name", "posix"), \
+             mock.patch.object(self.lp.sys, "platform", "msys"):
+            self.assertIsNotNone(self.lp.found("wmic"))
+        with mock.patch("shutil.which", side_effect=which), \
+             mock.patch.object(self.lp.sys, "platform", "linux"), \
+             mock.patch.object(self.lp.os, "name", "posix"):
+            self.assertIsNone(self.lp.found("wmic"), "no .exe guessing on a Unix")
+
+    def test_the_program_is_started_by_the_path_it_was_found_at(self):
+        started = {}
+        done = mock.Mock(returncode=0, stdout="out", stderr="")
+        def record(command, **_):
+            started["argv"] = command
+            return done
+        with mock.patch("shutil.which", return_value="C:\\Windows\\wmic.exe"), \
+             mock.patch("subprocess.run", side_effect=record):
+            self.lp.run(["wmic", "process"])
+        self.assertEqual(started["argv"], ["C:\\Windows\\wmic.exe", "process"])

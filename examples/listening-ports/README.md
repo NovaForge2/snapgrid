@@ -76,9 +76,25 @@ Which one answered is written to the log.
 | `ss -ltnpH` | modern Linux | one line per socket, the pid picked out of `users:(("name",pid=n,...))` |
 | `netstat` + `tasklist /fo csv` | Windows, and a Linux with neither of the above | the flags differ: `-o` asks Windows for the owning pid and asks Linux for *timers*, where the owner comes from `-p`. Both forms are tried and the one that named owners wins. A listener is recognised by the far end of the socket being nobody rather than by the word in the state column - that word is translated, and a German Windows says `ABHÖREN`. On Windows `tasklist` supplies the names behind the pids, read as CSV - the one format it emits that survives a program name with a comma in it |
 
-The full command line comes from a separate `ps`, because `lsof` reports only
-the program's name. It is allowed to fail: a blank cell beats a failed run, and
-a process that has already gone is the usual reason.
+## The command line is asked for separately, and also three ways
+
+None of the three tools above reports it - `lsof` gives the program's name and
+nothing more - so it is a second question, asked of whatever can answer.
+
+| Tried | Where it is | How it is read |
+|---|---|---|
+| `ps -o pid=,command= -p ...` | macOS, Linux | one line per pid |
+| `wmic process where "ProcessId=..." get ProcessId,CommandLine /value` | Windows up to 11 23H2 | `Key=value` lines. **Not** `/format:csv`: the CSV wmic writes does not quote a field containing a comma, and a command line is the field most likely to hold one |
+| `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process \| ..."` | Windows, where wmic has been removed | asked to print `pid command`, the shape `ps` uses, so one parser reads both. `-NoProfile` so a user's profile cannot print into the answer; `-NonInteractive` so nothing can prompt |
+
+All three are tried, in the order most likely to answer first, rather than one
+being chosen by the name of the operating system. **A Python under Git Bash
+reports a Windows machine as `posix`** - and its `ps` knows nothing about a
+Windows pid, so it answers and answers nothing. Falling through to the next way
+is what fills the column there.
+
+It is allowed to fail entirely: a blank cell beats a failed run, and a process
+that has already gone is the usual reason.
 
 ## The kill command is written for this machine
 
@@ -161,8 +177,23 @@ nothing.
 A program whose own name is its name - `nginx`, `Dropbox` - is left alone.
 Nothing is hidden either way: the full command line is in the next column.
 
-**On Windows this does not happen.** The name comes from `tasklist` and there
-is no `ps` to ask for the command line, so a Java service reads as `java.exe`.
+This works on Windows too, which took a second look. The name there comes from
+`tasklist` as `java.exe`, and reading past it needs the command line - which
+until the lookup above existed was empty on Windows throughout, so every Java
+service read as `java.exe` and every script as `python.exe`.
+
+The other half of it is that **Windows writes the program as its full path, and
+that path has a space in it**:
+
+```
+"C:\Program Files\Java\jdk-21\bin\java.exe" -cp C:\app\lib\* com.acme.Billing
+```
+
+Split on spaces, that command line begins `"C:\Program`, and the word after it
+would be read as the thing being run - naming the service `Files\Java\...` -
+so a quoted path is kept in one piece. The path separator is read as either
+slash, because `os.path.basename` knows only the one belonging to the machine
+it is running on.
 
 ## A port held by more than one process
 
@@ -195,5 +226,5 @@ eye nothing.
 |---|---|
 | `could not list listening sockets` | none of `lsof`, `ss` or `netstat` is on PATH. The run fails rather than showing an empty table, which would read as "nothing is listening". A tool that *ran* and found nothing is a different thing, and gives a table with no rows |
 | fewer rows than you expect | ports held by other users' processes are not all visible to you. Run snapgrid as yourself and expect to see your own |
-| an empty `command` | `ps` could not be asked about that pid, usually because it had already gone. On Windows there is no `ps`, so this column is empty throughout |
+| an empty `command` | the pid could not be asked about, usually because the process had already gone. Empty for every row means none of `ps`, `wmic` or `powershell` answered - the log says so - and the `program` column then shows the interpreter rather than what it is running |
 | an empty `pid` and `kill` | the socket is visible but its owner is not. The port is taken; you cannot see by what without more privilege |
