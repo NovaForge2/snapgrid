@@ -127,3 +127,22 @@ class EveryElementTheScriptAsksForExists(unittest.TestCase):
         self.assertTrue(wanted, "the pattern this reads for has changed")
         have = set(re.findall(r'id="([^"]+)"', page))
         self.assertEqual([one for one in wanted if one not in have], [])
+
+
+class TheMenuCanBeMadeToFit(unittest.TestCase):
+    """The View menu is hung from a button that can be anywhere on the row,
+    and the script moves it when that would put it off the screen. The cap on
+    its width is what makes that possible on a window narrower than the menu
+    - and a minimum width would quietly beat the cap, because min-width wins
+    over max-width in CSS whatever the order."""
+
+    def test_the_menu_has_a_width_and_not_a_minimum(self):
+        self.assertEqual(declarations_for("#view-popup", "min-width"), [],
+                         "a minimum width beats the cap below and puts the "
+                         "controls off the edge of a narrow window")
+        self.assertTrue(declarations_for("#view-popup", "width"))
+
+    def test_the_menu_is_capped_to_the_window(self):
+        caps = declarations_for("#view-popup", "max-width")
+        self.assertTrue(caps, "nothing stops it being wider than the window")
+        self.assertIn("vw", caps[-1][1])

@@ -361,9 +361,13 @@ input[type=search] { flex: 1 1 120px; min-width: 0; }
 #view-wrap { position: relative; margin-left: auto; flex: none; }
 #btn-view[aria-expanded="true"] { color: var(--text); border-color: var(--accent); background: var(--hover); }
 #btn-view .caret { font-size: 9px; margin-left: 3px; vertical-align: 1px; }
+/* Hung from the button's right edge by default, and moved by the script when
+   that would put its left edge off the screen. A width rather than a minimum,
+   so the cap below can actually win: min-width beats max-width in CSS, and a
+   menu that refuses to shrink is a menu with its controls off the edge. */
 #view-popup {
   position: absolute; top: calc(100% + 4px); right: 0; z-index: 40;
-  min-width: 250px; padding: 6px;
+  width: 250px; max-width: calc(100vw - 16px); padding: 6px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
 }
@@ -401,10 +405,6 @@ input[type=search] { flex: 1 1 120px; min-width: 0; }
   /* Pushed right by a margin, which on its own line puts it in the middle of
      nowhere. On a wrapped row it goes back to the left with everything else. */
   #view-wrap { margin-left: 0; }
-  /* Hung from the button's right edge, which is the window's edge until the
-     row wraps and the button is at the left of a line of its own - and then
-     250px of menu hangs off the side of the screen. */
-  #view-popup { right: auto; left: 0; }
   #p-name { font-size: 17px; }
 }
 

@@ -1841,9 +1841,29 @@ function viewMenuOpen() {
   return !el("view-popup").hidden;
 }
 
+// Both corners are wrong on their own. Hung from the button's right edge it
+// runs off the left of a narrow window; hung from the left edge it runs off
+// the right, because once the row wraps the button is in the middle of a line
+// rather than at the start of one. So it is hung from the right and then moved
+// if that put it off the screen - which is the only rule that holds at every
+// width.
+const MENU_EDGE = 8;   // px of daylight to leave at the side of the window
+
+function placeViewMenu() {
+  const popup = el("view-popup");
+  popup.style.right = "0";
+  popup.style.left = "auto";
+  const box = popup.getBoundingClientRect();
+  if (box.left >= MENU_EDGE) return;
+  const wrap = el("view-wrap").getBoundingClientRect();
+  popup.style.right = "auto";
+  popup.style.left = (MENU_EDGE - wrap.left) + "px";
+}
+
 function showViewMenu(open) {
   el("view-popup").hidden = !open;
   el("btn-view").setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) placeViewMenu();
 }
 
 el("btn-view").addEventListener("click", (event) => {
@@ -1868,6 +1888,12 @@ document.addEventListener("keydown", (event) => {
 // is going; null means it left the page altogether, which also counts.
 el("view-wrap").addEventListener("focusout", (event) => {
   if (!el("view-wrap").contains(event.relatedTarget)) showViewMenu(false);
+});
+
+// A window being dragged narrower moves the button under an open menu, so the
+// menu is placed again rather than left where it was.
+window.addEventListener("resize", () => {
+  if (viewMenuOpen()) placeViewMenu();
 });
 
 // Log and Config open a panel over the table, so the menu has no reason to
