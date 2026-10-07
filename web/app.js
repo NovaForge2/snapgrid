@@ -447,17 +447,35 @@ function renderDetail() {
       ? `slowed after ${detail.failures} failures, next try ${timeUntil(detail.next_run)}`
       : "next run " + timeUntil(detail.next_run));
   }
-  el("p-meta").textContent = meta.join(" - ");
+  // One element per fact, so a row that wraps on a narrow window does not
+  // leave a separator dangling at the end of a line - the rule between them
+  // is drawn by the stylesheet.
+  const metaBox = el("p-meta");
+  metaBox.textContent = "";
+  for (const fact of meta) {
+    const span = document.createElement("span");
+    span.className = "fact";
+    span.textContent = fact;
+    metaBox.appendChild(span);
+  }
 
   // A paused plugin shows a table that looks exactly like a current one, so
   // the page has to be loud about it. This is the whole risk of the feature:
   // a fortnight-old number read as today's is worse than no number.
   const paused = detail.paused_since;
-  el("p-paused").hidden = !paused;
+  const pausedBox = el("p-paused");
+  pausedBox.hidden = !paused;
   if (paused) {
-    el("p-paused").textContent =
-      `Paused ${timeAgo(paused)} - the schedule is leaving it alone. `
-      + `Run now still works.`;
+    pausedBox.textContent = "";
+    const icon = document.createElement("span");
+    icon.innerHTML = PAUSE_ICON;
+    const words = document.createElement("span");
+    // Two facts, and the second is the one people ask about: a paused plugin
+    // is not a broken one, and the button still works.
+    words.textContent = "Paused \u00b7 Manual runs available.";
+    pausedBox.append(icon, words);
+    pausedBox.title = `Paused ${timeAgo(paused)}. The schedule is leaving it `
+                    + `alone until you resume it; Run now still works.`;
   }
 
 
@@ -665,6 +683,19 @@ function renderDiffBar(diff) {
     item.append(number, document.createTextNode(at === 0 ? "now" : whenExactly(run.last_seen)));
     legend.appendChild(item);
   });
+  // A dot is read either as "the same" or as "nothing there", and those are
+  // opposites, so it is not left to be guessed at. Only where there are dots
+  // to explain: whole row mode draws no stacked lines.
+  if (!diff.whole && diff.runs.length > 1) {
+    const key = document.createElement("span");
+    key.className = "key";
+    const dot = document.createElement("i");
+    dot.className = "dotmark";
+    dot.textContent = "\u00b7";
+    key.append(dot, document.createTextNode("same as the run above"));
+    key.title = "A cell written once did not change in any of these runs.";
+    legend.appendChild(key);
+  }
   tally.appendChild(legend);
 
   const counts = [
@@ -901,7 +932,10 @@ el("side-log").addEventListener("click", () => showSide("log"));
 el("side-config").addEventListener("click", () => showSide("config"));
 el("side-close").addEventListener("click", () => showSide(null));
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.side) showSide(null);
+  // One Escape, one thing closed. The menu is in front, so it goes first and
+  // the panel behind it stays open.
+  if (event.key !== "Escape" || viewMenuOpen()) return;
+  if (state.side) showSide(null);
 });
 
 // Following means the newest line stays in view while a plugin is running.
@@ -1066,10 +1100,25 @@ function renderTable() {
     label.className = "th-label";
     label.textContent = column;
     label.addEventListener("click", () => toggleSort(column));
+    // Sorting was mouse only: a heading is a span, because a button inside a
+    // cell whose width is being dragged brought its own box model with it.
+    // The keyboard gets at it through the span instead.
+    label.tabIndex = 0;
+    label.setAttribute("role", "button");
+    label.setAttribute("aria-label", "Sort by " + column);
+    label.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();       // Space would scroll the table instead
+        toggleSort(column);
+      }
+    });
 
+    const sorted = state.sort.column === column && state.sort.direction !== 0;
+    th.setAttribute("aria-sort", sorted
+      ? (state.sort.direction > 0 ? "ascending" : "descending") : "none");
     const mark = document.createElement("span");
     mark.className = "sort-mark";
-    if (state.sort.column === column && state.sort.direction !== 0) {
+    if (sorted) {
       mark.textContent = state.sort.direction > 0 ? "▲" : "▼";
     }
 
@@ -1172,6 +1221,10 @@ function renderTable() {
             openCellHistory(cellValue(row, key), columns[index], td);
           });
           td.appendChild(line);
+          // The guides have to cross this cell even though it has nothing to
+          // write on those lines, or they stop here and the eye loses the run
+          // it was following across the row.
+          addGuides(td, depth - 1);
           tr.appendChild(td);
           return;
         }
@@ -1255,6 +1308,18 @@ function renderTable() {
   el("btn-clear").hidden = state.filters.size === 0 && !state.search;
 }
 
+// Empty lines, the same height as the written ones, so a guide runs the whole
+// width of the row. Not dots: a dot means "the same as the line above", and
+// what these say is that the one value above them covers every run.
+function addGuides(td, count) {
+  for (let at = 0; at < count; at += 1) {
+    const line = document.createElement("span");
+    line.className = "v rule";
+    line.setAttribute("aria-hidden", "true");
+    td.appendChild(line);
+  }
+}
+
 function toggleSort(column) {
   if (state.sort.column !== column) {
     state.sort = { column: column, direction: 1 };
@@ -1263,7 +1328,17 @@ function toggleSort(column) {
   } else {
     state.sort = { column: null, direction: 0 };
   }
+  // Sorting rebuilds the whole table, so the heading that was just pressed is
+  // a different element afterwards. Without this the keyboard lands back on
+  // the body and a second press sorts nothing.
+  const hadFocus = document.activeElement
+                && document.activeElement.classList.contains("th-label");
   renderTable();
+  if (hadFocus) {
+    for (const label of document.querySelectorAll(".th-label")) {
+      if (label.textContent === column) { label.focus(); break; }
+    }
+  }
 }
 
 /* ------------------------------------------------------------- columns */
@@ -1483,6 +1558,7 @@ function openColumns(anchor) {
   }
   popup.appendChild(foot);
 
+  el("btn-columns").setAttribute("aria-expanded", "true");
   placePopup(popup, anchor);
 }
 
@@ -1498,12 +1574,16 @@ el("btn-columns").addEventListener("click", (event) => {
 /* -------------------------------------------------------- filter popup */
 
 function closeFilter() {
+  el("btn-columns").setAttribute("aria-expanded", "false");
   const popup = el("filter-popup");
   popup.hidden = true;
   popup.textContent = "";
 }
 
 function openFilter(column, anchor) {
+  // The same popup serves the Columns button, which is no longer what is in
+  // it the moment a heading opens a filter in it.
+  el("btn-columns").setAttribute("aria-expanded", "false");
   const popup = el("filter-popup");
   const snapshot = state.detail.snapshot;
   const columns = snapshot.columns;
@@ -1725,6 +1805,9 @@ function applyTextSize(size) {
   const label = `Text in the table: ${size}px`;
   el("btn-smaller").title = at <= 0 ? "Already the smallest" : label;
   el("btn-bigger").title = at >= TEXT_SIZES.length - 1 ? "Already the biggest" : label;
+  // Behind a menu now, so the two steppers no longer have the table beside
+  // them to show what they did. The number says it.
+  el("text-size-now").textContent = size + "px";
 }
 
 function stepTextSize(by) {
@@ -1741,6 +1824,57 @@ function stepTextSize(by) {
 el("btn-smaller").addEventListener("click", () => stepTextSize(-1));
 el("btn-bigger").addEventListener("click", () => stepTextSize(1));
 applyTextSize(savedTextSize());
+
+/* ---------------------------------------------- the secondary menu */
+
+// Text size, theme, Log and Config: preferences and panels rather than things
+// done to this table, so they are one button at the end of the toolbar
+// instead of five competing with Run now.
+//
+// A disclosure button, not a role=menu. What is inside is a stepper, a
+// three-way switch and two toggles; claiming the menu role would promise
+// arrow-key navigation these do not have, and a promise an assistive
+// technology keeps on your behalf is worse than none. Tab walks it, Escape
+// closes it, and the focus goes back where it came from.
+
+function viewMenuOpen() {
+  return !el("view-popup").hidden;
+}
+
+function showViewMenu(open) {
+  el("view-popup").hidden = !open;
+  el("btn-view").setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+el("btn-view").addEventListener("click", (event) => {
+  // Without this the document handler below sees the same click and closes
+  // the menu in the tick it opened.
+  event.stopPropagation();
+  showViewMenu(!viewMenuOpen());
+});
+
+document.addEventListener("click", (event) => {
+  if (viewMenuOpen() && !el("view-wrap").contains(event.target)) showViewMenu(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && viewMenuOpen()) {
+    showViewMenu(false);
+    el("btn-view").focus();
+  }
+});
+
+// Tabbing past the last item closes it too. relatedTarget is where the focus
+// is going; null means it left the page altogether, which also counts.
+el("view-wrap").addEventListener("focusout", (event) => {
+  if (!el("view-wrap").contains(event.relatedTarget)) showViewMenu(false);
+});
+
+// Log and Config open a panel over the table, so the menu has no reason to
+// stay in front of it.
+for (const id of ["btn-log", "btn-config"]) {
+  el(id).addEventListener("click", () => showViewMenu(false));
+}
 
 /* ------------------------------------------------------------- pausing */
 
@@ -1773,9 +1907,17 @@ function onASchedule(plugin) {
 
 function pauseButton(plugin) {
   const paused = Boolean(plugin.paused_since);
+  // State first, then what pressing it would do, then the plugin it belongs
+  // to - a row of identical icons is unreadable to a screen reader otherwise,
+  // and "Pause" alone does not say whether it is paused already.
   const button = iconButton("pause-btn", paused, paused
-    ? "Paused " + timeAgo(plugin.paused_since) + ". Put it back on its schedule"
-    : "Take it off the schedule. The last result stays, and Run now still works");
+    ? `Paused ${timeAgo(plugin.paused_since)}. Resume ${plugin.name}: `
+      + `put it back on its schedule`
+    : `On its schedule. Pause ${plugin.name}: the schedule leaves it alone, `
+      + `the last result stays, and Run now still works`);
+  // A toggle, and said as one, so the state is announced rather than having
+  // to be read out of the label.
+  button.setAttribute("aria-pressed", paused ? "true" : "false");
   button.addEventListener("click", async (event) => {
     // The row behind it opens the plugin, which is not what was clicked.
     event.stopPropagation();
@@ -1820,10 +1962,16 @@ function renderPauseAll() {
   button.innerHTML = all ? PLAY_ICON : PAUSE_ICON;
   button.classList.toggle("on", all);
   const label = all
-    ? "Put every plugin back on its schedule"
-    : `Take all ${schedulable.length} plugins off the schedule`;
+    ? `All ${schedulable.length} paused. Resume them: put every plugin back `
+      + `on its schedule`
+    : paused.length
+      ? `${paused.length} of ${schedulable.length} paused. Pause the rest: `
+        + `the schedule leaves them alone, and Run now still works`
+      : `${schedulable.length} on their schedule. Pause all of them: the `
+        + `schedule leaves them alone, and Run now still works`;
   button.title = label;
   button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", all ? "true" : "false");
 
   // Said next to the plugin count rather than as a chip of its own: the foot
   // of a 260px panel has no room for a third thing.

@@ -118,6 +118,28 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 - **`[run] timeout` accepts a duration** such as `"10m"` as well as a number of
   seconds, and `[run] every` understands days and weeks.
 
+### Changed
+
+- **The toolbar is shorter.** It holds what is done to the table - Run now,
+  which result to show, what to compare it with, search, Export Excel - and
+  ends with a **More** menu holding the text size, the theme, Log and Config.
+  **Columns** and **Clear filters** have moved down beside the table, with the
+  row count next to them, because they are about what this table shows rather
+  than about snapgrid. Nothing was removed and nothing works differently.
+- **A compared row is ruled across.** Every line in every cell of the row is
+  now the same height and carries a faint guide, including the cells written
+  once, so a value can be traced back to the run it belongs to in the strip
+  above. That strip now also says what a dot means, which was being guessed at
+  - and the two guesses, "the same" and "nothing there", are opposites.
+- **A paused plugin says `Paused · Manual runs available.`** as a chip under
+  its name, with how long it has been paused on hover. The old sentence said
+  the schedule was leaving it alone, which is the half nobody was asking
+  about.
+- **The keyboard reaches the table.** A heading can be focused and sorted with
+  Enter or Space, and keeps the focus afterwards; every control draws the same
+  accent focus ring; the pause controls say what state they are in as well as
+  what pressing them would do, and name the plugin they belong to.
+
 ### Fixed
 
 - **The listening ports example now fills in the command line on Windows.** It

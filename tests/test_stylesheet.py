@@ -89,3 +89,41 @@ class ThePillsAndTheGrid(unittest.TestCase):
         # subtle enough to survive a review.
         padding = declarations_for("td.num .shade", "padding")
         self.assertEqual([value for _, value in padding][-1:], ["0"])
+
+
+class TheStackedLinesStayLevel(unittest.TestCase):
+    """The guides across a compared row are the bottom edge of each line, so
+    they only line up while every line is the same height. An older line is
+    set slightly smaller than the current one, which is exactly how they stop
+    being the same height - and a guide half a pixel out across six columns
+    reads as a table that has come apart."""
+
+    def test_a_stacked_line_is_given_an_explicit_height(self):
+        heights = declarations_for("td.stack .v", "height")
+        self.assertTrue(heights, "without a height, a smaller line is a shorter line")
+        selector, value = heights[-1]
+        self.assertIn("--stack-line", value,
+                      f"{selector!r} sets the height to {value!r}; it has to come "
+                      f"from the one variable every cell in the row reads")
+
+    def test_the_height_does_not_come_from_the_line_s_own_font(self):
+        # `em` resolves against the element's own font-size, and an older line
+        # has a smaller one. The variable is in px for that reason.
+        for _, value in declarations_for("table", "--stack-line"):
+            self.assertNotIn("em", value,
+                             "an em here is a shorter em on the smaller lines")
+
+
+class EveryElementTheScriptAsksForExists(unittest.TestCase):
+    """app.js reaches for elements by id and gets null when one is not there,
+    which fails at the first use - a long way from the renamed id, and only if
+    that part of the page is ever opened. Moving the theme, the text size and
+    the Log and Config buttons into a menu was a move of exactly this kind."""
+
+    def test_no_id_is_asked_for_that_the_page_does_not_have(self):
+        script = (STYLESHEET.parent / "app.js").read_text(encoding="utf-8")
+        page = (STYLESHEET.parent / "index.html").read_text(encoding="utf-8")
+        wanted = sorted(set(re.findall(r'\bel\("([^"]+)"\)', script)))
+        self.assertTrue(wanted, "the pattern this reads for has changed")
+        have = set(re.findall(r'id="([^"]+)"', page))
+        self.assertEqual([one for one in wanted if one not in have], [])

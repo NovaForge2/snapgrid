@@ -2,10 +2,19 @@
 
 # The web page
 
-**Light or dark:** the button in the toolbar - `◑ auto`, `☀ light`,
+**The toolbar holds what is done to this table** - Run now, which result to
+show, what to compare it with, search, Export Excel - and ends with **More**,
+which holds the rest: the size of the text, the theme, and the Log and Config
+panels. The split is between acting on the data and setting up snapgrid, and
+it is there because thirteen controls of equal weight on one line is a wall
+rather than a toolbar.
+
+**Columns** and **Clear filters** are not in it. They sit with the table,
+below the comparison strip, because they are about what this table shows.
+
+**Light or dark:** the button under **More** - `◑ auto`, `☀ light`,
 `☾ dark` - cycles through the three. `auto` follows your operating system
-and is the default. It sits in the toolbar rather than in a corner because
-hiding the left panel used to take the only way of changing the theme with it.
+and is the default.
 
 The choice is remembered in your browser and is not shared with anyone else
 looking at the same instance. A link carrying `?theme=dark` opens that way
@@ -30,8 +39,8 @@ whatever the machine prefers, and pressing the button still wins.
   that `2.9.0` comes before `2.14.1`.
 - **Columns** chooses which columns to show. Unticking one takes it off the
   screen without taking it out of the table: filters, sorting and the search
-  box still see it, and it comes straight back. The row count says how many are
-  hidden, and the button is highlighted while any are. **Show all** puts them
+  box still see it, and it comes straight back. The row count beside it says
+  how many are hidden, and the button is highlighted while any are. **Show all** puts them
   back. The last visible column cannot be hidden - an empty table is not a view
   of anything.
 - **Column widths** start at exactly the widest value in each column, so the
@@ -45,8 +54,8 @@ whatever the machine prefers, and pressing the button still wins.
   `[colour]` in its manifest - red, amber, green, blue or grey. They are the
   plugin's decision, not yours, and there is nothing to switch on here; see
   [plugin-toml.md](plugin-toml.md) for how a plugin asks.
-- **A&#8722; and A+** change the size of the text **in the table**, from 10px to
-  20px. The browser's own zoom takes the whole page with it, including the
+- **A&#8722; and A+**, under **More**, change the size of the text **in the
+  table**, from 10px to 20px. The number between them says where you are. The browser's own zoom takes the whole page with it, including the
   panels that were already the right size; this is the grid alone, and the row
   heights and padding move with it rather than leaving a bigger font in a box
   built for a smaller one. Smaller text also means more columns at once, which
@@ -68,9 +77,10 @@ whatever the machine prefers, and pressing the button still wins.
 - **The dropdown next to Run now** appears once there is history, and shows any
   earlier result.
 - **The second dropdown compares runs** - see below.
-- **Log** and **Config** are buttons at the right of the toolbar. They open a
+- **Log** and **Config** are at the foot of the **More** menu. They open a
   panel over the right of the table, with a tab for each and a close button, so
-  a panel you are not using costs the grid no space at all. Escape closes it.
+  a panel you are not using costs the grid no space at all. Escape closes the
+  menu if it is open, and the panel if it is not - one press, one thing closed.
 - **Log** is the plugin's standard error, updating while it runs.
   **Following** keeps the newest line in view. Scrolling up turns it off, so
   reading something is never fought over; scrolling back to the bottom turns it
@@ -122,6 +132,7 @@ was worth less than seeing, at a glance, which cells are deep.
 | a smaller, quieter value below | what it was in that earlier run |
 | **a dot** | the same as the line above - this run did not move it |
 | a tinted cell | something moved in that cell |
+| a faint rule across the row | the line between one run and the next, drawn the whole width of the row so a value can be traced back to the run it belongs to |
 | `NEW` and a green edge | the row was not there in the earlier runs |
 | `GONE` and a red edge | the row is not in the current result. It is shown anyway, because a thing disappearing is worth noticing |
 | `not there` | the row did not exist in that particular run |
@@ -130,9 +141,15 @@ was worth less than seeing, at a glance, which cells are deep.
 
 **Which run is which** is written once in the strip above the table -
 `1 now · 2 25 Sep 23:27 · 3 25 Sep 20:40` - because there is no room for a date
-inside a cell and every cell shares the same runs. The strip also counts what
-moved, and holds the **Only what changed** tick, which narrows a forty row table
-to the rows that did something.
+inside a cell and every cell shares the same runs. The strip says what a dot
+means as well, since a dot read as "nothing there" says the opposite of what it
+does say. It also counts what moved, and holds the **Only what changed** tick,
+which narrows a forty row table to the rows that did something.
+
+**A cell that never moved is written once**, with the guides carrying on
+beneath it. Blank lines there are not missing values: the one value above them
+covers every run being compared. A run the row was not in at all says
+`not there` instead.
 
 **Click any value** to see the history of that one cell, which goes back as far
 as the stored snapshots rather than as far as the comparison:
@@ -195,8 +212,9 @@ survives being forgotten about, and pausing is not.
 
 Because **a paused plugin shows a table that looks exactly like a current
 one**, the page says so in three places: its control is a play triangle and
-coloured rather than grey, the heading says how long it has been paused, and
-the plugin count at the foot says how many are. Without that, a fortnight-old
+coloured rather than grey, the heading carries a **Paused · Manual runs
+available.** chip - hover it for how long it has been paused - and the plugin
+count at the foot says how many are. Without that, a fortnight-old
 number gets read as today's, which is worse than no number.
 
 Pausing is snapgrid's own state and **does not touch `plugin.toml`**. The

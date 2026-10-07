@@ -14,6 +14,7 @@
   --hover: #eef2f5;
   --zebra: #fafbfc;
   --grid: #d3d9e0;
+  --guide: #e9edf1;
   --syn-comment: #8a9199;
   --syn-section: #2f6f4e;
   --syn-key: #1c2024;
@@ -39,6 +40,7 @@
     --hover: #232a31;
     --zebra: #1f242a;
     --grid: #333b43;
+    --guide: #272e35;
     --syn-comment: #77818b;
     --syn-section: #5fb98c;
     --syn-key: #e6e9ec;
@@ -62,6 +64,7 @@
     --hover: #232a31;
     --zebra: #1f242a;
     --grid: #333b43;
+    --guide: #272e35;
     --syn-comment: #77818b;
     --syn-section: #5fb98c;
     --syn-key: #e6e9ec;
@@ -236,7 +239,17 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
 #btn-quit, #btn-pause-all { font-size: 12px; padding: 2px 8px; }
 #server-note.some-paused { color: var(--changed); }
 
-#p-paused { margin-top: 6px; font-size: 12px; color: var(--changed); }
+/* A paused plugin shows a table that looks exactly like a current one, which
+   is the whole risk of the feature - so this is a chip rather than a line of
+   prose, and it says what still works as well as what has stopped. */
+#p-paused {
+  margin-top: 8px; font-size: 12px; color: var(--changed);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--changed) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--changed) 32%, transparent);
+}
+#p-paused svg { width: 9px; height: 9px; fill: currentColor; flex: none; }
 #btn-quit:hover { color: var(--fail); border-color: var(--fail); }
 
 /* ---------- after the server has gone ----------
@@ -281,17 +294,34 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
    state used to sit in the far corner, a screen's width from the heading it
    belonged to, in the smallest type on the page: it is the first thing anyone
    opening this wants to know. */
-#panel-head { padding: 16px 20px 10px; }
-#p-name { margin: 0; font-size: 18px; }
-#p-desc { margin: 3px 0 0; color: var(--muted); }
-#p-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
+/* The name leads, the description follows it, and the schedule, history and
+   freshness come third - they are facts about the plugin rather than the
+   thing you came to read, so they are smaller and quieter than the
+   description above them rather than the same size in a different colour. */
+#panel-head { padding: 16px 20px 12px; }
+#p-name { margin: 0; font-size: 19px; line-height: 1.25; }
+#p-desc { margin: 4px 0 0; color: var(--muted); max-width: 90ch; }
+/* Space between the facts rather than a character: every separator that can
+   be typed or drawn ends up orphaned at the start or the end of a line once
+   the row wraps, and this row wraps on any narrow window. */
+#p-meta {
+  margin-top: 8px; color: var(--muted); font-size: 11.5px;
+  display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: baseline;
+}
+#p-meta .fact { white-space: nowrap; }
 
 #toolbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 0 20px 12px; border-bottom: 1px solid var(--line);
 }
-#row-note { color: var(--muted); font-size: 12px; }
-.sep { width: 1px; align-self: stretch; margin: 2px 2px; background: var(--line); }
+/* Acting on the table, not on snapgrid: these sit with the table rather than
+   in the toolbar, and the row count is the quietest thing on the line. */
+#table-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 20px 6px;
+}
+#table-bar .grow { flex: 1; }
+#row-note { color: var(--muted); font-size: 11.5px; }
 /* Something is being kept from view, so the button says so. */
 #btn-columns.active { color: var(--accent); border-color: var(--accent); }
 button, select, input[type=search], #btn-xlsx {
@@ -300,6 +330,14 @@ button, select, input[type=search], #btn-xlsx {
 }
 button, #btn-xlsx { cursor: pointer; text-decoration: none; }
 button:hover, #btn-xlsx:hover { background: var(--hover); }
+/* One visible focus ring, in the accent, for everything that takes the
+   keyboard. The browser's own is there by default and is the wrong colour
+   against the dark theme; the grips keep their own, which is the grip itself
+   lighting up rather than a rectangle around a 6px line. */
+button:focus-visible, select:focus-visible, input:focus-visible,
+a:focus-visible, .th-label:focus-visible, .value-row:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 /* Nine controls of equal weight is a wall, so the ones that change the view
    rather than the data are quieter - in their lettering only. Taking their
    borders away as well left them looking like stray words rather than things
@@ -318,6 +356,57 @@ input[type=search] { flex: 1 1 120px; min-width: 0; }
    these hold dated snapshot labels - 486px of the row went on two of them,
    which is what pushed Config onto a line of its own. */
 #toolbar select { min-width: 0; max-width: 180px; flex: 0 1 auto; text-overflow: ellipsis; }
+/* Last on the line, however the line wraps. A fixed order with the search box
+   taking the slack put it in the middle of a narrow window. */
+#view-wrap { position: relative; margin-left: auto; flex: none; }
+#btn-view[aria-expanded="true"] { color: var(--text); border-color: var(--accent); background: var(--hover); }
+#btn-view .caret { font-size: 9px; margin-left: 3px; vertical-align: 1px; }
+#view-popup {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 40;
+  min-width: 250px; padding: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+}
+.menu-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 5px 8px;
+}
+.menu-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.menu-controls { display: flex; align-items: center; gap: 4px; flex: none; }
+#text-size-now {
+  color: var(--muted); font-size: 11px; min-width: 3.2em; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.menu-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+/* Full width and left aligned: these two open a panel, and a centred label
+   in a button the width of the menu reads as a dialog's OK. */
+.menu-item {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  padding: 6px 8px; border-radius: 6px; color: var(--text);
+}
+.menu-item:hover { background: var(--hover); }
+.menu-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* ---------- a narrow window ----------
+   Nothing here is hidden at a smaller width; the rows are allowed to wrap and
+   the parts that were holding the line open stop holding it. The pickers in
+   particular were capped at 180px to keep one long row together - on a narrow
+   screen there is no long row to keep together, and a clipped label is worse
+   than a second line. */
+@media (max-width: 760px) {
+  #panel-head { padding: 12px 14px 10px; }
+  #toolbar, #table-bar, #diff-bar, #message { padding-left: 14px; padding-right: 14px; }
+  #toolbar select { max-width: none; flex: 1 1 160px; }
+  input[type=search] { flex: 1 1 100%; }
+  /* Pushed right by a margin, which on its own line puts it in the middle of
+     nowhere. On a wrapped row it goes back to the left with everything else. */
+  #view-wrap { margin-left: 0; }
+  /* Hung from the button's right edge, which is the window's edge until the
+     row wraps and the button is at the left of a line of its own - and then
+     250px of menu hangs off the side of the screen. */
+  #view-popup { right: auto; left: 0; }
+  #p-name { font-size: 17px; }
+}
 
 #message {
   margin: 12px 20px 0; padding: 10px 12px; border-radius: 6px;
@@ -417,11 +506,28 @@ thead th:hover .th-label { color: var(--accent); }
    older. A value equal to the line above is a dot, so the eye lands on the
    cells that actually moved. */
 td.stack { padding: 0; vertical-align: top; }
+/* Every line in every cell of the row is the same height, which is what makes
+   the guides line up: line three is the third run the whole way across. The
+   height comes from the grid's text size rather than from each line's own
+   font, because an older line is set slightly smaller and an em there would
+   be a shorter em. */
+table { --stack-line: calc(var(--grid-text, 13px) * 2.1); }
 td.stack .v {
-  display: block; padding: .38em .77em; border-bottom: 1px solid var(--line);
+  display: block; height: var(--stack-line); padding: .34em .77em;
+  /* A guide across the cells of one row, so a value can be traced back to
+     the run it belongs to in the legend above. Fainter than a cell rule:
+     it joins values along a row rather than dividing the table up. */
+  border-bottom: 1px solid var(--guide);
   font-variant-numeric: tabular-nums; cursor: pointer;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
+/* The bottom one is the row's own rule, and the cell draws that. */
 td.stack .v:last-child { border-bottom: 0; }
+/* A cell written once still has to carry the guides, or they stop at it and
+   the eye loses the line it was following. Empty rather than dotted: a dot
+   means "the same as the line above", and these are not saying that - the
+   one value above them covers every run. */
+td.stack .v.rule { cursor: default; }
 td.stack .v.now { font-weight: 600; }
 td.stack .v.old { color: var(--muted); font-size: .92em; }
 /* It says "the same as the line above", which is information, so it is not
@@ -451,6 +557,14 @@ tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
   font-size: 10px; margin-right: 5px; font-style: normal;
 }
 #diff-tally .legend .n.now { background: var(--accent-soft); color: var(--accent); }
+/* What a dot means, said where the runs are named. Guessing is the other
+   option, and the two guesses - "the same" and "nothing there" - are
+   opposites. */
+#diff-tally .legend .key { color: var(--muted); }
+#diff-tally .legend .key .dotmark {
+  font-weight: 700; color: var(--text); margin-right: 5px;
+  display: inline-block; width: 15px; text-align: center;
+}
 
 #cell-history {
   position: absolute; z-index: 30; width: 270px;
