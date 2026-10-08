@@ -48,9 +48,10 @@
         <div id="p-paused" hidden></div>
       </header>
 
-      <!-- What is done to the data: run it, pick a result, compare, search,
-           take it away. Everything that is a preference rather than an action
-           on this table is behind the More button at the end. -->
+      <!-- What is done to the data and to the table: run it, pick a result,
+           compare, search, choose columns, take it away. Everything that is a
+           preference rather than an action is behind the More button at the
+           end of the row. -->
       <div id="toolbar">
         <button id="btn-refresh" type="button"
                 title="Run the plugin now, without waiting for the schedule">Run now</button>
@@ -58,6 +59,15 @@
         <select id="snapshot-picker" hidden aria-label="Which result to show"></select>
         <select id="compare-picker" hidden aria-label="Which result to compare with"></select>
         <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
+        <span id="row-note"></span>
+        <!-- Back on this row. Moved down beside the table, it read well in a
+             screenshot and failed the only test that counts: the person who
+             uses this every day went looking for it and did not find it. -->
+        <button id="btn-columns" type="button" aria-haspopup="true"
+                aria-expanded="false" title="Choose which columns to show">Columns</button>
+        <button id="btn-compact" type="button"
+                title="Show rows that are identical in the visible columns once, with a count">Compact</button>
+        <button id="btn-clear" type="button" class="quiet" hidden>Clear filters</button>
         <a id="btn-xlsx" class="quiet" href="#" title="Download as Excel: frozen header, filters, and every value exactly as the plugin printed it">Export Excel</a>
 
         <!-- A disclosure button rather than a role=menu: what is inside is a
@@ -103,18 +113,6 @@
         <label id="diff-only"><input id="diff-only-box" type="checkbox"> Only what changed</label>
       </div>
 
-      <!-- Beside the table rather than up in the toolbar, because these are
-           about what the table shows rather than about snapgrid. -->
-      <div id="table-bar">
-        <button id="btn-columns" type="button" class="quiet" aria-haspopup="true"
-                aria-expanded="false" title="Choose which columns to show">Columns</button>
-        <button id="btn-clear" type="button" class="quiet" hidden>Clear filters</button>
-        <!-- Beside the controls rather than pushed to the far edge: the table
-             is only as wide as its contents, and a count on the other side of
-             the window is a count beside nothing. -->
-        <span id="row-note"></span>
-        <span class="grow"></span>
-      </div>
 
       <div id="table-wrap"></div>
 

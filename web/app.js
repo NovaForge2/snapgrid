@@ -1077,6 +1077,21 @@ function renderTable() {
   const shownColumns = shownIndexes.map((index) => columns[index]);
   let rows = visibleRows(columns, snapshot.rows, null);
 
+  // After the filters, because what is compacted is what is on screen; before
+  // the sort, because the sort then orders the rows that are left rather than
+  // ordering rows that are about to be merged.
+  //
+  // Not while runs are being compared. A compacted row is not a row the plugin
+  // printed: it has no [table] key, so there is nothing to line it up with in
+  // an earlier run, and the set of merged rows can differ from run to run.
+  let counts = null;
+  const duplicates = usable ? 0 : duplicateCount(rows, shownIndexes);
+  if (!usable && compacting() && duplicates) {
+    const compacted = compactRows(rows, shownIndexes);
+    rows = compacted.rows;
+    counts = compacted.counts;
+  }
+
   if (state.sort.direction !== 0 && state.sort.column) {
     const index = columns.indexOf(state.sort.column);
     if (index >= 0) {
@@ -1171,6 +1186,19 @@ function renderTable() {
           const value = cellValue(row, index);
           putValue(td, columns[index], value);
           td.title = value;   // cells are clipped, so keep the full value reachable
+          // At the end of the row, not the start. On the first cell it reads
+          // as a count of that one value - "seizner x4" - when what it counts
+          // is the whole row.
+          if (counts && index === shownIndexes[shownIndexes.length - 1]) {
+            const many = counts.get(row) || 1;
+            if (many > 1) {
+              const chip = document.createElement("span");
+              chip.className = "chip many";
+              chip.textContent = "\u00d7" + many;
+              chip.title = `${many} rows are identical in the columns on screen`;
+              td.appendChild(chip);
+            }
+          }
           if (index === key && kind) {
             const chip = document.createElement("span");
             chip.className = "chip " + kind;
@@ -1300,11 +1328,23 @@ function renderTable() {
   // count is of lines drawn rather than of rows in this result.
   const drawn = tbody.querySelectorAll("tr").length;
   const shown = usable ? drawn : rows.length;
-  const note = shown === total ? rowCount(total) : shown + " of " + rowCount(total);
+  const said = [shown === total ? rowCount(total) : shown + " of " + rowCount(total)];
   const missing = columns.length - shownIndexes.length;
-  el("row-note").textContent = missing ? `${note} - ${missing} column${missing > 1 ? "s" : ""} hidden`
-                                       : note;
+  if (missing) said.push(`${missing} column${missing > 1 ? "s" : ""} hidden`);
+  // While it is off, the count is the only thing that says there is anything
+  // to compact. That is deliberate: a button nobody notices is a button that
+  // does not exist, and a popup announcing itself is worse.
+  if (duplicates) said.push(counts ? `${duplicates} compacted` : `${duplicates} duplicates`);
+  el("row-note").textContent = said.join(" - ");
   el("btn-columns").classList.toggle("active", missing > 0);
+
+  const compact = el("btn-compact");
+  compact.disabled = Boolean(usable);
+  compact.classList.toggle("active", Boolean(counts));
+  compact.title = usable
+    ? "Not while runs are being compared: a compacted row is not one the plugin "
+      + "printed, so there is nothing to line it up with in an earlier run"
+    : "Show rows that are identical in the visible columns once, with a count";
   el("btn-clear").hidden = state.filters.size === 0 && !state.search;
 }
 
@@ -1366,6 +1406,17 @@ function writeStored(what, value) {
   } catch (error) {
     /* the choice lasts for this page only */
   }
+}
+
+// Kept where the hidden columns are kept: per plugin, in this browser, out of
+// plugin.toml. It is about this screen, not about the data.
+function compacting() {
+  return readStored("compact", false) === true;
+}
+
+function setCompacting(on) {
+  writeStored("compact", on);
+  renderTable();
 }
 
 function hiddenColumns() {
@@ -1759,6 +1810,8 @@ el("diff-only-box").addEventListener("change", (event) => {
   rememberInTheAddress();
   renderTable();
 });
+
+el("btn-compact").addEventListener("click", () => setCompacting(!compacting()));
 
 el("btn-clear").addEventListener("click", () => {
   state.filters.clear();

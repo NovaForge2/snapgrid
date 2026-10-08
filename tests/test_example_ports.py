@@ -535,10 +535,13 @@ WMIC = (
     "ProcessId=1024\r\n\r\n"
 )
 
+# CSV, because a locked-down Windows refuses the format operator and the
+# property reads the older shape needed. See PowerShellOnALockedDownMachine.
 POWERSHELL = (
-    "7312 \"C:\\Program Files\\Java\\jdk-21\\bin\\java.exe\" -jar billing.jar\n"
-    "1024 C:\\Windows\\system32\\svchost.exe -k RPCSS\n"
-    "9999 C:\\Windows\\explorer.exe\n"
+    '"ProcessId","CommandLine"\r\n'
+    '"7312","""C:\\Program Files\\Java\\jdk-21\\bin\\java.exe"" -jar billing.jar"\r\n'
+    '"1024","C:\\Windows\\system32\\svchost.exe -k RPCSS"\r\n'
+    '"9999","C:\\Windows\\explorer.exe"\r\n'
 )
 
 
@@ -677,3 +680,153 @@ class AWindowsCommandLine(unittest.TestCase):
              mock.patch("subprocess.run", side_effect=record):
             self.lp.run(["wmic", "process"])
         self.assertEqual(started["argv"], ["C:\\Windows\\wmic.exe", "process"])
+
+
+class WmicWritesTwoByteText(unittest.TestCase):
+    """The failure that cost a second day. wmic writes UTF-16 when its output
+    is a pipe, and this is always a pipe. A single byte code page accepts
+    every one of those bytes without raising, so nothing is logged, nothing
+    throws, and the parser simply never matches - an empty column on a run
+    that reports success."""
+
+    def setUp(self):
+        self.lp = load()
+
+    PLAIN = "CommandLine=C:\\app\\run.exe --once\r\nProcessId=55\r\n"
+
+    def test_a_byte_order_mark_is_believed(self):
+        for encoding, bom in (("utf-16-le", b"\xff\xfe"), ("utf-16-be", b"\xfe\xff")):
+            raw = bom + self.PLAIN.encode(encoding)
+            self.assertEqual(self.lp.decode(raw).replace("\r\n", "\n"),
+                             self.PLAIN.replace("\r\n", "\n"), encoding)
+
+    def test_two_byte_text_without_a_mark_is_recognised_anyway(self):
+        raw = self.PLAIN.encode("utf-16-le")
+        self.assertNotIn("\x00", self.lp.decode(raw))
+        self.assertIn("CommandLine=C:\\app\\run.exe --once", self.lp.decode(raw))
+
+    def test_wmic_in_utf16_is_parsed(self):
+        raw = b"\xff\xfe" + self.PLAIN.encode("utf-16-le")
+        with mock.patch.object(self.lp, "run", lambda *a, **k: self.lp.decode(raw)):
+            found = self.lp.from_wmic({"55"})
+        self.assertEqual(found, {"55": "C:\\app\\run.exe --once"})
+
+    def test_ordinary_single_byte_text_is_left_alone(self):
+        for text in ("plain ascii\r\n", "\u00e9\u00e8 accents\n", ""):
+            raw = text.encode("utf-8")
+            self.assertEqual(self.lp.decode(raw), text, repr(text))
+
+    def test_one_stray_zero_does_not_make_it_two_byte_text(self):
+        raw = b"  TCP   0.0.0.0:8080   0.0.0.0:0   LISTENING   1234\x00\r\n"
+        self.assertIn("0.0.0.0:8080", self.lp.decode(raw))
+
+
+class PowerShellOnALockedDownMachine(unittest.TestCase):
+    """Constrained language mode refuses `$_.ProcessId` on a CimInstance, and
+    the machines this plugin exists for are the ones most likely to be in it.
+    Everything is done inside cmdlets instead, and comes back as CSV."""
+
+    def setUp(self):
+        self.lp = load()
+
+    CSV = ('"ProcessId","CommandLine"\r\n'
+           '"7312","""C:\\Program Files\\Java\\bin\\java.exe"" -jar billing.jar"\r\n'
+           '"1024","C:\\Windows\\run.exe --tags one,two"\r\n'
+           '"4",""\r\n')
+
+    def test_the_command_asks_for_nothing_a_locked_shell_refuses(self):
+        asked = self.lp.PS_COMMAND_LINES
+        for refused in ("$_.", "-f ", "ForEach-Object", ".Invoke("):
+            self.assertNotIn(refused, asked, f"{refused!r} is refused in constrained mode")
+        self.assertIn("Select-Object", asked)
+
+    def test_csv_is_unquoted_by_the_standard_library(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: self.CSV):
+            found = self.lp.from_powershell({"7312", "1024"})
+        self.assertEqual(found["7312"],
+                         '"C:\\Program Files\\Java\\bin\\java.exe" -jar billing.jar')
+        self.assertEqual(found["1024"], "C:\\Windows\\run.exe --tags one,two")
+
+    def test_a_process_with_no_command_line_is_not_an_answer(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: self.CSV):
+            self.assertNotIn("4", self.lp.from_powershell({"4", "1024"}))
+
+
+class TheLogSaysWhichWayAnswered(unittest.TestCase):
+    """"asked wmic, got nothing" and "there is no wmic" are different
+    problems with the same empty column, and only the log can tell them
+    apart. Guessing between them took a day."""
+
+    def setUp(self):
+        self.lp = load()
+
+    def said(self, answer):
+        noise = io.StringIO()
+        with mock.patch.object(self.lp, "run", lambda *a, **k: answer), \
+             mock.patch.object(self.lp.os, "name", "nt"), \
+             mock.patch.object(sys, "stderr", noise):
+            self.lp.full_commands({"7312"})
+        return noise.getvalue()
+
+    def test_every_way_that_came_back_empty_is_named(self):
+        said = self.said(None)
+        for name in ("wmic", "powershell", "ps"):
+            self.assertIn(f"{name}: no command lines", said)
+
+    def test_the_way_that_answered_is_named_with_a_count(self):
+        said = self.said("CommandLine=C:\\app\\run.exe\r\nProcessId=7312\r\n")
+        self.assertIn("command lines from wmic: 1 of 1", said)
+
+
+class NoExitIsSilent(unittest.TestCase):
+    """A log saying nothing meant two opposite things - nobody to ask about,
+    or asked and told nothing - and a day went on telling them apart from a
+    distance."""
+
+    def setUp(self):
+        self.lp = load()
+
+    def test_a_table_with_no_pids_says_so(self):
+        noise = io.StringIO()
+        with mock.patch.object(sys, "stderr", noise):
+            self.assertEqual(self.lp.full_commands({"", ""}), {})
+        self.assertIn("no pids", noise.getvalue())
+
+    def test_the_machine_and_the_tools_on_it_are_written_down(self):
+        noise = io.StringIO()
+        with mock.patch.object(self.lp, "run", lambda *a, **k: None), \
+             mock.patch.object(sys, "stderr", noise):
+            self.lp.full_commands({"7312"})
+        said = noise.getvalue()
+        self.assertIn("looking up 1 command lines", said)
+        for name in ("wmic", "powershell", "pwsh", "ps"):
+            self.assertIn(name + ":", said)
+
+
+class WmicExactlyAsItArrives(unittest.TestCase):
+    """Not a tidied-up sample: UTF-16LE with a byte order mark, and `\r\r\n`
+    between lines, which is what /value really emits. Every earlier fixture
+    here was written by hand and agreed with the parser by construction -
+    which is how two days went by with the column still empty."""
+
+    REAL = ("\r\r\n"
+            "CommandLine=\"C:\\Program Files\\Java\\bin\\java.exe\" -jar billing.jar\r\r\n"
+            "ProcessId=7312\r\r\n"
+            "\r\r\n"
+            "ProcessId=4\r\r\n"           # System: no command line to read
+            "\r\r\n")
+
+    def setUp(self):
+        self.lp = load()
+        self.raw = b"\xff\xfe" + self.REAL.encode("utf-16-le")
+
+    def test_it_decodes_to_something_with_no_zeroes_in_it(self):
+        self.assertNotIn("\x00", self.lp.decode(self.raw))
+
+    def test_the_whole_chain_ends_at_a_name_worth_reading(self):
+        with mock.patch.object(self.lp, "run", lambda *a, **k: self.lp.decode(self.raw)):
+            found = self.lp.from_wmic({"7312", "4"})
+        self.assertEqual(found["7312"],
+                         '"C:\\Program Files\\Java\\bin\\java.exe" -jar billing.jar')
+        self.assertNotIn("4", found)
+        self.assertEqual(self.lp.running_what("java.exe", found["7312"]), "billing.jar")

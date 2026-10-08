@@ -49,6 +49,44 @@ function rowText(row) {
   return JSON.stringify(row);
 }
 
+// Two rows that are identical once a column is taken off the screen are not
+// two facts any more; they are one fact written twice. This keeps the first
+// and counts the rest.
+//
+// Counted rather than quietly dropped. `1|2|4` and `1|5|4` become one row the
+// moment B is hidden, and a table saying there is one of a thing when there
+// are two is wrong in the direction that matters - the same direction as
+// saying a port is free when it is taken.
+//
+// Only the columns on screen decide. That is the whole point: the duplicates
+// exist *because* something was hidden.
+function compactRows(rows, shownIndexes) {
+  const seen = new Map();
+  const kept = [];
+  const counts = new Map();
+  for (const row of rows) {
+    // Stringified rather than joined on a separator, because any separator
+    // can also be a value, and two different rows would then compact into
+    // one on a comma.
+    const key = JSON.stringify(shownIndexes.map((index) => cellValue(row, index)));
+    const first = seen.get(key);
+    if (first === undefined) {
+      seen.set(key, row);
+      kept.push(row);
+      counts.set(row, 1);
+    } else {
+      counts.set(first, counts.get(first) + 1);
+    }
+  }
+  return { rows: kept, counts };
+}
+
+// How many rows would go if it were turned on. Said in the row count while it
+// is off, which is how the button gets noticed without a popup announcing it.
+function duplicateCount(rows, shownIndexes) {
+  return rows.length - compactRows(rows, shownIndexes).rows.length;
+}
+
 function byKey(columns, rows, keyName) {
   const index = keyIndexIn(columns, keyName);
   const map = new Map();
@@ -192,6 +230,6 @@ function wholeRows(runs, why) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     keyIndexIn, missingKeyColumn, cellValue, sameRow, rowText,
-    byKey, compareRuns, wholeRows,
+    byKey, compareRuns, wholeRows, compactRows, duplicateCount,
   };
 }

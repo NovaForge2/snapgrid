@@ -43,6 +43,20 @@ whatever the machine prefers, and pressing the button still wins.
   how many are hidden, and the button is highlighted while any are. **Show all** puts them
   back. The last visible column cannot be hidden - an empty table is not a view
   of anything.
+- **Compact** folds rows that are identical **in the columns on screen** into
+  one, with a count on the end of the row: `1 | 4 ×2`. Hiding a column often
+  creates these - `1|2|4` and `1|5|4` are the same row once `B` is gone - and
+  two identical lines say nothing the first one did not. The count is not
+  decoration: a table claiming one of something when there are two is wrong in
+  the direction that matters, so nothing is ever folded away silently. The row
+  count says how many would fold while it is off, which is the only thing that
+  draws the eye to the button.
+
+  It happens **after** the filters and the search, so what folds is what is on
+  screen, and **before** the sort, so the order is of the rows that remain. It
+  is **not available while runs are being compared**: a folded row is not a row
+  the plugin printed, it has no `[table] key`, and there is nothing to line it
+  up with in an earlier run. Remembered per plugin, in your browser.
 - **Column widths** start at exactly the widest value in each column, so the
   table is as narrow as its contents allow and stops where they stop rather
   than being stretched across the window. Drag the edge of a heading to change
@@ -62,6 +76,11 @@ whatever the machine prefers, and pressing the button still wins.
   is often the actual reason for reaching for it. The choice is remembered in
   your browser and is **not** per plugin - how big text should be is about your
   eyes and your screen, not about which table you are looking at.
+**The screen is a view; the workbook is the data.** Hidden columns, filters,
+sorting, the search box and **Compact** change what you are looking at and
+none of them change what **Export Excel** writes - the result goes into the
+file exactly as the plugin printed it.
+
 - **Export Excel** downloads an `.xlsx` of the result: the header row frozen
   and in bold on a filled background, a filter dropdown on every column, thin
   borders and banded rows, and column widths from the content. **CSV** next to

@@ -11,6 +11,17 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 
 ### Added
 
+- **Compact**, beside Columns, folds rows that are identical in the columns on
+  screen into one and counts them on the end of the row - `1 | 4 ×2`. Hiding
+  a column is what usually creates them: `1|2|4` and `1|5|4` are the same row
+  once `B` is gone. The count is deliberate rather than decorative, because a
+  table saying there is one of something when there are two is wrong in the
+  direction that matters. The row count says how many rows would fold while it
+  is off, which is what draws the eye to the button. It folds after the filters
+  and before the sort, is not offered while runs are being compared - a folded
+  row has no `[table] key`, so there is nothing to line it up with in an
+  earlier run - and, like hidden columns, changes the screen and not what
+  Export Excel writes.
 - **Comparing runs.** A second picker in the toolbar compares the result on
   screen with the last 2 to 5 runs. Every cell shows what it held in each one,
   newest on top; a dot means the same as the line above, so only what moved is
@@ -142,6 +153,19 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 
 ### Fixed
 
+- **The command line on Windows, again - the first fix did not work.** `wmic`
+  writes UTF-16 when its output is a pipe, and a pipe is what this always is.
+  A single byte code page accepts those bytes without raising, so the answer
+  arrived as `C\0o\0m\0m\0a\0n\0d\0...`: nothing threw, nothing was
+  logged, no key matched, and the column came out empty on a run that
+  reported success. The bytes are checked for a byte order mark now, and for
+  a zero after most letters when there is none. The PowerShell fallback asks
+  only through cmdlets as well, because a hardened Windows runs it in
+  constrained language mode where reading a property off a CimInstance is
+  refused - which is exactly the kind of machine this plugin exists for. And
+  the log now names every way that was tried and what it gave back, since
+  "asked wmic, got nothing" and "there is no wmic" are different problems
+  behind the same empty column.
 - **The listening ports example now fills in the command line on Windows.** It
   was empty on every row there, which also left the `program` column saying
   `java.exe` and `python.exe` - the real name is read out of the command line,

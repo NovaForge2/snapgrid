@@ -85,7 +85,7 @@ nothing more - so it is a second question, asked of whatever can answer.
 |---|---|---|
 | `ps -o pid=,command= -p ...` | macOS, Linux | one line per pid |
 | `wmic process where "ProcessId=..." get ProcessId,CommandLine /value` | Windows up to 11 23H2 | `Key=value` lines. **Not** `/format:csv`: the CSV wmic writes does not quote a field containing a comma, and a command line is the field most likely to hold one |
-| `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process \| ..."` | Windows, where wmic has been removed | asked to print `pid command`, the shape `ps` uses, so one parser reads both. `-NoProfile` so a user's profile cannot print into the answer; `-NonInteractive` so nothing can prompt |
+| `powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process \| Select-Object ProcessId,CommandLine \| ConvertTo-Csv"` | Windows, where wmic has been removed | everything happens inside cmdlets - no property read, no method call, no format operator - because a hardened Windows runs PowerShell in **constrained language mode**, where `$_.ProcessId` on a CimInstance is refused outright. The machines this plugin is for are the ones most likely to be in that mode. CSV rather than the default table, which truncates a long command line with an ellipsis |
 
 All three are tried, in the order most likely to answer first, rather than one
 being chosen by the name of the operating system. **A Python under Git Bash
@@ -94,7 +94,21 @@ Windows pid, so it answers and answers nothing. Falling through to the next way
 is what fills the column there.
 
 It is allowed to fail entirely: a blank cell beats a failed run, and a process
-that has already gone is the usual reason.
+that has already gone is the usual reason. **Which way answered is in the
+log**, with a count, and so is every way that came back with nothing:
+
+```
+command lines from wmic: 14 of 18
+```
+
+That line exists because the first version of this failed silently. `wmic`
+writes **UTF-16** when its output is a pipe rather than a console, and a pipe
+is what this always is. Decoded with a single byte code page - which is what a
+Windows locale asks for, and which accepts every byte without complaint - it
+arrives as `C\0o\0m\0m\0a\0n\0d\0...`, so nothing raised, nothing was
+logged, and no key ever matched. The column came out empty on a run that
+reported success. The bytes are now checked for a byte order mark, and for a
+zero after most letters when there is no mark.
 
 ## The kill command is written for this machine
 
@@ -226,5 +240,5 @@ eye nothing.
 |---|---|
 | `could not list listening sockets` | none of `lsof`, `ss` or `netstat` is on PATH. The run fails rather than showing an empty table, which would read as "nothing is listening". A tool that *ran* and found nothing is a different thing, and gives a table with no rows |
 | fewer rows than you expect | ports held by other users' processes are not all visible to you. Run snapgrid as yourself and expect to see your own |
-| an empty `command` | the pid could not be asked about, usually because the process had already gone. Empty for every row means none of `ps`, `wmic` or `powershell` answered - the log says so - and the `program` column then shows the interpreter rather than what it is running |
+| an empty `command` | the pid could not be asked about, usually because the process had already gone. Empty for every row means none of `ps`, `wmic` or `powershell` answered, and the `program` column then shows the interpreter rather than what it is running. **The log names each one**: `wmic: no command lines` is a tool that was asked and gave nothing back, `cannot run 'wmic'` is a tool that is not there, and they are different problems |
 | an empty `pid` and `kill` | the socket is visible but its owner is not. The port is taken; you cannot see by what without more privilege |

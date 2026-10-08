@@ -23,7 +23,7 @@ const path = require("node:path");
 
 const {
   keyIndexIn, missingKeyColumn, cellValue, sameRow, rowText, byKey,
-  compareRuns, wholeRows,
+  compareRuns, wholeRows, compactRows, duplicateCount,
 } = require(path.join(__dirname, "..", "web", "compare.js"));
 
 // A run, newest first when passed to compareRuns.
@@ -282,4 +282,62 @@ test("byKey reports duplicates without throwing any row away", () => {
   const { map, duplicates } = byKey(VERSIONS, [["a", "1", ""], ["a", "2", ""]], "repo");
   assert.equal(duplicates, true);
   assert.equal(map.size, 1, "the first one wins, and the caller is told why that is wrong");
+});
+
+// ---- compacting ------------------------------------------------------
+//
+// Hiding a column can leave two rows that are identical on screen. They are
+// one fact written twice, and folding them together is a view decision - but
+// a table claiming one of something when there are two is wrong in the
+// direction that matters, so what is folded is always counted.
+
+test("rows that differ only in a hidden column fold together", () => {
+  //  A B C          hide B      A C
+  //  1 2 3                      1 3
+  //  1 2 4                      1 4   <- these two
+  //  1 5 4                      1 4   <- are now the same
+  const rows = [["1", "2", "3"], ["1", "2", "4"], ["1", "5", "4"]];
+  const { rows: kept, counts } = compactRows(rows, [0, 2]);
+  assert.deepEqual(kept, [["1", "2", "3"], ["1", "2", "4"]]);
+  assert.equal(counts.get(kept[0]), 1);
+  assert.equal(counts.get(kept[1]), 2, "the third row folded into the second");
+});
+
+test("nothing folds while every column is on screen", () => {
+  const rows = [["1", "2", "3"], ["1", "2", "4"], ["1", "5", "4"]];
+  const { rows: kept } = compactRows(rows, [0, 1, 2]);
+  assert.equal(kept.length, 3);
+  assert.equal(duplicateCount(rows, [0, 1, 2]), 0);
+});
+
+test("the first of a group is the one that stays, in the order it arrived", () => {
+  const rows = [["b", "x"], ["a", "y"], ["b", "z"], ["a", "w"]];
+  const { rows: kept } = compactRows(rows, [0]);
+  assert.deepEqual(kept.map((row) => row[0]), ["b", "a"]);
+});
+
+test("a separator inside a value does not fold two different rows into one", () => {
+  // Joined on a comma, ["a,b", "c"] and ["a", "b,c"] are the same string.
+  const rows = [["a,b", "c"], ["a", "b,c"]];
+  assert.equal(compactRows(rows, [0, 1]).rows.length, 2);
+  // And the same again for the one used to join: a null byte.
+  const nulls = [["a\u0000b", "c"], ["a", "b\u0000c"]];
+  assert.equal(compactRows(nulls, [0, 1]).rows.length, 2);
+});
+
+test("a short row and a blank cell are the same thing", () => {
+  // cellValue() reads a missing cell as empty, so a row that stops early
+  // must fold into one that spells the blank out.
+  const rows = [["a", ""], ["a"]];
+  assert.equal(compactRows(rows, [0, 1]).rows.length, 1);
+});
+
+test("duplicateCount says how many rows would go", () => {
+  const rows = [["1", "2", "3"], ["1", "2", "4"], ["1", "5", "4"], ["1", "9", "4"]];
+  assert.equal(duplicateCount(rows, [0, 2]), 2);
+});
+
+test("an empty table compacts to an empty table", () => {
+  assert.deepEqual(compactRows([], [0]).rows, []);
+  assert.equal(duplicateCount([], [0]), 0);
 });

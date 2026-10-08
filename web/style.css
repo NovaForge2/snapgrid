@@ -314,16 +314,11 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 0 20px 12px; border-bottom: 1px solid var(--line);
 }
-/* Acting on the table, not on snapgrid: these sit with the table rather than
-   in the toolbar, and the row count is the quietest thing on the line. */
-#table-bar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 6px 20px 5px;
-}
-#table-bar .grow { flex: 1; }
+/* The quietest thing on the row: a count, not a control. */
 #row-note { color: var(--muted); font-size: 11.5px; }
 /* Something is being kept from view, so the button says so. */
-#btn-columns.active { color: var(--accent); border-color: var(--accent); }
+#btn-columns.active, #btn-compact.active { color: var(--accent); border-color: var(--accent); }
+#btn-compact:disabled { opacity: .45; cursor: default; }
 button, select, input[type=search], #btn-xlsx {
   font: inherit; color: var(--text); background: var(--panel);
   border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px;
@@ -347,11 +342,13 @@ a:focus-visible, .th-label:focus-visible, .value-row:focus-visible {
 #btn-refresh { background: var(--accent); border-color: var(--accent); color: #fff; }
 #btn-refresh:hover { filter: brightness(1.08); }
 #btn-refresh[disabled] { opacity: .55; cursor: default; filter: none; }
-/* The search box takes up the slack, so the controls on the right stay on
-   the right and the row does not wrap the moment a picker gets a long label.
-   The pickers give way too: a long snapshot label is allowed to be clipped
-   rather than push Log and Config onto a line of their own. */
-input[type=search] { flex: 1 1 120px; min-width: 0; }
+/* Wide enough to read a search term in and no wider. It used to take all the
+   slack on the row, which was right when nine other controls were competing
+   for it - and wrong the moment five of them moved behind More: a search box
+   half the width of the screen for terms that are rarely longer than a word.
+   The slack goes to the gap before More instead, which is empty space and
+   does not mind having it. */
+input[type=search] { flex: 0 1 280px; min-width: 0; }
 /* A dropdown is as wide as its longest option unless it is told otherwise, and
    these hold dated snapshot labels - 486px of the row went on two of them,
    which is what pushed Config onto a line of its own. */
@@ -399,7 +396,7 @@ input[type=search] { flex: 1 1 120px; min-width: 0; }
    than a second line. */
 @media (max-width: 760px) {
   #panel-head { padding: 12px 14px 10px; }
-  #toolbar, #table-bar, #diff-bar, #message { padding-left: 14px; padding-right: 14px; }
+  #toolbar, #diff-bar, #message { padding-left: 14px; padding-right: 14px; }
   #toolbar select { max-width: none; flex: 1 1 160px; }
   input[type=search] { flex: 1 1 100%; }
   /* Pushed right by a margin, which on its own line puts it in the middle of
@@ -548,6 +545,14 @@ tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
 }
 .chip.added { color: var(--added); background: color-mix(in srgb, var(--added) 16%, transparent); }
 .chip.removed { color: var(--removed); background: color-mix(in srgb, var(--removed) 16%, transparent); }
+/* How many rows were folded into this one. Quiet, because it is a footnote on
+   the row rather than a thing that happened to it - but present, because a
+   table claiming one of something when there are two is the one mistake this
+   must not make. */
+.chip.many {
+  color: var(--muted); background: var(--hover); text-transform: none;
+  letter-spacing: 0; font-variant-numeric: tabular-nums;
+}
 
 /* Which run each line is. Said once, because there is no room in a cell. */
 #diff-tally .legend { display: flex; gap: 14px; flex-wrap: wrap; }

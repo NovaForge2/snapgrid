@@ -58,6 +58,31 @@ def kill_command(pids: list[str]) -> str:
     return "kill -9 " + " ".join(pids)
 
 
+def two_byte_encoding(raw: bytes) -> str | None:
+    """'utf-16-le' or 'utf-16-be' when these bytes are that, else None.
+
+    wmic writes UTF-16 when its output is a pipe rather than a console, and
+    this is always a pipe. Decoded with a single byte encoding that happens
+    to accept every byte - which cp1252 and cp1251 both do - it does not
+    raise. It comes out as C\x00o\x00m\x00m\x00... instead, and every
+    comparison against it quietly fails. The table then loses the whole
+    column while the run reports success, which is the worst way for this
+    to go wrong: nothing to see in the log, and a plausible empty cell.
+
+    The BOM settles it when there is one. Without it, a zero after most
+    letters is not something single byte text does.
+    """
+    if raw[:2] == b"\xff\xfe":
+        return "utf-16-le"
+    if raw[:2] == b"\xfe\xff":
+        return "utf-16-be"
+    sample = raw[:400]
+    if not sample or sample.count(0) * 3 <= len(sample):
+        return None
+    # Which half of each pair is the zero says which way round it is.
+    return "utf-16-le" if sample[1:2] == b"\x00" else "utf-16-be"
+
+
 def decode(raw: bytes) -> str:
     """Bytes from a console tool, as text, never raising.
 
@@ -68,6 +93,9 @@ def decode(raw: bytes) -> str:
     """
     if isinstance(raw, str):            # a stand-in in the tests
         return raw
+    wide = two_byte_encoding(raw)
+    if wide:
+        return raw.decode(wide, "replace").lstrip("\ufeff")
     for encoding in (locale.getpreferredencoding(False), "utf-8"):
         try:
             return raw.decode(encoding)
@@ -353,11 +381,15 @@ def from_wmic(pids: set[str]) -> dict[str, str]:
     return {pid: line for pid, line in commands.items() if line}
 
 
-# Printed as `pid command`, the same shape ps uses, so one parser reads both.
-# ConvertTo-Csv would have to be unquoted again, and the default table output
-# truncates a long command line with an ellipsis.
-PS_COMMAND_LINES = ("Get-CimInstance Win32_Process | ForEach-Object "
-                    "{ '{0} {1}' -f $_.ProcessId, $_.CommandLine }")
+# Everything happens inside cmdlets: no property read, no method call, no
+# format operator. A hardened Windows runs PowerShell in constrained language
+# mode, where `$_.ProcessId` on a CimInstance is refused outright - the very
+# machines this is for are the ones most likely to be in that mode. The
+# default table output is no good either, since it truncates a long command
+# line with an ellipsis, so it is CSV and the standard library unquotes it.
+PS_COMMAND_LINES = ("Get-CimInstance Win32_Process | "
+                    "Select-Object ProcessId,CommandLine | "
+                    "ConvertTo-Csv -NoTypeInformation")
 
 
 def from_powershell(pids: set[str]) -> dict[str, str]:
@@ -372,9 +404,15 @@ def from_powershell(pids: set[str]) -> dict[str, str]:
     for shell in ("pwsh", "powershell"):
         output = run([shell, "-NoProfile", "-NonInteractive",
                       "-Command", PS_COMMAND_LINES])
-        if output:
-            found = pid_then_command(output)
-            return {pid: found[pid] for pid in pids if pid in found}
+        if not output:
+            continue
+        commands = {}
+        for row in csv.reader(output.splitlines()):
+            # ProcessId,CommandLine - the order Select-Object was given.
+            if len(row) >= 2 and row[0].strip().isdigit() and row[1].strip():
+                commands[row[0].strip()] = row[1].strip()
+        if commands:
+            return {pid: commands[pid] for pid in pids if pid in commands}
     return {}
 
 
@@ -392,15 +430,31 @@ def full_commands(pids: set[str]) -> dict[str, str]:
     """
     pids = {pid for pid in pids if pid}
     if not pids:
+        # The one exit that used to say nothing at all, which made a silent
+        # log mean two different things: nobody to ask about, or asked and
+        # told nothing. A day went on telling them apart.
+        print("no pids in the table, so there is nothing to look up",
+              file=sys.stderr)
         return {}
-    ways = (from_wmic, from_powershell, from_ps) if on_windows() else \
-           (from_ps, from_wmic, from_powershell)
-    for ask in ways:
+    print(f"looking up {len(pids)} command lines"
+          f" ({os.name}/{sys.platform}, "
+          + ", ".join(f"{name}: {'yes' if found(name) else 'no'}"
+                      for name in ("wmic", "powershell", "pwsh", "ps")) + ")",
+          file=sys.stderr)
+    ways = (("wmic", from_wmic), ("powershell", from_powershell), ("ps", from_ps)) \
+        if on_windows() else \
+        (("ps", from_ps), ("wmic", from_wmic), ("powershell", from_powershell))
+    # Each way is named as it is tried, because the failure this has already
+    # had once was a silent one: a tool that ran, printed, and was parsed
+    # into nothing. "asked wmic, nothing" and "no wmic" are different
+    # problems and the log has to tell them apart.
+    for name, ask in ways:
         commands = ask(pids)
         if commands:
+            print(f"command lines from {name}: {len(commands)} of {len(pids)}",
+                  file=sys.stderr)
             return commands
-    print("no command lines: none of ps, wmic or powershell answered",
-          file=sys.stderr)
+        print(f"{name}: no command lines", file=sys.stderr)
     return {}
 
 
