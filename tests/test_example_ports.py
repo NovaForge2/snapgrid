@@ -13,6 +13,7 @@ The samples below are real output, trimmed.
 import csv
 import importlib.util
 import io
+import locale
 import sys
 import unittest
 from pathlib import Path
@@ -717,9 +718,22 @@ class WmicWritesTwoByteText(unittest.TestCase):
         self.assertEqual(found, {"55": "C:\\app\\run.exe --once"})
 
     def test_ordinary_single_byte_text_is_left_alone(self):
-        for text in ("plain ascii\r\n", "\u00e9\u00e8 accents\n", ""):
-            raw = text.encode("utf-8")
-            self.assertEqual(self.lp.decode(raw), text, repr(text))
+        for text in ("plain ascii\r\n", ""):
+            self.assertEqual(self.lp.decode(text.encode("utf-8")), text, repr(text))
+
+    def test_an_accent_survives_whatever_this_machine_writes_in(self):
+        # In the machine's own encoding, not in UTF-8. A console tool writes
+        # in the local code page, and asserting UTF-8 here asserted that the
+        # machine running the tests is a Mac: on Windows the same bytes come
+        # back as two replacement characters, which is what CI said the first
+        # time it was ever asked.
+        text = "\u00e9\u00e8 accents\n"
+        encoding = locale.getpreferredencoding(False)
+        try:
+            raw = text.encode(encoding)
+        except UnicodeEncodeError:
+            self.skipTest(f"{encoding} cannot write an accent")
+        self.assertEqual(self.lp.decode(raw), text)
 
     def test_one_stray_zero_does_not_make_it_two_byte_text(self):
         raw = b"  TCP   0.0.0.0:8080   0.0.0.0:0   LISTENING   1234\x00\r\n"
