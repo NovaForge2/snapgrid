@@ -311,7 +311,8 @@ class TheKillCommand(unittest.TestCase):
     def test_windows_repeats_the_flag_for_each_process(self):
         # `taskkill /F /PID 990 991` is not a command that ends two
         # processes; it is a command that fails.
-        with mock.patch.object(self.lp.os, "name", "nt"):
+        with mock.patch.object(self.lp.os, "name", "nt"), \
+             mock.patch.dict(self.lp.os.environ, {}, clear=True):
             self.assertEqual(self.lp.kill_command(["990"]), "taskkill /F /PID 990")
             self.assertEqual(self.lp.kill_command(["990", "991"]),
                              "taskkill /F /PID 990 /PID 991")
@@ -616,10 +617,14 @@ class TheCommandLineOnWindows(unittest.TestCase):
             self.assertEqual(self.lp.full_commands({"7312"}), {})
 
     def test_msys_counts_as_windows_for_the_kill_command(self):
+        # taskkill rather than kill, because the pids are Windows pids - and
+        # with the doubled slash, because the shell that calls itself msys is
+        # the shell that rewrites a single one into a path. This test used to
+        # assert the single slash, which is the bug it was meant to guard.
         with mock.patch.object(self.lp.os, "name", "posix"), \
              mock.patch.object(self.lp.sys, "platform", "msys"):
             self.assertTrue(self.lp.on_windows())
-            self.assertEqual(self.lp.kill_command(["990"]), "taskkill /F /PID 990")
+            self.assertEqual(self.lp.kill_command(["990"]), "taskkill //F //PID 990")
 
 
 class AWindowsCommandLine(unittest.TestCase):
@@ -830,3 +835,56 @@ class WmicExactlyAsItArrives(unittest.TestCase):
                          '"C:\\Program Files\\Java\\bin\\java.exe" -jar billing.jar')
         self.assertNotIn("4", found)
         self.assertEqual(self.lp.running_what("java.exe", found["7312"]), "billing.jar")
+
+
+
+class TheShellDecidesTheSlash(unittest.TestCase):
+    """The kill command was written for the operating system when what
+    decides its spelling is the shell it will be pasted into. Git Bash
+    rewrites an argument that looks like an absolute path, so `taskkill /F`
+    reaches taskkill as `taskkill C:/Program Files/Git/F` and fails - on the
+    one kind of machine this plugin is for."""
+
+    def setUp(self):
+        self.lp = load()
+
+    def windows(self, environment):
+        return mock.patch.object(self.lp.os, "name", "nt"), \
+               mock.patch.dict(self.lp.os.environ, environment, clear=True)
+
+    def test_git_bash_gets_the_doubled_slash(self):
+        name, env = self.windows({"MSYSTEM": "MINGW64"})
+        with name, env:
+            self.assertTrue(self.lp.in_a_posix_shell())
+            self.assertEqual(self.lp.kill_command(["990"]), "taskkill //F //PID 990")
+            self.assertEqual(self.lp.kill_command(["990", "991"]),
+                             "taskkill //F //PID 990 //PID 991")
+
+    def test_cmd_gets_the_single_slash(self):
+        name, env = self.windows({})
+        with name, env:
+            self.assertFalse(self.lp.in_a_posix_shell())
+            self.assertEqual(self.lp.kill_command(["990"]), "taskkill /F /PID 990")
+
+    def test_a_cygwin_python_counts_even_with_no_msystem(self):
+        name, env = self.windows({})
+        with name, env, mock.patch.object(self.lp.sys, "platform", "cygwin"):
+            self.assertEqual(self.lp.kill_command(["990"]), "taskkill //F //PID 990")
+
+    def test_a_unix_is_untouched_by_any_of_this(self):
+        with mock.patch.object(self.lp.os, "name", "posix"), \
+             mock.patch.object(self.lp.sys, "platform", "linux"), \
+             mock.patch.dict(self.lp.os.environ, {"MSYSTEM": "MINGW64"}, clear=True):
+            self.assertEqual(self.lp.kill_command(["990"]), "kill -9 990")
+
+    def test_the_log_says_which_spelling_it_chose(self):
+        noise = io.StringIO()
+        name, env = self.windows({"MSYSTEM": "MINGW64"})
+        with name, env, \
+             mock.patch.object(self.lp, "WAYS", (("test", lambda: []),)), \
+             mock.patch.object(self.lp, "full_commands", lambda pids: {}), \
+             mock.patch.object(sys, "stdout", io.StringIO()), \
+             mock.patch.object(sys, "stderr", noise):
+            self.lp.main()
+        self.assertIn("taskkill //F //PID", noise.getvalue())
+        self.assertIn("MINGW64", noise.getvalue())

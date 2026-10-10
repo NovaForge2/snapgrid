@@ -113,16 +113,34 @@ zero after most letters when there is no mark.
 ## The kill command is written for this machine
 
 ```
-kill -9 7312                            macOS, Linux
-taskkill /F /PID 7312                   Windows
+kill -9 7312                              macOS, Linux
+taskkill /F /PID 7312                     Windows, from cmd or PowerShell
+taskkill //F //PID 7312                   Windows, from Git Bash
 
-kill -9 990 991 992                     several processes on one port
-taskkill /F /PID 990 /PID 991 /PID 992  the same on Windows
+kill -9 990 991 992                       several processes on one port
+taskkill /F /PID 990 /PID 991 /PID 992    the same from cmd
+taskkill //F //PID 990 //PID 991 //PID 992   and from Git Bash
 ```
 
 `taskkill` needs its own `/PID` before each number; a single flag with three
 numbers after it is not a command that ends three processes, it is a command
 that fails.
+
+**The doubled slash is not a typo.** Git Bash and the other MSYS shells
+rewrite an argument that looks like an absolute path, so `taskkill /F` typed
+there arrives at taskkill as `taskkill C:/Program Files/Git/F` and fails.
+Doubling it is the escape: the shell eats one slash and taskkill gets the
+`/F` it wanted.
+
+Which spelling you get is decided by `MSYSTEM`, which Git Bash sets and which
+is inherited all the way down to the plugin - even by a `python.exe` that Git
+Bash starts, which is the usual arrangement on Windows. **What decides it is
+the shell, not the operating system**; writing the command for the operating
+system was the original mistake. The log says which spelling was chosen and
+why.
+
+If you start snapgrid from one shell and paste into another, it will be
+written for the one it was started from. Start it where you intend to work.
 
 The plugin writes whichever one applies, filled in with the pid. A table of
 pids without it is half an answer, and the missing half is different on every
@@ -239,6 +257,7 @@ eye nothing.
 | What you see | What it means |
 |---|---|
 | `could not list listening sockets` | none of `lsof`, `ss` or `netstat` is on PATH. The run fails rather than showing an empty table, which would read as "nothing is listening". A tool that *ran* and found nothing is a different thing, and gives a table with no rows |
+| `taskkill //F //PID` where you expected `/F` | snapgrid was started from Git Bash, so the command is written for Git Bash. Paste it there. From cmd or PowerShell use a single slash - or start snapgrid from the shell you actually work in |
 | fewer rows than you expect | ports held by other users' processes are not all visible to you. Run snapgrid as yourself and expect to see your own |
 | an empty `command` | the pid could not be asked about, usually because the process had already gone. Empty for every row means none of `ps`, `wmic` or `powershell` answered, and the `program` column then shows the interpreter rather than what it is running. **The log names each one**: `wmic: no command lines` is a tool that was asked and gave nothing back, `cannot run 'wmic'` is a tool that is not there, and they are different problems |
 | an empty `pid` and `kill` | the socket is visible but its owner is not. The port is taken; you cannot see by what without more privilege |

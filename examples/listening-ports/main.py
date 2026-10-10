@@ -41,6 +41,22 @@ def on_windows() -> bool:
     return os.name == "nt" or sys.platform.startswith(("cygwin", "msys"))
 
 
+def in_a_posix_shell() -> bool:
+    """Whether the command will be pasted into Git Bash rather than cmd.
+
+    MSYS shells rewrite an argument that looks like an absolute path, so
+    `taskkill /F /PID 7312` typed into Git Bash arrives at taskkill as
+    `taskkill C:/Program Files/Git/F ...` and fails. Doubling the slash is
+    the escape: MSYS eats one and taskkill gets the `/F` it wanted.
+
+    MSYSTEM is set by Git Bash and inherited all the way down here, even by
+    a Windows python.exe it starts, which is the usual arrangement. It says
+    which shell this is running under - and the shell, not the operating
+    system, is what decides the spelling.
+    """
+    return bool(os.environ.get("MSYSTEM")) or sys.platform.startswith(("msys", "cygwin"))
+
+
 def kill_command(pids: list[str]) -> str:
     """How this machine ends these processes, as a line to copy.
 
@@ -50,11 +66,17 @@ def kill_command(pids: list[str]) -> str:
 
     taskkill wants its own /PID before each number: `taskkill /F /PID 990 991`
     is not a command that ends two processes, it is a command that fails.
+
+    And the slash is doubled under Git Bash, because that shell rewrites a
+    single one into a path. Which spelling is right depends on where the line
+    is pasted, not on the machine it was written on - writing one for the
+    operating system was the mistake this fixes.
     """
     if not pids:
         return ""
     if on_windows():
-        return "taskkill /F " + " ".join(f"/PID {pid}" for pid in pids)
+        slash = "//" if in_a_posix_shell() else "/"
+        return f"taskkill {slash}F " + " ".join(f"{slash}PID {pid}" for pid in pids)
     return "kill -9 " + " ".join(pids)
 
 
@@ -558,6 +580,13 @@ def main() -> int:
               "answered. Is one of them on PATH?", file=sys.stderr)
         return 1
     print(f"asked {asked}", file=sys.stderr)
+    if on_windows():
+        shell = os.environ.get("MSYSTEM") or sys.platform
+        print(f"kill commands written for {shell}: "
+              + ("taskkill //F //PID - the doubled slash is for this shell, "
+                 "which rewrites a single one into a path"
+                 if in_a_posix_shell() else "taskkill /F /PID"),
+              file=sys.stderr)
 
     commands = full_commands({row["pid"] for row in rows})
 

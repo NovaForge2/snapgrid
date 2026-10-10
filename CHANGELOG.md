@@ -153,6 +153,14 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 
 ### Fixed
 
+- **The kill command is written for the shell, not the operating system.**
+  Git Bash rewrites an argument that looks like an absolute path, so the
+  `taskkill /F /PID 7312` the listening ports example offered arrived at
+  taskkill as `taskkill C:/Program Files/Git/F ...` and failed - on exactly
+  the kind of machine the example is for. Under an MSYS shell it now writes
+  `taskkill //F //PID 7312`, which is the escape that shell understands, and
+  the log says which spelling it chose and why. A test asserting the old
+  behaviour is corrected rather than kept: it was guarding the bug.
 - **The command line on Windows, again - the first fix did not work.** `wmic`
   writes UTF-16 when its output is a pipe, and a pipe is what this always is.
   A single byte code page accepts those bytes without raising, so the answer
