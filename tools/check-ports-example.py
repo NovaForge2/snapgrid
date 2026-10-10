@@ -12,7 +12,7 @@ exit 1
 # Copyright 2026 NovaForge2
 """Run the listening ports example for real and check what it printed.
 
-    ./tools/check-ports-example.py --kill-flag //F
+    ./tools/check-ports-example.py --shell gitbash
 
 Three bugs in that example got past a green test suite in one week, and all
 three had the same shape: the unit tests fed it output written by hand, which
@@ -47,8 +47,13 @@ COLUMNS = ["listener", "port", "pid", "user", "program", "kill", "command"]
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kill-flag", default="",
-                        help="the spelling the kill command must use, '/F' or '//F'")
+    # The shell, not the spelling. `--kill-flag //F` cannot be passed through
+    # Git Bash at all: that shell rewrites the doubled slash into a single one
+    # on its way in, which is the very behaviour being tested, and the check
+    # then demanded the answer it had just been robbed of. Naming the shell
+    # and working the spelling out here is immune to it.
+    parser.add_argument("--shell", choices=("gitbash", "cmd"), default="",
+                        help="which shell the command will be pasted into")
     parser.add_argument("--want-command-lines", action="store_true",
                         help="fail when a row with a pid has no command line")
     asked = parser.parse_args(argv)
@@ -95,13 +100,13 @@ def main(argv: list[str]) -> int:
             problems.append("every row with a pid has an empty command line - "
                             "the lookup found nothing at all")
 
-    if asked.kill_flag and with_pid:
-        wanted = f"taskkill {asked.kill_flag} "
+    if asked.shell and with_pid:
+        wanted = "taskkill " + ("//F " if asked.shell == "gitbash" else "/F ")
         wrong = [row[at["kill"]] for row in with_pid
                  if not row[at["kill"]].startswith(wanted)]
         if wrong:
-            problems.append(f"the kill command should start {wanted!r} in this "
-                            f"shell, and one says {wrong[0]!r}")
+            problems.append(f"the kill command should start {wanted!r} in "
+                            f"{asked.shell}, and one says {wrong[0]!r}")
 
     return report(problems)
 

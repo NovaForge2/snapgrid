@@ -81,14 +81,16 @@ jobs:
         shell: bash
         run: python tools/check-ports-example.py --want-command-lines
 
-      # Git Bash, where a single slash becomes a path.
+      # The shell is named rather than the spelling passed in, because this
+      # shell rewrites a doubled slash into a single one on the way in - the
+      # behaviour under test ate the argument testing it, first time out.
       - name: The kill command, as Git Bash needs it
         if: runner.os == 'Windows'
         shell: bash
-        run: python tools/check-ports-example.py --kill-flag //F
+        run: python tools/check-ports-example.py --shell gitbash
 
       # cmd, where the single slash is the right one.
       - name: The kill command, as cmd needs it
         if: runner.os == 'Windows'
         shell: cmd
-        run: python tools/check-ports-example.py --kill-flag /F
+        run: python tools/check-ports-example.py --shell cmd
