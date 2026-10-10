@@ -52,3 +52,43 @@ jobs:
       - name: Check nothing imports a third party module
         shell: bash
         run: python tools/check-imports.py
+
+  # Three bugs in the listening ports example got past a green suite in one
+  # week, and all three had the same shape: the unit tests were fed output
+  # written by hand, which agreed with the parser because the same person
+  # wrote both. This runs the thing for real instead.
+  #
+  # On Windows it runs twice, and the two runs are the point. `shell: bash` on
+  # a Windows runner is the bash from Git for Windows - the same MSYS shell,
+  # with the same MSYSTEM, as a developer typing into Git Bash - and that
+  # shell rewrites `/F` into a path, so the kill command has to be spelled
+  # `//F` there and `/F` from cmd. Nothing on a Unix can tell you that.
+  the-ports-example:
+    name: the ports example, really run on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Run it, under bash
+        shell: bash
+        run: python tools/check-ports-example.py --want-command-lines
+
+      # Git Bash, where a single slash becomes a path.
+      - name: The kill command, as Git Bash needs it
+        if: runner.os == 'Windows'
+        shell: bash
+        run: python tools/check-ports-example.py --kill-flag //F
+
+      # cmd, where the single slash is the right one.
+      - name: The kill command, as cmd needs it
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: python tools/check-ports-example.py --kill-flag /F
