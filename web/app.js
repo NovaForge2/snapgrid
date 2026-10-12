@@ -77,13 +77,6 @@ document.getElementById("theme").addEventListener("click", () => {
 
 /* ------------------------------------------------------------------ api */
 
-async function api(path, options = {}) {
-  const init = { headers: { "X-Snapgrid": "1" }, ...options };
-  const response = await fetch(path, init);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || "request failed (" + response.status + ")");
-  return payload;
-}
 
 /* -------------------------------------------------------------- helpers */
 
@@ -324,40 +317,12 @@ function renderServerInfo(server) {
   banner.append(text, close);
 }
 
-async function loadPlugins() {
-  try {
-    const data = await api("/api/plugins");
-    state.plugins = data.plugins;
-    renderServerInfo(data.server);
-    renderEmptyState(data.server, data.plugins.length);
-    renderSidebar();
-    renderPauseAll();      // sets the plugin count, with the paused one in it
-    // Landing on "pick something" when there is a table ready to look at
-    // wastes the first few seconds. Open the first one.
-    if (!state.selected && state.plugins.length) {
-      // A link can name the plugin, and how far back to compare, so that what
-      // is on your screen is something you can send to somebody.
-      const asked = new URLSearchParams(location.search);
-      const wanted = asked.get("plugin");
-      const known = state.plugins.some((plugin) => plugin.id === wanted);
-      await select(known ? wanted : state.plugins[0].id);
-      state.depth = Math.min(MAX_DEPTH, Math.max(1, Number(asked.get("compare")) || 1));
-      state.onlyChanged = asked.get("changed") === "1";
-      el("diff-only-box").checked = state.onlyChanged;
-      if (state.depth > 1) {
-        renderComparePicker();
-        await loadComparison();
-        renderTable();
-      }
-    }
-  } catch (error) {
-    el("server-note").textContent = error.message;
-  }
-}
 
 async function select(id) {
   if (state.selected !== id) {
     state.selected = id;
+    state.detail = null;
+    el("panel").hidden = true;
     state.configFor = null;
     el("config-body").textContent = "";
     state.snapshotId = null;
@@ -389,23 +354,6 @@ function rememberInTheAddress() {
   history.replaceState(null, "", query ? "?" + query : location.pathname);
 }
 
-async function loadDetail() {
-  if (!state.selected) return;
-  const query = state.snapshotId ? "?snapshot=" + state.snapshotId : "";
-  try {
-    state.detail = await api("/api/plugins/" + encodeURIComponent(state.selected) + query);
-    renderDetail();
-    // Choosing an older result, or a new run finishing, moves what is on
-    // screen. The baseline has to move with it, or the table ends up
-    // comparing a result with itself and reporting that nothing changed.
-    if (state.depth > 1 && state.pastFor !== comparisonSignature()) {
-      await loadComparison();
-      renderTable();
-    }
-  } catch (error) {
-    showMessage(error.message, false);
-  }
-}
 
 function showMessage(text, info) {
   const box = el("message");
@@ -419,7 +367,7 @@ function showMessage(text, info) {
   box.textContent = text;
 }
 
-function renderDetail() {
+function renderDetail(redraw = true) {
   const detail = state.detail;
   if (!detail) return;
 
@@ -522,7 +470,7 @@ function renderDetail() {
     state.filters.clear();
     state.sort = { column: null, direction: 0 };
   }
-  renderTable();
+  if (redraw) renderTable();
 }
 
 function renderSnapshotPicker() {
@@ -607,41 +555,6 @@ function comparisonSignature() {
 // Bumped on every request, so a slow answer cannot land after a newer one and
 // overwrite it. Switching plugins mid-flight used to leave one plugin's table
 // being compared against another plugin's history.
-let comparisonRequest = 0;
-
-async function loadComparison() {
-  const mine = ++comparisonRequest;
-  const wanted = comparisonSignature();
-  state.past = [];
-  state.pastFor = "";
-  state.unreadable = 0;
-  if (state.depth < 2 || !state.detail) return;
-
-  const snapshots = state.detail.snapshots || [];
-  const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
-  const at = snapshots.findIndex((snapshot) => snapshot.id === showing);
-  const older = snapshots.slice(at + 1, at + state.depth);
-
-  const loaded = [];
-  let unreadable = 0;
-  for (const snapshot of older) {
-    try {
-      const payload = await api("/api/snapshots/" + snapshot.id);
-      if (mine !== comparisonRequest) return;       // something newer was asked for
-      loaded.push(payload.snapshot || payload);     // the endpoint wraps it
-    } catch (error) {
-      // One stored result that cannot be read should not lose the others, but
-      // quietly comparing fewer runs than were asked for would be a smaller
-      // answer wearing the label of the one requested.
-      unreadable = older.length - loaded.length;
-      break;
-    }
-  }
-  if (mine !== comparisonRequest) return;
-  state.past = loaded;
-  state.pastFor = wanted;
-  state.unreadable = unreadable;
-}
 
 function renderDiffBar(diff) {
   const bar = el("diff-bar");
@@ -885,18 +798,6 @@ function renderConfig(config) {
   body.appendChild(file);
 }
 
-async function loadConfig() {
-  const id = state.selected;
-  if (!id) return;
-  try {
-    const config = await api("/api/plugins/" + encodeURIComponent(id) + "/config");
-    if (state.selected !== id) return;   // they moved on while it was loading
-    state.configFor = id;
-    renderConfig(config);
-  } catch (error) {
-    el("config-body").textContent = error.message;
-  }
-}
 
 /* ----------------------------------------------------------- side panel */
 

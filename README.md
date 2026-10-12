@@ -373,6 +373,34 @@ Four things worth knowing without reading further:
 **[docs/plugin-toml.md](docs/plugin-toml.md) is the full reference** - every
 key, its default, what it accepts, and every message it can refuse with.
 
+## Checking a plugin
+
+Validate a plugin without running its command:
+
+```bash
+./server.py validate plugins/my-plugin
+```
+
+This checks the manifest and, when `[output] file` is configured, the existing
+CSV or workbook. For plugins that print CSV, capture their output yourself and
+pass it with `--csv report.csv`. Without a file, validation reports that only
+the manifest was checked. Tables must have non-empty, unique column names and
+non-empty, unique values in the key column. Validation exits non-zero on errors.
+
+The open table follows scheduled runs automatically. Selecting a historical
+snapshot keeps that snapshot selected during refreshes. Requests that arrive
+late after switching plugins or snapshots are discarded.
+
+Table input is limited to 32 MiB on every source path. Workbooks are also
+limited to 64 MiB expanded, 16,384 columns and two million materialized cells.
+CSV fields use Python's CSV parser limit (normally 128 KiB). Invalid or oversized
+results fail the run while retaining the last good result. Plugin logs retain
+up to 400 stderr lines within a 256 KiB budget; a stderr line reaching 4 KiB
+without a newline truncates the remainder of the log. Truncation is marked.
+Only the latest 200 completed runs per plugin are kept, including cached runs
+and failures; pending runs are preserved. Snapshot history still follows
+`[history] keep`.
+
 ## Secrets
 
 A `.env` file in a plugin folder is loaded for that plugin only. Values can be
@@ -394,7 +422,7 @@ stored. See [docs/secrets.md](docs/secrets.md).
 
 Nothing to install, and it runs anywhere snapgrid does - including the machine
 you are having trouble on, which is usually more informative than describing the
-trouble. Around 180 tests covering manifests, the CSV contract, storage and
+trouble. Over 400 Python tests covering manifests, the CSV contract, storage and
 history, encryption and masking, settings, scheduling and the HTTP API.
 
 Warnings count as failures, so a leaked file handle fails the run rather than

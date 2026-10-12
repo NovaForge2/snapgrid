@@ -637,6 +637,16 @@ def command_encrypt(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_validate(args: argparse.Namespace) -> int:
+    from .validate import validate_plugin
+    try:
+        print(validate_plugin(args.path, args.csv))
+    except Exception as exc:
+        print(f"snapgrid: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 # ----- argument parsing --------------------------------------------------
 
 def add_location_arguments(parser: argparse.ArgumentParser) -> None:
@@ -688,10 +698,15 @@ def build_parser() -> argparse.ArgumentParser:
     enc.add_argument("value", nargs="?", help="omit this to be prompted without echo")
     enc.set_defaults(func=command_encrypt)
 
+    validate = subparsers.add_parser("validate", help="check a plugin without running it")
+    validate.add_argument("path", type=Path, help="the plugin folder")
+    validate.add_argument("--csv", type=Path, help="captured CSV stdout to check")
+    validate.set_defaults(func=command_validate)
+
     return parser
 
 
-COMMANDS = {"start", "stop", "status", "serve", "encrypt"}
+COMMANDS = {"start", "stop", "status", "serve", "encrypt", "validate"}
 
 # What running it with no command does. Where a background server can be
 # managed reliably that is "start": run detached and hand the terminal back.

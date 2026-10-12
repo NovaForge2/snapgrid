@@ -9,6 +9,19 @@ The version lives in one place, `snapgrid/__init__.py`, and `./server.py
 
 ## Unreleased
 
+### Reliability
+
+- Refresh the selected table after scheduled runs and discard late responses
+  after switching plugins or snapshots. Preserve historical selections.
+- Mask encrypted secrets in cached and file-only results and table errors.
+- Keep workers alive after parser failures and record the run as failed.
+- Apply the completed-run retention limit to failures and cached results too.
+- Bound file input, expanded workbooks and logs; stop oversized stdout promptly.
+- Add `validate PLUGIN_FOLDER [--csv FILE]` for manifests and existing tables,
+  without executing the plugin. Check headers and row keys.
+- Separate browser requests and data loading into `web/data.js` and test their
+  lifecycle with delayed responses and connection failures.
+
 ### Added
 
 - **Compact**, beside Columns, folds rows that are identical in the columns on

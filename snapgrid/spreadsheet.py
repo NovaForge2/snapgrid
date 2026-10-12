@@ -174,6 +174,8 @@ def read_xlsx(path: Path, sheet: str | None = None) -> list[list[str]]:
 
     try:
         with zipfile.ZipFile(path) as archive:
+            if sum(info.file_size for info in archive.infolist()) > 64 * 1024 * 1024:
+                raise SpreadsheetError("the expanded workbook is larger than 64 MB")
             strings = _shared_strings(archive)
             dated = _date_styles(archive)
             worksheet = ElementTree.fromstring(archive.read(_sheet_path(archive, sheet)))
@@ -183,14 +185,20 @@ def read_xlsx(path: Path, sheet: str | None = None) -> list[list[str]]:
         raise SpreadsheetError(f"cannot read {path.name}: {exc}") from exc
 
     rows: list[list[str]] = []
+    total_cells = 0
     for row in worksheet.iter(f"{MAIN}row"):
         values: dict[int, str] = {}
         for cell in row.findall(f"{MAIN}c"):
             index = column_number(cell.get("r", "")) if cell.get("r") else len(values)
+            if index < 0 or index >= 16384:
+                raise SpreadsheetError("the sheet has a column outside the Excel column limit")
             values[index] = _cell_value(cell, strings, dated)
         if not values:
             continue
         width = max(values) + 1
+        total_cells += width
+        if total_cells > 2_000_000:
+            raise SpreadsheetError("the sheet contains more than 2 million cells")
         rows.append([values.get(position, "") for position in range(width)])
 
     while rows and all(value.strip() == "" for value in rows[-1]):

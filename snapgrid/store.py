@@ -24,6 +24,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .config import RUNS_KEPT_PER_PLUGIN
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS snapshots (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,6 +172,11 @@ class Store:
                             consecutive_failures=excluded.consecutive_failures""",
                 (plugin_id, now, failures),
             )
+            self._db.execute(
+                """DELETE FROM runs WHERE plugin_id=? AND finished_at IS NOT NULL
+                   AND id NOT IN (SELECT id FROM runs WHERE plugin_id=?
+                       AND finished_at IS NOT NULL ORDER BY id DESC LIMIT ?)""",
+                (plugin_id, plugin_id, RUNS_KEPT_PER_PLUGIN))
             self._db.commit()
 
     def get_run(self, run_id: int) -> dict[str, Any] | None:

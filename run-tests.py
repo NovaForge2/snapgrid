@@ -61,6 +61,8 @@ AREAS = {
     "test_gif": "the GIF in the README",
     "test_no_dependencies": "nothing to install",
     "test_workbook": "writing .xlsx",
+    "test_reliability": "failure recovery and resource limits",
+    "test_validate": "validating plugins and tables",
 }
 
 
@@ -119,10 +121,9 @@ def browser_tests(pattern: str | None) -> int | None:
     part of its suite. A machine without it gets a clear line saying which
     tests did not run, rather than a green total that quietly covered less.
     """
-    if pattern and pattern not in "compare":
-        return None
-
     found = sorted((ROOT / "tests").glob("*.test.js"))
+    if pattern:
+        found = [path for path in found if pattern in path.name]
     if not found:
         return None
 
@@ -147,7 +148,7 @@ def browser_tests(pattern: str | None) -> int | None:
     if finished.returncode != 0:
         print(finished.stdout)
         print(finished.stderr, file=sys.stderr)
-    print(f"  {passed} browser tests (what changed, and what gets a colour) - "
+    print(f"  {passed} browser tests (comparison, colours and view loading) - "
           f"{'all passed' if failed == 0 else f'{failed} FAILED'}")
     return finished.returncode
 
