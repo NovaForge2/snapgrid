@@ -58,10 +58,10 @@ def display_path(path: Path) -> str:
 @dataclass
 class Config:
     plugins_dir: Path
-    data_dir: Path | None = None
     host: str = "127.0.0.1"
     port: int = 8765
     max_concurrent: int = 3
+    data_dir: Path = field(init=False)
     web_dir: Path = field(init=False)
     db_path: Path = field(init=False)
     state_file: Path = field(init=False)
@@ -69,11 +69,10 @@ class Config:
 
     def __post_init__(self) -> None:
         self.plugins_dir = Path(self.plugins_dir).expanduser().resolve()
-        self.data_dir = (
-            Path(self.data_dir).expanduser().resolve()
-            if self.data_dir
-            else self.plugins_dir / DATA_DIR_NAME
-        )
+        # Storage belongs to this workspace. An independent override made it
+        # possible to point at one plugins folder while writing another one's
+        # database, so there is deliberately no data_dir constructor option.
+        self.data_dir = self.plugins_dir / DATA_DIR_NAME
         # Ships with the code, not with the workspace.
         self.web_dir = Path(__file__).resolve().parent.parent / "web"
         self.db_path = self.data_dir / "snapgrid.db"
@@ -83,5 +82,15 @@ class Config:
         self.log_file = self.data_dir / "server.log"
 
     def prepare(self) -> None:
+        # A leftover symlink must not silently keep using a database outside
+        # the workspace after its location has been fixed. Check the SQLite
+        # sidecars too: they contain writes while the server is running.
+        paths = [self.data_dir, self.db_path, self.state_file, self.log_file]
+        paths.extend(self.db_path.with_name(self.db_path.name + suffix)
+                     for suffix in ("-wal", "-shm", "-journal"))
+        for path in paths:
+            if not path.resolve().is_relative_to(self.plugins_dir):
+                raise ValueError(f"{path} points outside --dir {self.plugins_dir}; "
+                                 "server data must stay inside the plugins folder")
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)

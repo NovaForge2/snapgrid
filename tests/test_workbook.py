@@ -16,8 +16,8 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree
 
-from snapgrid.spreadsheet import read_xlsx
-from snapgrid.workbook import (
+from snapgrid_core.spreadsheet import read_xlsx
+from snapgrid_core.workbook import (
     column_letter,
     looks_numeric,
     safe_sheet_name,

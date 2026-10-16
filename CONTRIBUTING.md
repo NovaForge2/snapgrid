@@ -95,7 +95,7 @@ needs it: the browser executes that file, as it always did.
 
 ## Versions and releases
 
-The version lives in **one place**, `snapgrid/__init__.py`, and `./server.py
+The version lives in **one place**, `snapgrid_core/__init__.py`, and `./server.py
 --version` prints it. There is no packaging metadata to keep in step, because
 there is nothing to install.
 

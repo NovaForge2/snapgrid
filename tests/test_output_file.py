@@ -6,7 +6,7 @@ import os
 import time
 import unittest
 
-from snapgrid import store as store_module
+from snapgrid_core import store as store_module
 
 from .test_running import RunningPlugins
 
@@ -110,21 +110,16 @@ class WritesAFile(RunningPlugins):
         run = self.run_now(plugin)
         self.assertEqual(run["status"], store_module.OK)
 
-    def test_secrets_in_the_file_are_masked(self):
-        from snapgrid.secrets_store import encrypt, load_key
-        os.environ["SNAPGRID_KEY_FILE"] = str(self.root / "key")
-        self.addCleanup(os.environ.pop, "SNAPGRID_KEY_FILE", None)
-        key = load_key(create=True)
-
+    def test_opaque_env_value_can_be_written_to_the_file_without_a_key(self):
         plugin = self.make_plugin(
-            "leaky-file",
+            "opaque-file",
             'import os\nopen("report.csv", "w").write("value\\n" + os.environ["TOKEN"] + "\\n")\n',
             manifest_extra='[output]\nfile = "report.csv"\n',
-            env=f"TOKEN={encrypt('hunter2', key)}\n",
+            env="TOKEN=enc:literal-test-value\n",
         )
         run = self.run_now(plugin)
-        self.assertEqual(run["status"], store_module.OK)
-        self.assertEqual(self.store.get_snapshot(run["snapshot_id"])["rows"], [["****"]])
+        self.assertEqual(run["status"], store_module.OK, run["error"])
+        self.assertEqual(self.store.get_snapshot(run["snapshot_id"])["rows"], [["enc:literal-test-value"]])
 
 
 if __name__ == "__main__":

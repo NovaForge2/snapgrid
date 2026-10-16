@@ -7,10 +7,10 @@ import time
 import unittest
 from pathlib import Path
 
-from snapgrid.config import BACKOFF_MAX_SECONDS
-from snapgrid.manifest import Plugin, Registry
-from snapgrid.scheduler import Scheduler, interval_for
-from snapgrid.store import Store
+from snapgrid_core.config import BACKOFF_MAX_SECONDS
+from snapgrid_core.manifest import Plugin, Registry
+from snapgrid_core.scheduler import Scheduler, interval_for
+from snapgrid_core.store import Store
 
 
 class Backoff(unittest.TestCase):

@@ -351,7 +351,7 @@ WAYS = (("lsof", from_lsof), ("ss", from_ss), ("netstat", from_netstat))
 
 
 def pid_then_command(output: str) -> dict[str, str]:
-    """Lines of `7312 /usr/bin/python3 -m snapgrid` into pid and command.
+    """Lines of `7312 /usr/bin/python3 -m snapgrid_core` into pid and command.
 
     The three tools below are all asked to print in this one shape, so there
     is one thing to parse rather than three. A line with nothing after the
@@ -525,7 +525,7 @@ def running_what(program: str, command: str) -> str:
     """A name worth reading, taken from the command line when the program's
     own name is only the interpreter that happens to be running it.
 
-        python -m snapgrid serve        ->  snapgrid
+        python -m snapgrid_core serve        ->  snapgrid_core
         python /opt/thing/main.py       ->  main.py
         java -jar billing.jar           ->  billing.jar
         java -cp lib/* com.acme.Billing ->  com.acme.Billing

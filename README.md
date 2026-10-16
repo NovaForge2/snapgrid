@@ -95,10 +95,11 @@ that drift so you can watch the history and the comparison fill up.
 Each has a README explaining how it works and what to change -
 see [examples/](examples/).
 
-When you want to write your own, restart without `--dir`, which uses `plugins/`:
+When you want to write your own, restart with your plugins folder selected
+explicitly:
 
 ```bash
-./server.py stop && ./server.py
+./server.py stop && ./server.py --dir plugins
 ```
 
 ## What you get
@@ -111,7 +112,7 @@ When you want to write your own, restart without `--dir`, which uses `plugins/`:
 | **Pause what you are not using** | one plugin or all of them, off the schedule and back on, without editing anything. The last result stays and `Run now` still works |
 | **History** | every result kept, with a dropdown to look back. Identical runs do not use a slot, so twenty snapshots means the last twenty times something actually changed |
 | **What changed** | compare the last 2 to 5 runs in the table itself - values that moved, rows that appeared, rows that went - and click any value for its own history |
-| **Secrets handled** | `.env` per plugin, values can be encrypted, and they are masked everywhere they would otherwise be shown or stored |
+| **Plugin-owned secrets** | `.env` per plugin, values passed unchanged; plugins can opt into a standalone encryption helper |
 | **Nothing to learn** | print CSV to standard output, exit 0. That is the whole interface |
 
 ## Seeing what changed
@@ -182,20 +183,34 @@ python3 -c "import sqlite3, tomllib; print('ready')"
 
 `./server.py` finds a working interpreter itself - it tries `python3`, `python`
 and `py`, and uses the first that actually runs, not merely the first that
-exists. If your shell will not run the file directly, `python -m snapgrid` and
+exists. If your shell will not run the file directly, `python -m snapgrid_core` and
 `python server.py` do the same thing and take the same commands.
+
+### Repository layout
+
+The repository is named `snapgrid`; its runtime implementation is in
+`snapgrid_core/`. They are different things, not duplicate copies. `server.py`
+is the entry point, `web/` holds browser assets, `tools/` contains optional
+standalone utilities, and `examples/` contains example plugins. The Python
+module entry point is now `python -m snapgrid_core --dir PATH`.
 
 ## Starting and stopping
 
+Choose the plugins folder explicitly every time you start the server:
+
 ```bash
-./server.py
+./server.py --dir plugins
 ```
+
+Startup requires `--dir`, including `start`, `serve` and the commandless form
+above. Omitting it stops with an error before creating directories or a
+database. There is no implicit plugins folder for startup.
 
 Where a detached process can be tracked and killed reliably, it runs in the
 background and prints the address. Where it cannot, it runs in the terminal you
 started it from and Ctrl+C stops it. Either way you can be explicit:
-`./server.py start` always runs in the background, `./server.py serve` always
-runs in the foreground.
+`./server.py start --dir plugins` always runs in the background,
+`./server.py serve --dir plugins` always runs in the foreground.
 
 
 
@@ -234,16 +249,16 @@ To watch it in a terminal instead, run it in the foreground and stop it with
 Ctrl+C:
 
 ```bash
-./server.py serve
+./server.py serve --dir plugins
 ```
 
-If `./server.py` does not work on your system, `python3 -m snapgrid` takes the
+If `./server.py` does not work on your system, `python3 -m snapgrid_core` takes the
 same commands.
 
 ### What it writes to disk
 
-Three files, in a hidden `.snapgrid` folder inside your plugins folder. It is
-made on first start and nothing else on the machine is touched.
+Server data stays in a hidden `.snapgrid` folder inside the plugins directory
+you supplied with `--dir`. For `--dir plugins`, the main files are:
 
 ```
 plugins/.snapgrid/
@@ -261,9 +276,14 @@ Deleting the folder loses your history and nothing else: it is rebuilt on the
 next start.
 
 One plugins folder is one workspace with its own database, so a second folder
-is completely independent. `--data` puts these files somewhere else, and if
-your plugins folder is a repository of your own, add `.snapgrid/` to its
-`.gitignore`.
+is completely independent. Storage is always `<dir>/.snapgrid`; it cannot be
+redirected with `--data`. If your plugins folder is a repository of your own,
+add `.snapgrid/` to its `.gitignore`.
+
+Existing databases are not moved, replaced or deleted automatically. If you
+previously used another data directory, see the
+[migration guidance](docs/configuration.md#migrating-an-existing-database)
+before starting with the new path.
 
 You can read the database with anything that speaks SQLite, which is a quick
 way to see what happened without the page:
@@ -403,16 +423,29 @@ and failures; pending runs are preserved. Snapshot history still follows
 
 ## Secrets
 
-A `.env` file in a plugin folder is loaded for that plugin only. Values can be
-stored encrypted so a password is not readable over your shoulder:
+A `.env` file in a plugin folder is loaded for that plugin only. Its values are
+passed through unchanged, including anything starting with `enc:`. The framework
+does not encrypt, decrypt, find keys, or import encryption helpers.
+
+If a plugin needs encrypted values, the optional, self-contained
+`tools/encrypt.py` can be copied into that plugin:
 
 ```bash
-./server.py encrypt
+python tools/encrypt.py generate-key
+python tools/encrypt.py encrypt --key-file /path/to/your-key-file
 ```
 
-The plugin reads an ordinary environment variable and knows nothing about it,
-and decrypted values are masked wherever they would otherwise be shown or
-stored. See [docs/secrets.md](docs/secrets.md).
+The key file must be supplied explicitly and contain `key=<base64 key>`. Key
+generation prints one `key=<base64 key>` line; it does not create a file. Encryption prompts for the
+plaintext without echoing it and prints only the `enc:` token. The plugin must
+choose how to access its key and decrypt its values. Never print plaintext
+secrets in plugin tables, files or logs: the framework cannot recognize secrets
+a plugin decrypts itself.
+
+**Upgrading:** plugins that used to receive framework-decrypted `.env` values
+now receive the original `enc:` tokens. Update those plugins before running
+them. [docs/secrets.md](docs/secrets.md) covers the tool, Git Bash prompts and
+migration.
 
 ## Tests
 
@@ -423,7 +456,8 @@ stored. See [docs/secrets.md](docs/secrets.md).
 Nothing to install, and it runs anywhere snapgrid does - including the machine
 you are having trouble on, which is usually more informative than describing the
 trouble. Over 400 Python tests covering manifests, the CSV contract, storage and
-history, encryption and masking, settings, scheduling and the HTTP API.
+history, opaque environment values, the optional encryption tool, settings,
+scheduling and the HTTP API.
 
 Warnings count as failures, so a leaked file handle fails the run rather than
 scrolling past.
@@ -458,7 +492,6 @@ the repository's Security tab.
 | `the plugin finished but did not write 'report.csv'` | `[output] file` names a file the script never produced |
 | `'report.csv' was last written at ... before this run started` | the file is left over from an earlier run |
 | `the plugin exited with code 1` | your script failed; the log shows its last line |
-| `cannot decrypt value` | wrong key, or the encrypted value was edited |
 
 ## Security
 
@@ -500,17 +533,18 @@ The rest is deliberate:
   can run anything as you. Treat that folder the way you treat your own scripts -
   it is a stronger control than anything at the HTTP layer, because a plugin is
   code you have agreed to run on a schedule with your credentials loaded.
-- The **encryption for `.env` values is written in this project**, not taken
-  from a library, because nothing can be installed. It is meant to stop a
-  password being readable over your shoulder, not to withstand someone who
-  already has your account. See [SECURITY.md](SECURITY.md#the-encryption-is-written-in-this-project).
+- The **optional encryption tool is custom, unaudited code** using only the
+  standard library. It is separate from the framework, and plugins opt in
+  explicitly. It is meant to reduce casual exposure of a password, not protect
+  it from someone with access to the key. See
+  [SECURITY.md](SECURITY.md#the-encryption-is-written-in-this-project).
 
 ## Reference
 
 - [docs/plugin-toml.md](docs/plugin-toml.md) - every `plugin.toml` key: command, timeout, schedule, columns, output, history
 - [docs/configuration.md](docs/configuration.md) - `snapgrid.toml`, ports, the banner, using a plugins folder of your own
 - [SECURITY.md](SECURITY.md) - what snapgrid does and does not protect you from, and how to report something
-- [docs/secrets.md](docs/secrets.md) - `.env`, encryption, masking
+- [docs/secrets.md](docs/secrets.md) - `.env`, plugin-owned secrets, optional encryption and migration
 - [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
 - [examples/](examples/) - eight plugins that run anywhere, each with its own explanation
 - [CHANGELOG.md](CHANGELOG.md) - what changed and why it might matter to you

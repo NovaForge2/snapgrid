@@ -8,7 +8,7 @@ One row per listening socket, with the pid and a ready-made command to end it.
 
 ```
 listener,port,pid,user,program,kill,command
-127.0.0.1:8765,8765,20007,seizner,Python,kill -9 20007,/.../Python -m snapgrid serve --dir ...
+127.0.0.1:8765,8765,20007,seizner,Python,kill -9 20007,/.../Python -m snapgrid_core serve --dir ...
 *:5000,5000,82822,seizner,ControlCenter,kill -9 82822,/System/Library/CoreServices/ControlCenter.app/...
 ```
 
@@ -187,7 +187,7 @@ A column reading `Python`, `java`, `node`, `java` names nothing. The
 interpreter is never what you are looking for; what it was told to run is.
 
 ```
-python -m snapgrid serve           ->  snapgrid
+python -m snapgrid_core serve           ->  snapgrid_core
 python /opt/thing/main.py          ->  main.py
 java -jar billing.jar              ->  billing.jar
 java -cp lib/* com.acme.Billing    ->  com.acme.Billing

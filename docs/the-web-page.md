@@ -111,7 +111,7 @@ file exactly as the plugin printed it.
   |---|---|
   | folder | where the plugin lives, so you can go and edit it |
   | runs | the exact command, after `python` has become a real interpreter. This is the line that answers "why does it work in my terminal but not here?" |
-  | .env | which variables it loads and which are encrypted - **names only, never values** |
+  | .env | which variables it loads - **names only, never values**; values are opaque to the framework, so there is no encrypted badge |
   | plugin.toml | the file itself, read from disk each time you open the panel, with comments, headings, keys, strings and numbers coloured |
 
   It opens by itself for a plugin whose `plugin.toml` cannot be read, since the
@@ -254,8 +254,8 @@ from is probably not in front of you and starting it again means finding one.
 Nothing stored is lost. A plugin part way through a run is stopped, the
 database is closed properly and the record of the running server is removed,
 exactly as if you had pressed Ctrl+C or run `./server.py stop`. The page then
-shows the command to start it again, since there is nothing left on it that
-works.
+shows the command to start it again, including the explicit `--dir` needed to
+reopen the same plugins and database. Startup without `--dir` is refused.
 
 The button is in the panel's footer, away from everything used often, and it
 is the only control on the page that affects the server rather than a plugin.

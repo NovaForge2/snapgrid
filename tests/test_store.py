@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from snapgrid.store import FAILED, OK, TIMEOUT, Store
+from snapgrid_core.store import FAILED, OK, TIMEOUT, Store
 
 COLUMNS = ["environment", "image", "version"]
 ROWS_A = [["ENV1", "payments-api", "2.14.1"]]

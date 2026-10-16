@@ -15,19 +15,19 @@ for candidate in python3 python py; do
     exec "$candidate" "$0" "$@"
 done
 echo "snapgrid: no working python found. Tried python3, python and py." >&2
-echo "  Install Python 3.11 or newer, or run: <your python> -m snapgrid" >&2
+echo "  Install Python 3.11 or newer, or run: <your python> -m snapgrid_core --dir <plugins>" >&2
 exit 1
 # '''
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 NovaForge2
-"""Start snapgrid: ./server.py   (or: python -m snapgrid)"""
+"""Start snapgrid: ./server.py --dir plugins (or: python -m snapgrid_core --dir plugins)."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from snapgrid.__main__ import main  # noqa: E402
+from snapgrid_core.__main__ import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())

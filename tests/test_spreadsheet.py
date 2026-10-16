@@ -13,7 +13,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from snapgrid.spreadsheet import (
+from snapgrid_core.spreadsheet import (
     SpreadsheetError,
     column_number,
     read_xlsx,

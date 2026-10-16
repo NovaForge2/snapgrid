@@ -13,8 +13,8 @@ fallback - and these are the tests for it.
 import unittest
 from unittest import mock
 
-from snapgrid import __main__ as cli
-from snapgrid.config import Config
+from snapgrid_core import __main__ as cli
+from snapgrid_core.config import Config
 
 
 def config_for(tmp) -> Config:

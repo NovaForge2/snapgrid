@@ -399,7 +399,7 @@ class NamingWhatIsActuallyRunning(unittest.TestCase):
 
     def test_a_module(self):
         for command, expected in (
-            ("/usr/bin/Python -m snapgrid serve --dir examples", "snapgrid"),
+            ("/usr/bin/Python -m snapgrid_core serve --dir examples", "snapgrid_core"),
             ("java --module-path /mods -m com.acme/com.acme.Main", "com.acme.Main"),
         ):
             self.assertEqual(self.name(command.split()[0], command), expected)

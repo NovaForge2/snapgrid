@@ -781,7 +781,7 @@ function renderConfig(config) {
     addFact(facts, ".env", "present, but empty");
   } else {
     const names = config.env.entries
-      .map((entry) => entry.name + (entry.encrypted ? " (encrypted)" : ""))
+      .map((entry) => entry.name)
       .join(", ");
     addFact(facts, ".env", names);
   }

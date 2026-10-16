@@ -57,7 +57,7 @@ class NothingToInstall(unittest.TestCase):
                       "the user's own folder is not ours to police")
 
     def test_our_own_modules_are_not_mistaken_for_dependencies(self):
-        for name in ("snapgrid", "tests", "tools"):
+        for name in ("snapgrid_core", "tests", "tools"):
             self.assertIn(name, check_imports.OURS)
 
 

@@ -6,18 +6,20 @@ These start actual processes, so they are slower than the rest, but they are
 the tests that would have caught most of what went wrong in practice.
 """
 
+import base64
 import os
+import shutil
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from snapgrid import store as store_module
-from snapgrid.config import Config
-from snapgrid.manifest import Registry
-from snapgrid.runner import Runner, resolve_command
-from snapgrid.secrets_store import encrypt, load_key
-from snapgrid.store import Store
+from snapgrid_core import store as store_module
+from snapgrid_core.config import Config
+from snapgrid_core.manifest import Registry
+from snapgrid_core.runner import Runner, resolve_command
+from snapgrid_core.store import Store
 
 
 class RunningPlugins(unittest.TestCase):
@@ -174,59 +176,78 @@ class Failure(RunningPlugins):
         self.assertLess(time.time() - started, 15)
 
 
-class Secrets(RunningPlugins):
-    def setUp(self):
-        super().setUp()
+class EnvironmentValues(RunningPlugins):
+    def test_enc_values_reach_the_plugin_unchanged_without_any_key(self):
+        for index, value in enumerate(("enc:not-base64", "enc:", "ordinary value")):
+            with self.subTest(value=value):
+                plugin = self.make_plugin(
+                    f"literal-{index}",
+                    'import os, csv, sys\n'
+                    'writer = csv.writer(sys.stdout)\n'
+                    'writer.writerow(["value"])\n'
+                    'writer.writerow([os.environ["TOKEN"]])\n',
+                    env=f"TOKEN={value}\n",
+                )
+                missing = self.root / "missing-key"
+                with mock.patch.dict(os.environ, SNAPGRID_KEY_FILE=str(missing)):
+                    run = self.run_now(plugin)
+                self.assertEqual(run["status"], store_module.OK, run["error"])
+                self.assertEqual(self.store.get_snapshot(run["snapshot_id"])["rows"], [[value]])
+                self.assertFalse(missing.exists())
+
+    def test_invalid_existing_key_is_ignored_and_left_untouched(self):
         key_file = self.root / "key"
-        os.environ["SNAPGRID_KEY_FILE"] = str(key_file)
-        self.addCleanup(os.environ.pop, "SNAPGRID_KEY_FILE", None)
-        self.key = load_key(create=True)
+        key_file.write_text("not a valid key", encoding="utf-8")
+        plugin = self.make_plugin("no-key", 'print("value\\nready")', env="TOKEN=enc:opaque\n")
+        with mock.patch.dict(os.environ, SNAPGRID_KEY_FILE=str(key_file)):
+            run = self.run_now(plugin)
+        self.assertEqual(run["status"], store_module.OK, run["error"])
+        self.assertEqual(key_file.read_text(encoding="utf-8"), "not a valid key")
 
-    def test_an_encrypted_value_reaches_the_plugin_decrypted(self):
+    def test_plugin_decides_whether_its_own_credential_is_valid(self):
         plugin = self.make_plugin(
-            "secret",
-            'import os\nprint("name,length")\n'
-            'print(f"password,{len(os.environ[\'PASSWORD\'])}")\n',
-            env=f"PASSWORD={encrypt('hunter2', self.key)}\n",
+            "owns-error", 'from pathlib import Path\nPath("ran").touch()\nraise SystemExit(9)\n',
+            env="TOKEN=enc:not-valid-base64\n",
         )
         run = self.run_now(plugin)
-        self.assertEqual(run["status"], store_module.OK)
-        self.assertEqual(
-            self.store.get_snapshot(run["snapshot_id"])["rows"], [["password", "7"]]
-        )
+        self.assertTrue((plugin.dir / "ran").exists())
+        self.assertEqual(run["exit_code"], 9)
+        self.assertIn("exited with code 9", run["error"])
 
-    def test_a_secret_printed_by_the_plugin_is_masked_before_it_is_stored(self):
-        # A script logging its own command line must not put a password into
-        # the database for ever.
+    def test_plugin_log_is_not_rewritten_based_on_env_values(self):
         plugin = self.make_plugin(
-            "leaky",
+            "opaque-log", 'import os, sys\nprint(os.environ["TOKEN"], file=sys.stderr)\nprint("value\\nready")',
+            env="TOKEN=enc:literal-test-value\n",
+        )
+        run = self.run_now(plugin)
+        self.assertEqual(run["status"], store_module.OK, run["error"])
+        self.assertEqual(run["log"], "enc:literal-test-value")
+
+    def test_plugin_can_explicitly_use_its_own_copy_of_the_optional_helper(self):
+        from tools.encrypt import encrypt
+        key = bytes(range(32))  # Test data, not a saved credential.
+        key_file = self.root / "plugin.key"
+        key_file.write_text("key=" + base64.b64encode(key).decode() + "\n", encoding="utf-8")
+        token = encrypt("test-only-password", key)
+        plugin = self.make_plugin(
+            "owns-decryption",
             'import os, sys\n'
-            'print(f"logging in with {os.environ[\'PASSWORD\']}", file=sys.stderr)\n'
-            'print("a")\nprint("1")\n',
-            env=f"PASSWORD={encrypt('hunter2', self.key)}\n",
+            'from plugin_crypto import load_key, decrypt\n'
+            'password = decrypt(os.environ["TOKEN"], load_key(os.environ["MY_KEY_FILE"]))\n'
+            'assert "snapgrid_core" not in sys.modules\n'
+            'print("name,length")\n'
+            'print("password," + str(len(password)))\n',
+            env=f"TOKEN={token}\nMY_KEY_FILE={key_file}\n",
         )
-        run = self.run_now(plugin)
-        self.assertNotIn("hunter2", run["log"])
-        self.assertIn("****", run["log"])
-
-    def test_a_secret_printed_into_the_table_is_masked_too(self):
-        plugin = self.make_plugin(
-            "leaky-table",
-            'import os\nprint("value")\nprint(os.environ["PASSWORD"])\n',
-            env=f"PASSWORD={encrypt('hunter2', self.key)}\n",
-        )
-        run = self.run_now(plugin)
-        rows = self.store.get_snapshot(run["snapshot_id"])["rows"]
-        self.assertEqual(rows, [["****"]])
-
-    def test_a_key_that_cannot_decrypt_stops_the_run_with_a_clear_message(self):
-        plugin = self.make_plugin(
-            "bad-key", 'print("a")\nprint("1")\n',
-            env="PASSWORD=enc:bm90IGEgcmVhbCB0b2tlbiBhdCBhbGwsIHJlYWxseQ==\n",
-        )
-        run = self.run_now(plugin)
-        self.assertEqual(run["status"], store_module.FAILED)
-        self.assertIn("PASSWORD", run["error"])
+        helper = Path(__file__).resolve().parent.parent / "tools" / "encrypt.py"
+        shutil.copyfile(helper, plugin.dir / "plugin_crypto.py")
+        with mock.patch.dict(os.environ, SNAPGRID_KEY_FILE=str(self.root / "obsolete-key")):
+            run = self.run_now(plugin)
+        self.assertEqual(run["status"], store_module.OK, run["error"])
+        self.assertEqual(self.store.get_snapshot(run["snapshot_id"])["rows"], [["password", "18"]])
+        self.assertEqual(key_file.read_text(encoding="utf-8"),
+                         "key=" + base64.b64encode(key).decode() + "\n")
+        self.assertFalse((self.root / "obsolete-key").exists())
 
 
 class Queueing(RunningPlugins):

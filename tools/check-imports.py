@@ -39,7 +39,7 @@ SKIP = {".git", "__pycache__", ".snapgrid", "plugins"}
 STANDARD = set(sys.stdlib_module_names) | {"__future__"}
 
 # The project's own packages, which are neither standard nor installed.
-OURS = {"snapgrid", "tests", "tools", "make_gif", "server"}
+OURS = {"snapgrid_core", "tests", "tools", "make_gif", "server"}
 
 
 def imported_names(path: Path) -> set[str]:

@@ -4,7 +4,7 @@
 
 import unittest
 
-from snapgrid.runner import OutputError, parse_csv
+from snapgrid_core.runner import OutputError, parse_csv
 
 
 class Reading(unittest.TestCase):

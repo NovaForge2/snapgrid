@@ -74,6 +74,10 @@ Useful options:
 
 ## Keeping plugins somewhere else
 
+`--dir` is required whenever the server starts, including `start`, `serve`, and
+running without a command. There is no implicit plugins folder. The settings
+file cannot supply `--dir` or choose a different database location.
+
 `--dir` is the folder holding your plugins. It does not have to be inside this
 checkout - it can be a repository of your own, which is the tidiest arrangement:
 the framework stays exactly as cloned, and `git pull` can never touch your work.
@@ -88,6 +92,13 @@ the framework stays exactly as cloned, and `git pull` can never touch your work.
 
 snapgrid keeps everything it writes in a hidden `.snapgrid` folder inside that
 same folder, so one workspace is one self-contained thing - see below.
+Relative paths are resolved from the terminal's current folder, and `~` expands
+to your home folder. The background child receives the full resolved path, so
+its working directory cannot redirect the database into the installation.
+
+`stop` and `status` still accept no `--dir` and can find a running server on the
+configured port. For a specific workspace, include the same `--dir` you used to
+start it.
 
 One server per plugins folder. Starting a second one on the same folder is
 refused, because both would share a database and schedule the same plugins.
@@ -122,8 +133,43 @@ While the server is running you may also see `snapgrid.db-wal` and
 so that reading never blocks a plugin finishing - and they go away on a clean
 shutdown.
 
-`--data` puts the folder somewhere else. If your plugins folder is a repository
-of your own, add `.snapgrid/` to its `.gitignore`.
+`--data` is no longer supported. The database, SQLite working files, server log,
+and running-server record stay inside the explicit `--dir` folder. A symlink
+that would redirect one of those files outside that folder is refused before
+startup. If your plugins folder is a repository of your own, add `.snapgrid/`
+to its `.gitignore`.
+
+### Migrating an existing database
+
+There is no database schema change for this storage-location update. If you
+already used `--dir ~/my-plugins` without `--data`, the existing database is
+already in the right place and will be reused. If you previously started with
+no `--dir`, `--dir /path/to/snapgrid/plugins` selects the old workspace
+explicitly and preserves its history.
+
+To put an existing workspace outside the installation or replace an old
+`--data` location:
+
+1. Stop the old server using the old version and its original options. Confirm
+   it has stopped before copying files or starting another server.
+2. Copy your plugin folders to the new plugins root, keeping their folder names
+   unchanged. The database identifies plugins by those names.
+3. Back up the old database. If the server shut down cleanly and no
+   `snapgrid.db-wal` file remains, copy `snapgrid.db` into
+   `<new-plugins-root>/.snapgrid/snapgrid.db`. Create `.snapgrid` if needed, but
+   do not overwrite a database already there without backing it up and deciding
+   which history to keep. Databases are not merged automatically.
+4. If a WAL file remains, do not copy only `snapgrid.db` or delete its sidecar
+   files: committed history may still be in the WAL. Use SQLite's backup
+   command (or Python's `sqlite3.Connection.backup`) on the old database to
+   produce the new database, retaining the original database and sidecars.
+5. Start with `./server.py --dir /path/to/new-plugins-root`. Check the displayed
+   data path and the history in the page before removing any old copy yourself.
+
+Do not copy `server.json`; it records a previous process and the new server
+creates its own. `server.log` is optional historical information. snapgrid
+does not search for, move, or delete old databases. Update scripts and shortcuts
+to supply `--dir` and remove `--data` before the next start.
 
 ### Why SQLite, when the front page says no database
 

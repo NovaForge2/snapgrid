@@ -10,7 +10,7 @@
 // mostly about the ways it could say something untrue: a blank cell reading
 // as zero, a word reading as a number, the wrong rule winning.
 //
-// snapgrid/manifest.py shade_for runs the identical test for the spreadsheet,
+// snapgrid_core/manifest.py shade_for runs the identical test for the spreadsheet,
 // and tests/test_manifest.py checks the two agree on the same cases.
 
 "use strict";
@@ -105,7 +105,7 @@ test("a number written as a value is matched as text, not as a number", () => {
 test("a value that is not a real number is not compared", () => {
   // float("NaN") succeeds in Python, Number("NaN") is NaN here. Left alone,
   // a cell saying NaN came out red in the spreadsheet and plain on the page.
-  // snapgrid/colour.py has the same cases.
+  // snapgrid_core/colour.py has the same cases.
   const rules = [{ op: "!=", n: 200, colour: "red" }];
   for (const odd of ["NaN", "nan", "inf", "-inf", "Infinity"]) {
     assert.equal(shadeFor(rules, odd), "", odd);

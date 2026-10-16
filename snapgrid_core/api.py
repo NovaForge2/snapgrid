@@ -38,7 +38,7 @@ from .workbook import write_xlsx
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 from .runner import resolve_command
-from .secrets_store import PREFIX as ENCRYPTED_PREFIX, parse_env_file
+from .environment import parse_env_file
 from .settings import load_settings
 
 GUARD_HEADER = "X-Snapgrid"
@@ -92,8 +92,7 @@ def start_command(config: Config, default_port: int | None = None) -> str:
     """
     parts = ["./server.py"]
     where = display_path(config.plugins_dir)
-    if where not in ("plugins", "."):
-        parts += ["--dir", shell_quote(where)]
+    parts += ["--dir", shell_quote(where)]
     # The port is named whenever a bare restart would land somewhere else -
     # which is not the same as "not 8765". snapgrid.toml can say 8770, and a
     # server started with --port 8765 would then be told to restart without a
@@ -314,8 +313,8 @@ class Application:
 
         Values from .env are never included, only the names, so that a panel
         showing this cannot become a way to read a password. Which variables
-        exist, and which of them are encrypted, is what you need when working
-        out why a plugin cannot log in.
+        exist is useful when working out why a plugin cannot log in; their
+        meaning belongs to the plugin.
         """
         plugin = self._plugin(plugin_id)
         manifest = plugin.dir / MANIFEST_NAME
@@ -328,10 +327,9 @@ class Application:
         env_file = plugin.env_file
         if env_file.is_file():
             try:
-                for name, value in parse_env_file(env_file.read_text(encoding="utf-8")):
+                for name, _ in parse_env_file(env_file.read_text(encoding="utf-8")):
                     entries.append({
                         "name": name,
-                        "encrypted": value.startswith(ENCRYPTED_PREFIX),
                     })
             except OSError:
                 pass

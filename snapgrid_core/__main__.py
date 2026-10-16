@@ -2,11 +2,10 @@
 # Copyright 2026 NovaForge2
 """Command line entry point.
 
-    ./server.py            start it in the background and print the address
+    ./server.py --dir plugins  start it and print the address
     ./server.py stop       stop it
     ./server.py status     is it running, and where
-    ./server.py serve      run in the foreground instead, Ctrl+C to stop
-    ./server.py encrypt    encrypt a secret for a plugin .env file
+    ./server.py serve --dir plugins  run in the foreground, Ctrl+C to stop
 
 The port is chosen once and written next to the plugins, so stop and status
 never have to go looking for it, and neither do you.
@@ -15,7 +14,6 @@ never have to go looking for it, and neither do you.
 from __future__ import annotations
 
 import argparse
-import getpass
 import functools
 import json
 import os
@@ -29,12 +27,11 @@ import webbrowser
 from pathlib import Path
 
 from . import __version__
-from .api import make_server
+from .api import make_server, shell_quote
 from .config import Config, display_path
 from .manifest import Registry
 from .runner import Runner
 from .scheduler import Scheduler
-from .secrets_store import SecretError, encrypt, key_path, load_key
 from .settings import load_settings
 from .store import Store
 
@@ -81,14 +78,21 @@ def no_plugins_hint(config: Config) -> str:
 
 
 def command_hint(config: Config, command: str) -> str:
-    """How to type a command for *this* workspace, not the default one."""
-    if config.plugins_dir == DEFAULT_PLUGINS_DIR.resolve():
-        return f"./server.py {command}"
-    return f"./server.py --dir {display_path(config.plugins_dir)} {command}"
+    """How to type a command for this explicitly selected workspace."""
+    return f"./server.py --dir {shell_quote(display_path(config.plugins_dir))} {command}"
 
 
-def config_from(args: argparse.Namespace) -> Config:
-    plugins_dir = Path(getattr(args, "dir", None) or DEFAULT_PLUGINS_DIR).expanduser()
+def config_from(args: argparse.Namespace, *, require_dir: bool = False) -> Config:
+    plugins_dir = getattr(args, "dir", None)
+    if require_dir and not plugins_dir:
+        raise SystemExit("snapgrid: --dir is required when starting the server; "
+                         "choose the folder holding your plugins.")
+    if getattr(args, "data", None) is not None:
+        raise SystemExit("snapgrid: --data is no longer supported; "
+                         "server data stays in <dir>/.snapgrid.")
+    # stop/status retain their read-only fallback for finding an old server.
+    # Starting is never allowed to fall back to the installation's plugins/.
+    plugins_dir = Path(plugins_dir or DEFAULT_PLUGINS_DIR).expanduser()
     check_host_is_safe(getattr(args, "host", None))
     # A command line option beats snapgrid.toml, which beats the built-in default.
     settings = load_settings()
@@ -96,7 +100,6 @@ def config_from(args: argparse.Namespace) -> Config:
     limit = getattr(args, "max_concurrent", None)
     return Config(
         plugins_dir=plugins_dir,
-        data_dir=getattr(args, "data", None),
         host=getattr(args, "host", None) or "127.0.0.1",
         port=port if port is not None else settings["port"],
         max_concurrent=limit if limit is not None else settings["max_concurrent"],
@@ -347,7 +350,7 @@ def require_port(config: Config) -> None:
     raise SystemExit(
         f"snapgrid: port {config.port} is already in use by something else.\n"
         f"  Either stop it, or choose another port:\n"
-        f"    ./server.py --port 8770\n"
+        f"    {command_hint(config, 'start')} --port 8770\n"
         f"  To make the choice permanent, put it in {config.plugins_dir / 'snapgrid.toml'}:\n"
         f"    [server]\n"
         f"    port = 8770"
@@ -356,9 +359,16 @@ def require_port(config: Config) -> None:
 
 # ----- commands ----------------------------------------------------------
 
+def prepare_workspace(config: Config) -> None:
+    try:
+        config.prepare()
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"snapgrid: cannot prepare plugins folder: {exc}") from None
+
+
 def command_serve(args: argparse.Namespace) -> int:
-    config = config_from(args)
-    config.prepare()
+    config = config_from(args, require_dir=True)
+    prepare_workspace(config)
 
     # Two servers on one folder would share the database and both schedule the
     # same plugins, so this is refused rather than made configurable. Run a
@@ -397,7 +407,8 @@ def command_serve(args: argparse.Namespace) -> int:
     print(f"  data      {display_path(config.data_dir)}")
     print(f"  open      {url}")
     if os.name == "nt":
-        print("  stop      Ctrl+C   (./server.py start runs it in the background)")
+        print(f"  stop      Ctrl+C   ({command_hint(config, 'start')} "
+              "runs it in the background)")
     else:
         print("  stop      Ctrl+C")
     if not registry.all():
@@ -434,8 +445,8 @@ def command_serve(args: argparse.Namespace) -> int:
 
 
 def command_start(args: argparse.Namespace) -> int:
-    config = config_from(args)
-    config.prepare()
+    config = config_from(args, require_dir=True)
+    prepare_workspace(config)
 
     existing = running_state(config)
     if existing:
@@ -445,9 +456,8 @@ def command_start(args: argparse.Namespace) -> int:
         return 0
 
     command = [
-        sys.executable, "-m", "snapgrid", "serve",
+        sys.executable, "-m", "snapgrid_core", "serve",
         "--dir", str(config.plugins_dir),
-        "--data", str(config.data_dir),
         "--host", config.host,
         "--port", str(config.port),
         "--max-concurrent", str(config.max_concurrent),
@@ -606,37 +616,6 @@ def command_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_encrypt(args: argparse.Namespace) -> int:
-    # Whether a key was just made or already existed is the thing someone
-    # wants to know the first time they run this.
-    was_there = key_path().exists()
-    try:
-        key = load_key(create=True)
-    except SecretError as exc:
-        print(f"snapgrid: {exc}", file=sys.stderr)
-        return 1
-
-    value = args.value
-    if value is None:
-        value = getpass.getpass("value to encrypt (not shown): ")
-    if not value:
-        print("snapgrid: nothing to encrypt", file=sys.stderr)
-        return 1
-
-    print()
-    print("Put this line in the .env file of your plugin:")
-    print()
-    print(f"    SOME_NAME={encrypt(value, key)}")
-    print()
-    if was_there:
-        print(f"Encrypted with the key already in {key_path()}.")
-    else:
-        print(f"A new key was generated for you: 32 random bytes, saved in {key_path()}.")
-        print("You never type this key and never choose one yourself.")
-    print("Back it up. Without it, values encrypted with it cannot be read back.")
-    return 0
-
-
 def command_validate(args: argparse.Namespace) -> int:
     from .validate import validate_plugin
     try:
@@ -649,13 +628,22 @@ def command_validate(args: argparse.Namespace) -> int:
 
 # ----- argument parsing --------------------------------------------------
 
-def add_location_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--dir", help="the folder holding your plugins (default: ./plugins)")
-    parser.add_argument("--data", help="where to keep the database and log (default: <dir>/.snapgrid)")
+def plugins_path(value: str) -> Path:
+    if not value:
+        raise argparse.ArgumentTypeError("--dir must name the folder holding your plugins")
+    return Path(value)
+
+
+def add_location_arguments(parser: argparse.ArgumentParser, *, required: bool = False) -> None:
+    parser.add_argument(
+        "--dir", type=plugins_path, required=required,
+        help="the folder holding your plugins; data stays in <dir>/.snapgrid"
+             + (" (required)" if required else ""),
+    )
 
 
 def add_server_arguments(parser: argparse.ArgumentParser) -> None:
-    add_location_arguments(parser)
+    add_location_arguments(parser, required=True)
     parser.add_argument("--host", help="default: 127.0.0.1, this machine only")
     parser.add_argument("--port", type=int,
                         help="default: 8765, or [server] port in snapgrid.toml")
@@ -694,10 +682,6 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--open", action="store_true", help="also open it in your browser")
     serve.set_defaults(func=command_serve)
 
-    enc = subparsers.add_parser("encrypt", help="encrypt a secret for a plugin .env file")
-    enc.add_argument("value", nargs="?", help="omit this to be prompted without echo")
-    enc.set_defaults(func=command_encrypt)
-
     validate = subparsers.add_parser("validate", help="check a plugin without running it")
     validate.add_argument("path", type=Path, help="the plugin folder")
     validate.add_argument("--csv", type=Path, help="captured CSV stdout to check")
@@ -706,7 +690,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-COMMANDS = {"start", "stop", "status", "serve", "encrypt", "validate"}
+COMMANDS = {"start", "stop", "status", "serve", "validate"}
 
 # What running it with no command does. Where a background server can be
 # managed reliably that is "start": run detached and hand the terminal back.
@@ -721,7 +705,7 @@ COMMANDS = {"start", "stop", "status", "serve", "encrypt", "validate"}
 DEFAULT_COMMAND = "serve" if os.name == "nt" else "start"
 # Flags that swallow the next word, so a folder called "stop" is not mistaken
 # for a command.
-VALUE_FLAGS = {"--dir", "--data", "--host", "--port", "--max-concurrent"}
+VALUE_FLAGS = {"--dir", "--host", "--port", "--max-concurrent"}
 
 
 def normalise(argv: list[str]) -> list[str]:

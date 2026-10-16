@@ -4,16 +4,64 @@
 
 What changed, and why it might matter to you. Newest first.
 
-The version lives in one place, `snapgrid/__init__.py`, and `./server.py
+The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
 --version` prints it.
 
 ## Unreleased
+
+### Runtime package layout
+
+- Rename the inner Python package from `snapgrid/` to `snapgrid_core/` so it
+  is distinct from the repository folder. `server.py` remains the entry point;
+  direct module launches now use `python -m snapgrid_core --dir PATH`.
+  Snapgrid's product name, settings filename and database filename are unchanged.
+
+### Explicit workspace storage (breaking change)
+
+- **Starting snapgrid requires `--dir`.** This applies to `start`, `serve` and
+  the commandless startup form. Missing `--dir` is an error before any
+  directories or database files are created; `stop`, `status`, help and version
+  do not require it.
+- **The database, server log and state live in `<dir>/.snapgrid`.** `--data` no
+  longer redirects storage elsewhere. Separate plugin directories keep
+  separate histories, and restart commands always name the selected directory.
+  Existing data is not moved or deleted automatically. See
+  [the migration guide](docs/configuration.md#migrating-an-existing-database)
+  before migrating an older database.
+
+### Plugin-owned secrets (breaking change)
+
+- **`.env` values are opaque to the framework.** Values starting with `enc:`
+  now reach plugins unchanged. Encryption, key access and decryption belong to
+  each plugin; the framework has no encryption imports, key configuration or
+  default key-file lookup. Plugins that relied on automatic decryption must
+  be updated before running them.
+- **`tools/encrypt.py` is an optional standalone tool**, copyable into plugins
+  that explicitly opt in. `generate-key` prints one `key=<base64 key>` line for
+  a 32-byte random key without creating files, including `__pycache__`.
+  `encrypt --key-file PATH` reads an explicitly selected `key=<base64 key>`
+  file, asks for plaintext with echo disabled, and prints only the `enc:` token. Neither command creates key
+  files or changes existing files, and encryption never generates a key.
+- **The token algorithm is unchanged.** Existing tokens remain usable with
+  their original keys through explicit plugin decryption. Existing key files
+  are not removed. See [docs/secrets.md](docs/secrets.md) for migration.
+- **The server no longer provides the `encrypt` command.** Git Bash users can
+  run the standalone tool through `winpty` when hidden input is unavailable,
+  or use PowerShell. Prompt failures stop with an error instead of falling back
+  to visible secret input.
+- **The Config panel and API keep `.env` names only.** The encrypted badge is
+  removed because the framework does not interpret the values.
+- **Plugins must keep plaintext secrets out of their output and logs.** The
+  framework cannot recognize a secret decrypted inside a plugin and no longer
+  promises automatic decrypted-secret masking.
 
 ### Reliability
 
 - Refresh the selected table after scheduled runs and discard late responses
   after switching plugins or snapshots. Preserve historical selections.
-- Mask encrypted secrets in cached and file-only results and table errors.
+- Earlier in this development cycle, encrypted-secret masking was extended to
+  cached and file-only results and table errors. That framework-level behavior
+  is superseded by the plugin-owned secrets change above.
 - Keep workers alive after parser failures and record the run as failed.
 - Apply the completed-run retention limit to failures and cached results too.
 - Bound file input, expanded workbooks and logs; stop oversized stdout promptly.

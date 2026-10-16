@@ -4,6 +4,7 @@
 
 import json
 import socket
+import sys
 import tempfile
 import threading
 import unittest
@@ -11,12 +12,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from snapgrid.api import make_server, start_command
-from snapgrid.config import Config
-from snapgrid.manifest import Registry
-from snapgrid.runner import Runner
-from snapgrid.spreadsheet import read_xlsx
-from snapgrid.store import Store
+from snapgrid_core.api import make_server, start_command
+from snapgrid_core.config import Config
+from snapgrid_core.manifest import Registry
+from snapgrid_core.runner import Runner
+from snapgrid_core.spreadsheet import read_xlsx
+from snapgrid_core.store import Store
 
 
 def free_port() -> int:
@@ -219,13 +220,20 @@ class Config_(ApiTest):
         status, payload = self.get_json("/api/plugins/demo/config")
         self.assertEqual(status, 200)
         self.assertIn("[plugin]", payload["manifest"])
-        self.assertTrue(payload["command"][0].endswith(("python", "python.exe", "python3",
-                                                        "python3.exe")))
+        self.assertEqual(payload["command"][0], sys.executable)
 
     def test_it_lists_env_names_but_never_their_values(self):
         _, payload = self.get_json("/api/plugins/demo/config")
         self.assertEqual([e["name"] for e in payload["env"]["entries"]], ["TOKEN"])
         self.assertNotIn("super-secret-value", json.dumps(payload))
+
+    def test_env_values_are_not_interpreted_as_encrypted(self):
+        (self.config.plugins_dir / "demo" / ".env").write_text(
+            "TOKEN=enc:not-base64\nKEY_FILE=/no/such/key\n", encoding="utf-8")
+        _, payload = self.get_json("/api/plugins/demo/config")
+        self.assertEqual(payload["env"]["entries"], [{"name": "TOKEN"}, {"name": "KEY_FILE"}])
+        self.assertNotIn("enc:not-base64", json.dumps(payload))
+        self.assertNotIn("/no/such/key", json.dumps(payload))
 
 
 class Guarding(ApiTest):
@@ -261,7 +269,7 @@ class Guarding(ApiTest):
 
 class NotEscapingTheWebFolder(ApiTest):
     def test_paths_that_climb_out_are_refused(self):
-        for path in ["/../snapgrid/store.py", "/..%2fsnapgrid/store.py",
+        for path in ["/../snapgrid_core/store.py", "/..%2fsnapgrid_core/store.py",
                      "/../../etc/passwd", "/%2e%2e/%2e%2e/etc/passwd"]:
             status, _, _ = self.request(path)
             self.assertIn(status, (400, 404), path)
@@ -321,8 +329,12 @@ class StoppingFromThePage(ApiTest):
 
 
 class TheCommandToStartAgain(unittest.TestCase):
-    def test_the_default_folder_needs_no_dir(self):
-        self.assertEqual(start_command(Config(plugins_dir=Path("plugins"))), "./server.py")
+    def test_the_plugins_folder_is_always_named(self):
+        self.assertEqual(start_command(Config(plugins_dir=Path("plugins"))),
+                         "./server.py --dir plugins")
+
+    def test_the_current_folder_is_always_named(self):
+        self.assertEqual(start_command(Config(plugins_dir=Path("."))), "./server.py --dir .")
 
     def test_another_folder_is_named(self):
         self.assertEqual(start_command(Config(plugins_dir=Path("examples"))),

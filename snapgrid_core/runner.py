@@ -35,7 +35,7 @@ from pathlib import Path
 from . import store as store_module
 from .config import Config, LOG_LINES
 from .manifest import Plugin, load_plugin
-from .secrets_store import SecretError, load_env, mask
+from .environment import load_env
 from .spreadsheet import SpreadsheetError, read_xlsx
 from .store import Store
 
@@ -87,12 +87,6 @@ def parse_csv(text: str, expected_columns: list[str] | None) -> tuple[list[str],
             row = row + [""] * (width - len(row))
         data.append(row)
     return header, data
-
-
-def masked_table(columns: list[str], rows: list[list[str]],
-                 secret_values: list[str]) -> tuple[list[str], list[list[str]]]:
-    return ([mask(value, secret_values) for value in columns],
-            [[mask(value, secret_values) for value in row] for row in rows])
 
 
 def bounded_log(text: str) -> str:
@@ -234,7 +228,6 @@ class _Active:
     proc: subprocess.Popen | None = None
     tail: deque = field(default_factory=lambda: deque(maxlen=LOG_LINES))
     cancelled: bool = False
-    secrets: list[str] = field(default_factory=list)
 
 
 class Runner:
@@ -379,8 +372,8 @@ class Runner:
                     try:
                         self.store.finish_run(
                             run_id, plugin_id, store_module.FAILED,
-                            error=mask(f"cannot complete the run: {exc}", active.secrets),
-                            log=mask("\n".join(active.tail), active.secrets))
+                            error=f"cannot complete the run: {exc}",
+                            log="\n".join(active.tail))
                     except Exception:
                         print("snapgrid: could not record a failed run", file=sys.stderr)
                 finally:
@@ -389,7 +382,7 @@ class Runner:
             finally:
                 self._queue.task_done()
 
-    def _use_existing(self, run_id: int, plugin: Plugin, secret_values: list[str]) -> bool:
+    def _use_existing(self, run_id: int, plugin: Plugin) -> bool:
         """Use the file as it stands if it is younger than fresh_for."""
         target = plugin.dir / plugin.output_file
         try:
@@ -401,7 +394,6 @@ class Runner:
 
         try:
             columns, rows = parse_table(read_output_file(plugin, 0.0), plugin)
-            columns, rows = masked_table(columns, rows, secret_values)
         except (OutputError, SpreadsheetError, OSError):
             return False       # unreadable, so run the plugin and find out why
 
@@ -414,14 +406,13 @@ class Runner:
             snapshot_id=snapshot_id, row_count=len(rows), changed=changed)
         return True
 
-    def _read_only_run(self, run_id: int, plugin: Plugin, secret_values: list[str]) -> None:
+    def _read_only_run(self, run_id: int, plugin: Plugin) -> None:
         """A plugin that is a file and a manifest, with no program to run."""
         try:
             raw = read_output_file(plugin, started_at=0.0)   # nothing wrote it, so no staleness check
             columns, rows = parse_table(raw, plugin)
-            columns, rows = masked_table(columns, rows, secret_values)
         except (OutputError, SpreadsheetError) as exc:
-            self.store.finish_run(run_id, plugin.id, store_module.FAILED, error=mask(str(exc), secret_values))
+            self.store.finish_run(run_id, plugin.id, store_module.FAILED, error=str(exc))
             return
 
         snapshot_id, changed = self.store.save_snapshot(
@@ -447,28 +438,23 @@ class Runner:
         self.store.mark_running(run_id)
 
         try:
-            env_values, secret_values = load_env(plugin.env_file)
-        except SecretError as exc:
-            self.store.finish_run(run_id, plugin_id, store_module.FAILED, error=str(exc))
-            return
+            env_values = load_env(plugin.env_file)
         except OSError as exc:
             self.store.finish_run(run_id, plugin_id, store_module.FAILED, error=f"cannot read .env: {exc}")
             return
-
-        active.secrets = secret_values
 
         # A file young enough to trust means there is nothing to do. Pressing
         # Refresh always runs the plugin anyway: asking for it explicitly means
         # wanting new data, not a repeat of what is already on screen.
         if plugin.command and plugin.fresh_for:
             run = self.store.get_run(run_id) or {}
-            if run.get("trigger") != "manual" and self._use_existing(run_id, plugin, secret_values):
+            if run.get("trigger") != "manual" and self._use_existing(run_id, plugin):
                 return
 
         if not plugin.command:
             # Nothing to run: the folder holds a file and a manifest, and the
             # file is the table. Re-read on each run so edits show up.
-            self._read_only_run(run_id, plugin, secret_values)
+            self._read_only_run(run_id, plugin)
             return
 
         environment = os.environ.copy()
@@ -540,7 +526,7 @@ class Runner:
                 if truncated:
                     continue
                 retained += len(raw)
-                line = mask(raw.decode("utf-8", "replace").rstrip("\r\n"), secret_values)
+                line = raw.decode("utf-8", "replace").rstrip("\r\n")
                 with self._lock:
                     active.tail.append(line)
 
@@ -589,8 +575,7 @@ class Runner:
             # on the stdout path that would otherwise be discarded along with
             # the half-finished table. Keep it: a timeout with an empty log
             # tells you nothing at all.
-            printed = mask((stdout_chunks[0] if stdout_chunks else b"")
-                           .decode("utf-8", "replace"), secret_values).strip()
+            printed = (stdout_chunks[0] if stdout_chunks else b"").decode("utf-8", "replace").strip()
             if printed:
                 printed = bounded_log(printed)
                 tail = printed.splitlines()[-LOG_LINES:]
@@ -634,14 +619,14 @@ class Runner:
         if plugin.output_file:
             # The table comes from a file, so anything the plugin printed is
             # log - including whatever it sent to stdout.
-            printed = mask(raw.decode("utf-8", "replace"), secret_values).strip()
+            printed = raw.decode("utf-8", "replace").strip()
             if printed:
                 log = bounded_log(f"{log}\n{printed}" if log else printed)
             try:
                 raw = read_output_file(plugin, started_at)
             except OutputError as exc:
                 self.store.finish_run(run_id, plugin_id, store_module.FAILED,
-                                      exit_code=exit_code, error=mask(str(exc), secret_values), log=log)
+                                      exit_code=exit_code, error=str(exc), log=log)
                 return
 
         if len(raw) > MAX_OUTPUT_BYTES:
@@ -653,10 +638,9 @@ class Runner:
 
         try:
             columns, rows = parse_table(raw, plugin)
-            columns, rows = masked_table(columns, rows, secret_values)
         except (OutputError, SpreadsheetError) as exc:
             self.store.finish_run(
-                run_id, plugin_id, store_module.FAILED, exit_code=exit_code, error=mask(str(exc), secret_values), log=log
+                run_id, plugin_id, store_module.FAILED, exit_code=exit_code, error=str(exc), log=log
             )
             return
 

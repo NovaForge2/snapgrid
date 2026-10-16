@@ -50,28 +50,52 @@ down machines this is built for.
 - Plugin output reaches the page as **text, never as HTML**, and commands run
   **without a shell**.
 
+## Secrets belong to plugins
+
+snapgrid loads `.env` values into the plugin environment without interpreting
+them. An `enc:` prefix has no special meaning to the framework. It does not
+load encryption keys, provide key configuration, decrypt values, or import the
+optional encryption tool. The Config panel and its API expose `.env` variable
+names only, never their values or an inferred encryption status.
+
+A plugin that needs encryption must explicitly obtain its key and decrypt its
+values. **Never print plaintext secrets in tables, logs, output files or error
+messages.** snapgrid stores and displays plugin output and cannot recognize
+secrets a plugin decrypts internally. There is no automatic decrypted-secret
+masking guarantee.
+
 ## The encryption is written in this project
 
-Values in `.env` can be stored as `enc:...`. That encryption is **custom code
-in this repository**, not a vetted library, because the project cannot depend
-on anything that has to be installed.
+The optional, self-contained `tools/encrypt.py` produces `enc:` tokens and can
+be copied into a plugin that explicitly opts into using it. It is **custom,
+unaudited code**, not a vetted cryptographic library. It uses only the Python
+standard library, so nothing needs to be installed.
 
-It derives separate encryption and authentication keys from a random 32 byte
-key, uses a random nonce per value, builds a keystream from HMAC-SHA256, and
-verifies a tag over nonce and ciphertext before decrypting. Those are the right
-shapes. It has not been audited, and custom cryptography is worth less trust
-than a reviewed library regardless of how it looks.
+The helper preserves the existing token format. It derives separate encryption
+and authentication keys, uses a random nonce per value, builds a keystream from
+HMAC-SHA256, and verifies a tag over nonce and ciphertext before decrypting.
+Custom cryptography is worth less trust than a reviewed library regardless of
+how the construction looks.
 
-**What it is for:** stopping a password being readable over your shoulder, in a
-screen share, or by someone glancing at a file. It raises the cost of casual
-exposure.
+Key generation prints one `key=<base64 key>` line for a new 32-byte random key
+and creates no files, including key files or `__pycache__` directories.
+Encryption requires an explicit `--key-file` containing `key=<base64 key>` and prompts for plaintext
+without echoing it. Neither command chooses a key location, creates a key file,
+or changes existing files. There is no default key path or `SNAPGRID_KEY_FILE`
+lookup. The framework also never reads any existing key file.
 
-**What it is not for:** protecting a secret from someone who already has access
-to your account. The key lives in `~/.snapgrid_key`, readable by you, so
-anything running as you can decrypt anything you can.
+**What it is for:** reducing casual exposure of a password in a screen share,
+over your shoulder or in a file someone glances at. A displayed generated key
+is itself a secret: keep it out of screenshots and logs.
+
+**What it is not for:** protecting a secret from someone who can access its key
+or run code in the plugin's account. Choosing separate storage does not create
+a sandbox around the plugin or its decrypted data.
 
 If that is not enough for a particular secret, do not put that secret in a
-`.env` file.
+`.env` file. See [docs/secrets.md](docs/secrets.md) for the explicit key-file
+workflow and the migration required for plugins that previously relied on
+framework decryption.
 
 ## What snapgrid itself connects to
 

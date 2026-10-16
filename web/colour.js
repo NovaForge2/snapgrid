@@ -6,7 +6,7 @@
 // The rules arrive already parsed - {op: ">", n: 90} or {is: "ok"} - because
 // the manifest is read in Python and the syntax should be understood in one
 // place, not two. All that is left here is the test itself, which the
-// spreadsheet also runs, in snapgrid/manifest.py shade_for. The two have to
+// spreadsheet also runs, in snapgrid_core/manifest.py shade_for. The two have to
 // agree: a workbook that colours different cells from the page it came from
 // would be worse than one with no colour at all.
 //

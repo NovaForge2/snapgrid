@@ -6,7 +6,6 @@ from pathlib import Path
 
 from .manifest import load_plugin
 from .runner import OutputError, parse_csv, parse_table, read_output_file, MAX_OUTPUT_BYTES
-from .secrets_store import load_env, mask
 
 
 def validate_plugin(folder: Path, csv_path: Path | None = None) -> str:
@@ -17,7 +16,6 @@ def validate_plugin(folder: Path, csv_path: Path | None = None) -> str:
         raise OutputError(plugin.error)
     if csv_path is None and not plugin.output_file:
         return "manifest valid; table not checked (capture stdout and pass --csv FILE)"
-    _, secrets = load_env(plugin.env_file)
     try:
         if csv_path is not None:
             with csv_path.open("rb") as stream:
@@ -40,5 +38,5 @@ def validate_plugin(folder: Path, csv_path: Path | None = None) -> str:
                 raise OutputError(f"key column {key!r} must contain non-empty, unique values")
             seen.add(value)
     except Exception as exc:
-        raise OutputError(mask(str(exc), secrets)) from exc
+        raise OutputError(str(exc)) from exc
     return f"manifest and table valid ({len(rows)} rows)"

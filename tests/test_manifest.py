@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from snapgrid.manifest import (
+from snapgrid_core.manifest import (
     ManifestError,
     Registry,
     load_plugin,

@@ -188,12 +188,12 @@ compute.
 ## Secrets
 
 Read them from environment variables. snapgrid loads a `.env` file from the
-plugin folder before running:
+plugin folder before running and passes its values through unchanged:
 
 ```
 OC_URL=https://api.env1.example
 OC_USER=svc_reporting
-OC_PASSWORD=enc:u8Vj97KHcvUDrRuIj2ND...
+OC_PASSWORD=your-password
 ```
 
 ```python
@@ -206,9 +206,21 @@ if not password:
 - **Never hardcode a secret in the script or in `plugin.toml`.**
 - **Never pass a secret as a command line argument** — arguments are visible to
   anyone who can list processes, and they appear in the UI's Config panel.
-- Encrypted values (`enc:...`) are decrypted by snapgrid before the plugin runs,
-  so the plugin always sees the real value and needs no crypto code. They are
-  produced by `./server.py encrypt`.
+- **The framework does not interpret `enc:` values.** They reach the plugin
+  exactly as written. A plugin using encrypted secrets must explicitly obtain
+  its key and decrypt them itself; there is no framework key configuration or
+  default key path.
+- The optional, self-contained `tools/encrypt.py` may be copied into a plugin
+  and imported there. Its `load_key(path)` reads an explicitly supplied file
+  containing `key=<base64 key>`; `decrypt(token, key)` returns plaintext. The
+  framework never imports it. See [docs/secrets.md](docs/secrets.md) for the
+  command-line tool and migration from framework decryption.
+- **Never print plaintext secrets to stdout, stderr, table files or diagnostic
+  exceptions.** snapgrid stores and shows plugin output; it cannot recognize
+  secrets that a plugin decrypts itself. Do not rely on automatic masking.
+- Key access must be noninteractive during a plugin run. A missing key or failed
+  decryption must produce a safe error and a non-zero exit, without including
+  the key, token or plaintext in the message.
 - Fail with a clear message on stderr when a variable is missing. Do not fall
   back to a default credential.
 
@@ -296,7 +308,8 @@ Check every line:
 - [ ] it finishes well inside `run.timeout` - time it, and raise the value in `plugin.toml`
       if the work is genuinely slow rather than stuck
 - [ ] nothing it calls out to can block for ever: give every network call its own timeout
-- [ ] no secret is hardcoded, and none is passed as an argument
+- [ ] no secret is hardcoded, passed as an argument, or printed to output or logs
+- [ ] encrypted values, if used, are decrypted explicitly by the plugin with its own key access
 - [ ] it needs no input typed at it, and never prompts
 - [ ] running it twice gives the same table when nothing changed
 
@@ -320,7 +333,6 @@ worse than one that fails.
 | `'x.csv' was last written at ... before this run started` | the file is from an earlier run; write it every time |
 | `the plugin exited with code 1` | the script failed; its last stderr line is shown |
 | `the plugin was stopped after N seconds` | exceeded `run.timeout`. The log keeps whatever it printed first, which is where to look |
-| `cannot decrypt value` | wrong or missing key for an `enc:` value in `.env` |
 
 ## Do not
 

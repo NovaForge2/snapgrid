@@ -2,15 +2,17 @@
 # Copyright 2026 NovaForge2
 import contextlib
 import io
+import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from snapgrid.__main__ import main
-from snapgrid.runner import OutputError
-from snapgrid.validate import validate_plugin
+from snapgrid_core.__main__ import main
+from snapgrid_core.runner import OutputError
+from snapgrid_core.validate import validate_plugin
 from tests.test_spreadsheet import XlsxTest
-from snapgrid.spreadsheet import read_xlsx, SpreadsheetError
+from snapgrid_core.spreadsheet import read_xlsx, SpreadsheetError
 
 
 class Validation(unittest.TestCase):
@@ -62,6 +64,20 @@ class Validation(unittest.TestCase):
         (self.folder / 'plugin.toml').write_text('not toml')
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main(['validate', str(self.folder)]), 1)
+
+    def test_table_validation_does_not_need_an_encryption_key(self):
+        (self.folder / '.env').write_text('TOKEN=enc:not-base64\n', encoding='utf-8')
+        self.table('name,value\na,enc:literal\n')
+        key_file = self.folder / 'missing-key'
+        with mock.patch.dict(os.environ, SNAPGRID_KEY_FILE=str(key_file)):
+            self.assertIn('1 rows', validate_plugin(self.folder))
+            self.assertIn('1 rows', validate_plugin(self.folder, self.folder / 'data.csv'))
+        self.assertFalse(key_file.exists())
+
+    def test_table_validation_does_not_read_the_plugin_environment(self):
+        self.table('name,value\na,1\n')
+        (self.folder / '.env').mkdir()  # Not even a readable file.
+        self.assertIn('1 rows', validate_plugin(self.folder))
 
 
 class SpreadsheetLimits(XlsxTest):

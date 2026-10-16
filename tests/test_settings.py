@@ -6,11 +6,11 @@ import tempfile
 import os
 import unittest
 
-from snapgrid.__main__ import check_host_is_safe
+from snapgrid_core.__main__ import check_host_is_safe
 from pathlib import Path
 
-from snapgrid import settings as settings_module
-from snapgrid.settings import DEFAULTS, load_settings
+from snapgrid_core import settings as settings_module
+from snapgrid_core.settings import DEFAULTS, load_settings
 
 
 class Settings(unittest.TestCase):
