@@ -1,0 +1,413 @@
+# Writing a snapgrid plugin
+
+Instructions for an AI agent asked to write a plugin for snapgrid. Follow them
+literally. If a rule here conflicts with what the user asked for, say so rather
+than silently breaking the rule.
+
+## What you are producing
+
+A **folder**. Nothing else. snapgrid watches a plugins directory and every
+sub-folder containing a `plugin.toml` becomes a page in a web UI.
+
+```
+my-plugin/
+    plugin.toml     required - what it is called and how to run it
+    main.py         required - the program, in any language
+    data.json       optional - anything else the program needs
+    .env            optional - secrets, never committed
+```
+
+The program gets some rows from somewhere and prints them as CSV. snapgrid runs
+it on a schedule, stores the result, and shows it as a sortable, filterable
+table.
+
+## The contract
+
+These five rules are the whole interface. Getting any of them wrong makes the
+plugin fail.
+
+1. **Standard output is the table, and nothing else.** CSV, starting with a
+   header line. No progress messages, no banners, no blank leading lines.
+   Unless you set `[output] file`, in which case the table comes from that file
+   and stdout is free for anything - see below.
+2. **Standard error is the log.** Progress, warnings, diagnostics go here. It is
+   shown in the UI and stored with the run.
+3. **The exit code decides.** `0` means success. Anything else marks the run
+   failed and the previous good result stays on screen.
+4. **There is no shell.** `command` is a list of arguments, executed directly.
+   Pipes, `&&`, globs, redirects and `$VARIABLES` do not work. If you need them,
+   write a shell script and run that.
+5. **The working directory is the plugin folder**, so a file next to the script
+   can be opened by name.
+
+## plugin.toml
+
+Only `[plugin] name` and `[run] command` are required.
+
+```toml
+[plugin]
+name        = "Image versions"             # required, shown in the left panel
+description = "Image version per repo per environment"
+group       = "Platform"                   # heading the plugin appears under
+enabled     = true
+
+[run]
+command = ["python", "main.py"]            # required, argument list, no shell
+timeout = "5m"                             # or a number of seconds
+every   = "15m"
+
+[table]
+key = "environment"                        # the column that names a row
+
+[compare]
+ignore = ["checked_at"]                    # columns a comparison does not look at
+
+[history]
+keep = 20
+```
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `plugin.name` | string | **required** | shown in the left panel |
+| `plugin.description` | string | `""` | one line, shown above the table |
+| `plugin.group` | string | `""` | plugins giving the same string are listed under one heading. Groups and the plugins in them are ordered alphabetically; those with no group appear together under "Plugins" |
+| `plugin.enabled` | bool | `true` | `false` hides it completely and stops it running |
+| `run.command` | list of strings | **required** | argument list. A bare `python` or `python3` means the interpreter running snapgrid |
+| `run.timeout` | int seconds, or a duration string | `300` | how long one run may take. The process and its children are killed at this point and the run is marked failed. `600` and `"10m"` are the same; `"off"` is refused. Per-plugin, not a server setting |
+| `run.every` | string | `"15m"` | a number and a unit: `s`, `m`, `h`, `d`, `w`. So `"30s"`, `"15m"`, `"2h"`, `"10d"`, `"2w"`, or `"off"` for manual only. Measured from the end of the previous run |
+| `run.cron` | string | none | a five field cron expression in **local time** - `"0 9 * * 1-5"` is nine on weekdays. Use it instead of `every` when the table has to exist by a particular time rather than every so often. Writing both is refused |
+| `table.columns` | list of strings | none | when present, the header line must match it exactly. Omit it and the header defines the columns |
+| `table.key` | string | the first column | which column names a row. Used to line two runs up when comparing them, so it must be stable and unique |
+| `compare.ignore` | list of strings | none | columns a comparison does not look at. For a column that moves on its own, such as the time of the run. Never the naming column, which is refused |
+| `output.file` | string | none | read the table from this file instead of stdout. Anything printed then becomes log. `.xlsx` is read as a spreadsheet |
+| `output.sheet` | string | first sheet | which sheet of a workbook to read |
+| `output.fresh_for` | string | none | if the file is younger than this, use it and do not run the plugin. Run now runs it anyway |
+| `run.command` | | | not required when `output.file` is set - a folder with a manifest and a file is a valid plugin |
+| `history.keep` | int | `0` | how many *differing* results to keep. Omit for latest only |
+| `colour.<column>` | section | none | a colour for named values in that column. See below |
+
+### Colouring a value
+
+A number past a limit, or a value out of a small fixed set, reads much faster
+with a colour on it. Name the column, then the rules:
+
+```toml
+[colour.used_percent]
+"> 90" = "red"
+"> 80" = "amber"
+
+[colour.status]
+expired = "red"
+```
+
+On the left: a comparison against a number - `>`, `>=`, `<`, `<=`, `=`, `!=` -
+or a value matched whole, ignoring case. **The first rule that matches wins**,
+so write the severe one first: with `> 80` above `> 90`, everything over 90
+would be amber.
+
+Nothing else is coloured - not a value no rule matches, not an empty cell, and
+not a word tested against a comparison. That is what makes this safe to put on
+a column that can also hold free text.
+
+The colours are **red, amber, green, blue and grey** - the whole set, and
+anything else is refused. Use them for what they mean: `red` wrong now, `amber`
+not wrong yet, `green` right, `blue` informational, `grey` finished or
+dismissed. Do not colour a column where every value would get the same colour,
+and do not colour more than one or two columns: the point is that the eye goes
+somewhere, which stops working if everything is coloured.
+
+Every key has to be written under its own section header: a `timeout` added at the
+end of the file belongs to whatever section came last and is refused, not ignored.
+
+### A column that changes on its own
+
+A column holding the time the plugin last looked, or a count of days left, is
+different on every run. In a comparison that means every row changed every
+time, so the tally counts changes nobody made and "Only what changed" stops
+narrowing anything.
+
+```toml
+[compare]
+ignore = ["checked_at", "days_left"]
+```
+
+The column is still shown, filtered, sorted and exported exactly as before.
+It is only taken out of the question "did this row change?".
+
+Two things follow:
+
+- **Do not ignore the column that names a row.** It is what the two runs are
+  lined up by, it is never compared as a value, and naming it here is refused.
+- **Think about whether the column is needed at all.** A timestamp that is the
+  same for every row says when the plugin ran, which the page already shows
+  above the table. A column that exists only to be ignored is a column to
+  delete.
+
+### A time of day instead of a gap
+
+`every` measures from the moment the last run finished, which is right for
+"look at this every so often" and wrong for "this has to be ready by nine":
+fifteen minutes that start when the last run ended drift by the length of the
+run, every run, and a daily report set that way is hours late by Friday.
+
+Name the clock instead:
+
+```toml
+[run]
+cron = "0 9 * * 1-5"        # nine o'clock, Monday to Friday
+```
+
+Five fields, as everywhere else: minute, hour, day of the month, month, day of
+the week. `*` is every, `1-5` is a range, `*/15` is a step, `0 6,18 * * *` is
+twice a day. Month and day names work (`mon`, `jan`). Sunday is `0` or `7`.
+
+- **Local time**, the clock of the machine snapgrid runs on.
+- **A missed time is caught up once.** If the machine was asleep at nine and
+  comes back at ten past, the run happens then - once, however long it was
+  away, not once for every nine o'clock that went by.
+- **An hour that does not exist is not run.** On the day the clocks go
+  forward, a schedule naming 02:30 does not fire; it is not moved to 03:30.
+- **`every` and `cron` together are refused**, because they are two answers to
+  the same question. Pick one.
+- **Run now is unaffected** either way: asking by hand ignores the schedule.
+- **A plugin that keeps failing is still slowed down.** Otherwise a broken one
+  on a short schedule fills the history overnight.
+
+Choose `every` by how fast the underlying data really changes. A plugin hitting
+a live API every 30 seconds is a bad neighbour; most reporting plugins
+want `"15m"` or `"1h"`.
+
+**Put the column that names each row first**, and keep its values unique and
+stable. snapgrid compares runs by matching rows on it: `payments-api` yesterday
+and `payments-api` today have to be recognisably the same row, or a changed
+version reads as one row leaving and another arriving. If the naming column
+cannot be first, say which it is with `[table] key`.
+
+Set `history.keep` when looking back matters — versions, counts, anything you
+would ask "when did that change?" about. A run producing an identical table does
+not consume a slot, so `keep = 20` means the last twenty real changes.
+
+## Output format
+
+```
+environment,image,version
+ENV1,payments-api,2.14.1
+ENV2,payments-api,2.15.0-SNAPSHOT
+```
+
+- The **first line is the header**. Column names come from it.
+- Use a **CSV writer from the standard library**, never string concatenation. A
+  value containing a comma or a quote must be quoted correctly, and hand-rolled
+  joining gets this wrong.
+- **Keep the column order stable** between runs. Changing it silently reshapes
+  the table, and comparing two runs is refused outright when the columns differ.
+- **Keep the row names stable too.** A row that renames itself between runs
+  looks like one row disappearing and another appearing.
+- A missing value is an **empty field**, not the text `None`, `null` or `N/A`.
+- Emit **plain values**: `2.14.1`, `41.5`, `2026-09-14 10:22`. No units, no
+  thousands separators, no ANSI colour. A column where every value is a number
+  sorts numerically; a column of dotted versions sorts by version; anything else
+  sorts as text.
+- Dates as `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`, so they sort correctly as text.
+- **One table per plugin.** If you have two unrelated shapes of data, that is two
+  plugins.
+- Zero rows is valid: print the header and exit `0`.
+
+### If the script already writes a file
+
+Every combination - a file, a spreadsheet, or a plugin with no program at all -
+is set out in
+[docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md).
+
+Plenty of scripts write a CSV file and print progress as they go. Rather than
+rewriting them, name the file and snapgrid reads that instead of stdout:
+
+```toml
+[output]
+file = "report.csv"
+```
+
+With this set, **anything the script prints - to stdout or stderr - becomes the
+log**, and only the file is the table. It is the easier option for an existing
+script, and the rule about keeping stdout clean no longer applies.
+
+The file must be inside the plugin folder, and it must be written by the run
+that is happening: a file left over from an earlier run is refused rather than
+shown as if it were current.
+
+An `.xlsx` is read as a spreadsheet rather than as text - first sheet unless
+`[output] sheet` names another, with dates and formula results handled. The old
+binary `.xls` is not supported.
+
+**A plugin may have no program at all.** Leave out `[run] command`, and a folder
+holding a manifest and a file is a plugin; the file is re-read on each run. Use
+this when the data is a file somebody maintains rather than something to
+compute.
+
+## Secrets
+
+Read them from environment variables. snapgrid loads a `.env` file from the
+plugin folder before running and passes its values through unchanged:
+
+```
+API_URL=https://api.env1.example
+API_USER=svc_reporting
+API_PASSWORD=your-password
+```
+
+```python
+password = os.environ.get("API_PASSWORD")
+if not password:
+    print("API_PASSWORD is not set - add it to .env", file=sys.stderr)
+    return 1
+```
+
+- **Never hardcode a secret in the script or in `plugin.toml`.**
+- **Never pass a secret as a command line argument** — arguments are visible to
+  anyone who can list processes, and they appear in the UI's Config panel.
+- **The framework does not interpret `enc:` values.** They reach the plugin
+  exactly as written. A plugin using encrypted secrets must explicitly obtain
+  its key and decrypt them itself; there is no framework key configuration or
+  default key path.
+- The optional, self-contained `tools/encrypt.py` may be copied into a plugin
+  and imported there. Its `load_key(path)` reads an explicitly supplied file
+  containing `key=<base64 key>`; `decrypt(token, key)` returns plaintext. The
+  framework never imports it. See [docs/secrets.md](docs/secrets.md) for the
+  command-line tool and migration from framework decryption.
+- **Never print plaintext secrets to stdout, stderr, table files or diagnostic
+  exceptions.** snapgrid stores and shows plugin output; it cannot recognize
+  secrets that a plugin decrypts itself. Do not rely on automatic masking.
+- Key access must be noninteractive during a plugin run. A missing key or failed
+  decryption must produce a safe error and a non-zero exit, without including
+  the key, token or plaintext in the message.
+- Fail with a clear message on stderr when a variable is missing. Do not fall
+  back to a default credential.
+
+## Worked examples
+
+**Python, reading a file next to it**
+
+```python
+#!/usr/bin/env python3
+import csv, json, sys
+from pathlib import Path
+
+def main() -> int:
+    source = Path(__file__).with_name("data.json")
+    print(f"reading {source.name}", file=sys.stderr)
+    rows = json.loads(source.read_text(encoding="utf-8"))
+
+    writer = csv.writer(sys.stdout, lineterminator="\n")
+    writer.writerow(["service", "environment", "version"])
+    for row in rows:
+        writer.writerow([row["service"], row["environment"], row["version"]])
+
+    print(f"{len(rows)} rows", file=sys.stderr)
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+**Python, calling a command**
+
+```python
+result = subprocess.run(
+    # Whatever the command line tool for the system being reported on is
+    # called. It has to be on PATH, and it has to print something parsable.
+    ["platform-cli", "get", "deployments", "--environment", environment,
+     "--output", "json"],
+    capture_output=True, text=True, timeout=60,
+)
+if result.returncode != 0:
+    print(result.stderr.strip(), file=sys.stderr)   # stderr, not stdout
+    return 1
+data = json.loads(result.stdout)
+```
+
+**A shell script**, when the work is genuinely a pipeline
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+echo "filesystem,used,available"
+df -h | tail -n +2 | awk '{print $1","$3","$4}'
+```
+
+```toml
+[run]
+command = ["bash", "report.sh"]
+```
+
+**One row per thing, one column per environment** — the shape to use when
+comparing the same item across places:
+
+```
+repo,ENV1,ENV2,ENV3,ENV4
+payments-api,2.14.1,2.15.0,2.13.0,2.12.6
+orders-api,1.9.3,1.9.3,1.9.2,1.9.0
+```
+
+This reads far better than a long `repo,environment,version` table when the
+question is "where do these differ?", and it is what the filters and history are
+most useful on.
+
+## Before you finish
+
+Run the program directly. What it prints is exactly what snapgrid sees.
+
+```bash
+cd my-plugin && python3 main.py
+```
+
+Check every line:
+
+- [ ] first line of stdout is the header (or `[output] file` was written afresh)
+- [ ] every other stdout line is a data row, and nothing else is on stdout
+- [ ] progress and warnings went to stderr
+- [ ] `echo $?` is `0` on success, non-zero when it fails
+- [ ] column count is identical on every row
+- [ ] it finishes well inside `run.timeout` - time it, and raise the value in `plugin.toml`
+      if the work is genuinely slow rather than stuck
+- [ ] nothing it calls out to can block for ever: give every network call its own timeout
+- [ ] no secret is hardcoded, passed as an argument, or printed to output or logs
+- [ ] encrypted values, if used, are decrypted explicitly by the plugin with its own key access
+- [ ] it needs no input typed at it, and never prompts
+- [ ] running it twice gives the same table when nothing changed
+
+Then check the failure path deliberately: break the credential or the URL and
+confirm it exits non-zero with a useful message on stderr rather than printing a
+half table and exiting `0`. A plugin that reports success with missing rows is
+worse than one that fails.
+
+## What the errors mean
+
+| Message in the UI | Cause |
+|---|---|
+| `plugin.toml is not valid TOML` | syntax error in the manifest |
+| `x is in [a], but it belongs in [b]` | a key written under the wrong section header. In TOML a key belongs to the section above it, so a setting appended at the end of the file lands in the last section |
+| `x is not a setting snapgrid knows` | a misspelt key. The message lists the real ones |
+| `cannot run 'x': no such program` | `run.command[0]` is not on PATH |
+| `the header line does not match [table] columns` | the script's header changed, or `columns` is wrong |
+| `line 4 has 5 values but there are 4 columns` | an unquoted comma in a value — use a CSV writer |
+| `the script printed nothing on standard output` | everything went to stderr, or the script produced nothing |
+| `the plugin finished but did not write 'x.csv'` | `[output] file` names a file the script never wrote |
+| `'x.csv' was last written at ... before this run started` | the file is from an earlier run; write it every time |
+| `the plugin exited with code 1` | the script failed; its last stderr line is shown |
+| `the plugin was stopped after N seconds` | exceeded `run.timeout`. The log keeps whatever it printed first, which is where to look |
+
+## Do not
+
+- **Do not modify snapgrid itself.** A plugin is self-contained; if it seems to
+  need a framework change, say so instead of making one.
+- **Do not add a dependency that has to be installed.** snapgrid exists to run
+  where nothing can be installed. Use the standard library and commands already
+  present on the machine. If a plugin genuinely requires something else, state
+  that plainly as a requirement.
+- **Do not write outside the plugin folder**, and do not change anything on a
+  remote system. Plugins read and report; they do not deploy, restart or delete.
+- **Do not print a table to stdout when the run failed.** Exit non-zero and let
+  the previous good result stand.
+- **Do not cache results yourself.** snapgrid stores every run and serves the
+  last one instantly. Fetch fresh data each time.
+- **Do not invent data.** If a value cannot be determined, leave the field empty.

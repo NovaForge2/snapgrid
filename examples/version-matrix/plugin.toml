@@ -1,0 +1,21 @@
+# A demo plugin with invented data, to show what history looks like.
+# Copy this folder into your plugins folder and it appears in the page.
+
+[plugin]
+name        = "Deployment versions"
+description = "Invented data, no system is contacted. One row per item, one column per environment."
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = "30s"
+every   = "1m"
+
+[table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "repo"
+
+# Keep the last 20 results that differ from the one before, so you can look
+# back at what the matrix said earlier.
+[history]
+keep = 20

@@ -1,0 +1,40 @@
+# A list of notes, kept in a file you edit yourself.
+#
+# There is no [run] command here. The folder holds a manifest and a file, and
+# that is a plugin: snapgrid re-reads the file on each run, so saving an edit
+# updates the table. Nothing computes these - you write them.
+
+[plugin]
+name        = "Notes"
+description = "Things to remember, and how worried to be. Edit notes.csv to change them"
+group       = "Notes"
+
+[run]
+# No command. Only how often to re-read the file, which is how quickly an edit
+# shows up in the page.
+every = "1m"
+
+[output]
+file = "notes.csv"
+
+[table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "id"
+
+# Colour a value so the state of a note is visible without reading it. The
+# column is named, then each value that gets a colour. Matching is on the whole
+# value and ignores case; anything not named here is left plain, so a column
+# can hold free text and still have a few known words stand out.
+#
+# The colours are red, amber, green, blue and grey. There are no others.
+[colour.status]
+red   = "red"
+amber = "amber"
+green = "green"
+idea  = "blue"
+done  = "grey"
+
+# Keep the last fifty results that differ, so the list has a history: when a
+# note was added, and when it last changed colour.
+[history]
+keep = 50

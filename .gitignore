@@ -1,0 +1,24 @@
+# your plugins live here and are never committed
+plugins/*
+!plugins/.gitkeep
+
+# runtime data and secrets
+data/
+.env
+*.db
+*.db-wal
+*.db-shm
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# Screen recordings and videos. Nothing in the documentation is a video: a
+# locked down browser may not play one, and a recording of this machine shows
+# this machine. They are kept out of the repository, not just out of the eye.
+*.mp4
+*.mov
+
+# runtime data, wherever a plugins folder lives
+.snapgrid/

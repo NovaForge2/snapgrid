@@ -1,0 +1,747 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 NovaForge2
+"""Command line entry point.
+
+    ./server.py --dir plugins  start it and print the address
+    ./server.py stop       stop it
+    ./server.py status     is it running, and where
+    ./server.py serve --dir plugins  run in the foreground, Ctrl+C to stop
+
+The port is chosen once and written next to the plugins, so stop and status
+never have to go looking for it, and neither do you.
+"""
+
+from __future__ import annotations
+
+import argparse
+import functools
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+import webbrowser
+from pathlib import Path
+
+from . import __version__
+from .api import make_server, shell_quote
+from .config import Config, display_path
+from .manifest import Registry
+from .runner import Runner
+from .scheduler import Scheduler
+from .settings import load_settings
+from .store import Store
+
+START_TIMEOUT = 20.0
+
+# Creation flag for systems with consoles: the interpreter is a console program,
+# so unless it is told otherwise a background child gets a console window of its
+# own, which appears and disappears and looks alarming. This asks for none at
+# all. Detaching is not the right tool: it only stops the child inheriting ours,
+# and a fresh one is then created for it.
+CREATE_NO_WINDOW = 0x08000000
+
+
+def quiet_run(command: list[str]):
+    """Run a helper command without a console window flashing up."""
+    extra = {"creationflags": CREATE_NO_WINDOW} if os.name == "nt" else {}
+    return subprocess.run(command, capture_output=True, text=True, check=False, **extra)
+
+
+DEFAULT_PLUGINS_DIR = Path(__file__).resolve().parent.parent / "plugins"
+
+
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+
+
+def no_plugins_hint(config: Config) -> str:
+    """What to say when the folder is empty.
+
+    Nothing is copied anywhere. The examples are a working plugins folder in
+    their own right, so the answer to "show me what this does" is a command,
+    not a file operation.
+    """
+    if not EXAMPLES_DIR.is_dir():
+        return ""
+    plugins = display_path(config.plugins_dir)
+    examples = display_path(EXAMPLES_DIR)
+    return (
+        f"no plugins found in {plugins}/\n"
+        f"\n"
+        f"  see the examples:   ./server.py --dir {examples}\n"
+        f"  start your own:     cp -r {examples}/hello-table {plugins}/my-plugin\n"
+        f"                      then edit {plugins}/my-plugin/plugin.toml"
+    )
+
+
+def command_hint(config: Config, command: str) -> str:
+    """How to type a command for this explicitly selected workspace."""
+    return f"./server.py --dir {shell_quote(display_path(config.plugins_dir))} {command}"
+
+
+def config_from(args: argparse.Namespace, *, require_dir: bool = False) -> Config:
+    plugins_dir = getattr(args, "dir", None)
+    if require_dir and not plugins_dir:
+        raise SystemExit("snapgrid: --dir is required when starting the server; "
+                         "choose the folder holding your plugins.")
+    if getattr(args, "data", None) is not None:
+        raise SystemExit("snapgrid: --data is no longer supported; "
+                         "server data stays in <dir>/.snapgrid.")
+    # stop/status retain their read-only fallback for finding an old server.
+    # Starting is never allowed to fall back to the installation's plugins/.
+    plugins_dir = Path(plugins_dir or DEFAULT_PLUGINS_DIR).expanduser()
+    check_host_is_safe(getattr(args, "host", None))
+    # A command line option beats snapgrid.toml, which beats the built-in default.
+    settings = load_settings()
+    port = getattr(args, "port", None)
+    limit = getattr(args, "max_concurrent", None)
+    return Config(
+        plugins_dir=plugins_dir,
+        host=getattr(args, "host", None) or "127.0.0.1",
+        port=port if port is not None else settings["port"],
+        max_concurrent=limit if limit is not None else settings["max_concurrent"],
+    )
+
+
+LOOPBACK = {"127.0.0.1", "localhost", "::1", ""}
+ALLOW_ANY_HOST = "SNAPGRID_ALLOW_ANY_HOST"
+
+
+def check_host_is_safe(host: str | None) -> None:
+    """Stop --host quietly putting an unauthenticated tool on the network.
+
+    There is no login, so whoever reaches the port can read every table and
+    press Run now on every plugin - with the credentials in your .env, against
+    whatever those plugins talk to. That is a decision worth making on purpose
+    rather than by copying a flag out of a note.
+    """
+    if host is None or host in LOOPBACK:
+        return
+    if os.environ.get(ALLOW_ANY_HOST) == "1":
+        print(f"snapgrid: listening on {host} - anyone who can reach this port can "
+              f"read every table and run every plugin.", file=sys.stderr)
+        return
+    raise SystemExit(
+        f"snapgrid: refusing to listen on {host}.\n"
+        f"  snapgrid has no login. On anything other than this machine, whoever\n"
+        f"  reaches the port can read every table and press Run now on every\n"
+        f"  plugin, using the credentials in your .env files.\n"
+        f"  Leave out --host to stay on 127.0.0.1, which is how it is meant to run.\n"
+        f"  If you really mean it, set {ALLOW_ANY_HOST}=1 and it will say so at startup."
+    )
+
+
+# ----- knowing whether a server is already running -----------------------
+
+def read_state(config: Config) -> dict | None:
+    try:
+        return json.loads(config.state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            return str(pid) in quiet_run(["tasklist", "/FI", f"PID eq {pid}", "/NH"]).stdout
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+@functools.lru_cache(maxsize=8)
+def numeric_forms(host: str) -> frozenset[str]:
+    """Every numeric address a host name stands for, for this server.
+
+    lsof and netstat report numbers. --host localhost is a name, and is one
+    snapgrid accepts, so comparing the two as text said no to the very server
+    it was looking for.
+
+    Only IPv4, because ThreadingHTTPServer binds AF_INET and snapgrid does not
+    change that - so ::1 is never snapgrid, however `localhost` resolves.
+    Counting it made a stranger on [::1]:8765 look like a second candidate,
+    and two candidates means stopping neither. If snapgrid ever listens on
+    IPv6, this restriction has to go with it.
+    """
+    forms = {host}
+    try:
+        for _, _, _, _, sockaddr in socket.getaddrinfo(host, None, socket.AF_INET):
+            forms.add(sockaddr[0])
+    except (OSError, UnicodeError):
+        pass            # not resolvable: the literal is all there is
+    return frozenset(forms)
+
+
+WILDCARDS = ("*", "0.0.0.0", "::", "")
+
+
+def address_matches(address: str, host: str) -> bool:
+    """Is this listening address the one snapgrid was told to listen on?
+
+    A wildcard counts: a process on 0.0.0.0:8765 is the one answering on
+    127.0.0.1:8765, and is the one to stop.
+    """
+    address = address.rsplit(":", 1)[0].strip("[]")
+    # A scope, as in fe80::1%en0, is not part of the address being compared.
+    address = address.split("%", 1)[0]
+    return address in WILDCARDS or address in numeric_forms(host)
+
+
+def listeners_on(port: int) -> list[tuple[int, str]]:
+    """Every process listening on this port, with the address it listens on."""
+    found: list[tuple[int, str]] = []
+    try:
+        if os.name == "nt":
+            output = quiet_run(["netstat", "-ano"]).stdout
+            for line in output.splitlines():
+                parts = line.split()
+                if (len(parts) >= 5 and parts[0].upper() == "TCP"
+                        and parts[1].endswith(f":{port}")
+                        and parts[3].upper() == "LISTENING"):
+                    found.append((int(parts[4]), parts[1]))
+        else:
+            # -F gives one field per line: p<pid> then n<address>, which is
+            # parsed without guessing at column positions.
+            output = quiet_run(
+                ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fpn"]).stdout
+            pid = None
+            for line in output.splitlines():
+                if line.startswith("p"):
+                    pid = int(line[1:])
+                elif line.startswith("n") and pid is not None:
+                    found.append((pid, line[1:]))
+    except (OSError, ValueError):
+        pass
+    return found
+
+
+def pid_listening_on(port: int, host: str = "") -> int | None:
+    """Which process holds this port, asked of the operating system.
+
+    The pid written down can become unusable - a stale file, or a number this
+    shell cannot see. The port is the more reliable handle, provided whatever
+    holds it has already identified itself as snapgrid.
+
+    The address matters as well as the port. Two processes can listen on the
+    same port on different addresses, and answering on 127.0.0.1 says nothing
+    about which of them lsof happens to list first - so without a host to match
+    this could pick a stranger and stop that instead. Given one, nothing is
+    returned unless exactly one listener matches it.
+    """
+    found = listeners_on(port)
+    if not host:
+        return found[0][0] if found else None
+
+    matching = [pid for pid, address in found if address_matches(address, host)]
+    if len(matching) == 1:
+        return matching[0]
+    # None, or more than one and no way to tell them apart. Doing nothing and
+    # saying so beats stopping something that was not asked about.
+    return None
+
+
+def state_is_live(state: dict) -> bool:
+    """Is the server this record describes still there?
+
+    Asked two ways, because neither is reliable alone. A process id can be
+    invisible: a shell may number processes differently from the system
+    underneath it, and the tool for listing them may not be reachable. And a
+    port can be answered by something else entirely. Either a live process id or
+    a port answering as snapgrid means it is still running.
+    """
+    if process_alive(int(state.get("pid", 0))):
+        return True
+    host = state.get("host") or "127.0.0.1"
+    port = int(state.get("port") or 0)
+    return bool(port) and looks_like_snapgrid(host, port)
+
+
+def running_state(config: Config) -> dict | None:
+    """The state file only counts if that server is still there."""
+    state = read_state(config)
+    if state and state_is_live(state):
+        return state
+    if state:
+        config.state_file.unlink(missing_ok=True)
+    return None
+
+
+def port_is_free(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+def snapgrid_on_port(host: str, port: int) -> dict | None:
+    """Ask whatever is on this port whether it is a snapgrid, and which one.
+
+    The state file is the usual way of finding the running server, but it
+    lives inside the plugins folder - so `stop` typed without the --dir that
+    `start` was given looked in the wrong place and reported nothing running
+    while the server carried on serving. The port is the one thing both
+    commands agree on, so it is what to fall back to.
+    """
+    try:
+        request = urllib.request.Request(
+            f"http://{host}:{port}/api/plugins", headers={"X-Snapgrid": "1"}
+        )
+        with urllib.request.urlopen(request, timeout=1) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+    if "plugins" not in payload:
+        return None
+    return payload.get("server") or {}
+
+
+def looks_like_snapgrid(host: str, port: int) -> bool:
+    """Is the thing already on this port one of ours?"""
+    return snapgrid_on_port(host, port) is not None
+
+
+def found_by_port(config: Config) -> dict | None:
+    """A running server this config has no state file for, found on its port.
+
+    Shaped like the state file so the callers can treat the two the same.
+    """
+    server = snapgrid_on_port(config.host, config.port)
+    if server is None:
+        return None
+    pid = pid_listening_on(config.port, config.host)
+    if not pid:
+        return None
+    return {
+        "pid": pid,
+        "port": config.port,
+        "url": f"http://{config.host}:{config.port}",
+        "started": 0,
+        "plugins_dir": server.get("plugins_dir", ""),
+        "elsewhere": True,          # started with a different plugins folder
+    }
+
+
+def require_port(config: Config) -> None:
+    """Insist on the port that was asked for.
+
+    Moving to another port when this one is busy would mean the address
+    changes under you, and an address you cannot bookmark is not much of an
+    address. So this fails and says what to do instead.
+    """
+    if port_is_free(config.host, config.port):
+        return
+
+    where = f"http://{config.host}:{config.port}"
+    if looks_like_snapgrid(config.host, config.port):
+        raise SystemExit(
+            f"snapgrid: something that looks like snapgrid is already at {where},\n"
+            f"  started from a different folder, or left behind by an earlier run.\n"
+            f"  Open it, or stop it, before starting this one."
+        )
+    raise SystemExit(
+        f"snapgrid: port {config.port} is already in use by something else.\n"
+        f"  Either stop it, or choose another port:\n"
+        f"    {command_hint(config, 'start')} --port 8770\n"
+        f"  To make the choice permanent, put it in {config.plugins_dir / 'snapgrid.toml'}:\n"
+        f"    [server]\n"
+        f"    port = 8770"
+    )
+
+
+# ----- commands ----------------------------------------------------------
+
+def prepare_workspace(config: Config) -> None:
+    try:
+        config.prepare()
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"snapgrid: cannot prepare plugins folder: {exc}") from None
+
+
+def command_serve(args: argparse.Namespace) -> int:
+    config = config_from(args, require_dir=True)
+    prepare_workspace(config)
+
+    # Two servers on one folder would share the database and both schedule the
+    # same plugins, so this is refused rather than made configurable. Run a
+    # second one somewhere else with --dir.
+    existing = running_state(config)
+    if existing:
+        print(
+            f"snapgrid is already running at {existing['url']} (pid {existing['pid']}).\n"
+            f"Use '{command_hint(config, 'stop')}' first, "
+            f"or '{command_hint(config, 'status')}' to see it.",
+            file=sys.stderr,
+        )
+        return 1
+
+    require_port(config)
+
+
+    store = Store(config.db_path)
+    registry = Registry(config.plugins_dir)
+    registry.scan()
+    runner = Runner(store, registry, config)
+    runner.start()
+    scheduler = Scheduler(store, registry, runner)
+    scheduler.start()
+    httpd = make_server(config, store, registry, runner)
+
+    url = f"http://{config.host}:{config.port}"
+    config.state_file.write_text(
+        json.dumps({"pid": os.getpid(), "port": config.port, "host": config.host,
+                    "url": url, "started": time.time()}),
+        encoding="utf-8",
+    )
+
+    print(f"snapgrid {__version__}")
+    print(f"  plugins   {display_path(config.plugins_dir)}  ({len(registry.all())} found)")
+    print(f"  data      {display_path(config.data_dir)}")
+    print(f"  open      {url}")
+    if os.name == "nt":
+        print(f"  stop      Ctrl+C   ({command_hint(config, 'start')} "
+              "runs it in the background)")
+    else:
+        print("  stop      Ctrl+C")
+    if not registry.all():
+        hint = no_plugins_hint(config)
+        if hint:
+            print()
+            print(hint)
+    sys.stdout.flush()
+
+    # Respond to stop the same way as to Ctrl+C, so a backgrounded server
+    # shuts its plugins down cleanly instead of being killed mid-run.
+    def handle_term(_signum, _frame):
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGTERM, handle_term)
+    except (ValueError, AttributeError, OSError):
+        pass
+
+    if args.open:
+        webbrowser.open(url)
+
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopping...")
+    finally:
+        scheduler.stop()
+        runner.stop()
+        httpd.server_close()
+        store.close()
+        config.state_file.unlink(missing_ok=True)
+    return 0
+
+
+def command_start(args: argparse.Namespace) -> int:
+    config = config_from(args, require_dir=True)
+    prepare_workspace(config)
+
+    existing = running_state(config)
+    if existing:
+        print(f"already running at {existing['url']} (pid {existing['pid']})")
+        if args.open:
+            webbrowser.open(existing["url"])
+        return 0
+
+    command = [
+        sys.executable, "-m", "snapgrid_core", "serve",
+        "--dir", str(config.plugins_dir),
+        "--host", config.host,
+        "--port", str(config.port),
+        "--max-concurrent", str(config.max_concurrent),
+    ]
+    detached: dict = {}
+    if os.name == "nt":
+        detached["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+    else:
+        detached["start_new_session"] = True
+
+    with config.log_file.open("a", encoding="utf-8") as log:
+        log.write(f"\n--- started {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+        log.flush()
+        child = subprocess.Popen(
+            command, cwd=str(Path(__file__).resolve().parent.parent),
+            stdout=log, stderr=log, stdin=subprocess.DEVNULL, **detached,
+        )
+
+    deadline = time.time() + START_TIMEOUT
+    while time.time() < deadline:
+        state = running_state(config)
+        if not state and child.poll() is not None:
+            # It gave up already. Say why now rather than after the timeout.
+            break
+        if state:
+            print(f"snapgrid is running in the background at {state['url']}")
+            print(f"  stop   {command_hint(config, 'stop')}")
+            print(f"  log    {display_path(config.log_file)}")
+            registry = Registry(config.plugins_dir)
+            registry.scan()
+            if not registry.all():
+                hint = no_plugins_hint(config)
+                if hint:
+                    print()
+                    print(hint)
+            if args.open:
+                webbrowser.open(state["url"])
+            return 0
+        time.sleep(0.2)
+
+    print("snapgrid did not start:", file=sys.stderr)
+    try:
+        lines = config.log_file.read_text(encoding="utf-8").splitlines()
+        # Only what this attempt wrote, not the whole history of the log.
+        for index in range(len(lines) - 1, -1, -1):
+            if lines[index].startswith("--- started "):
+                lines = lines[index + 1:]
+                break
+        for line in lines[-15:]:
+            print(f"  {line}", file=sys.stderr)
+    except OSError:
+        pass
+    return 1
+
+
+def command_stop(args: argparse.Namespace) -> int:
+    config = config_from(args)
+    # Falling back to the port matters here more than anywhere: a stop that
+    # says "not running" while the server keeps serving is worse than an
+    # error, because it is believed.
+    state = running_state(config) or found_by_port(config)
+    if not state:
+        print("snapgrid is not running")
+        return 0
+
+    pid = int(state["pid"])
+    if not process_alive(pid):
+        # The record is unusable but something is still answering, so ask the
+        # operating system who actually holds the port.
+        # The host this server listens on is in its own record. Matching
+        # against the one on the command line instead would look for a
+        # listener on 127.0.0.1 for a server bound elsewhere, and whatever
+        # answered there would be stopped in its place.
+        holder = pid_listening_on(int(state.get("port") or 0),
+                                  state.get("host") or config.host)
+        if holder:
+            pid = holder
+
+    def kill(force: bool) -> None:
+        try:
+            if os.name == "nt":
+                # No signals here, so the platform's own tool does the work.
+                # /T takes the children with it, and asking politely first buys
+                # nothing.
+                flags = ["/F", "/T"] if force else ["/T"]
+                quiet_run(["taskkill", *flags, "/PID", str(pid)])
+            else:
+                os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+
+    # Where there is no SIGTERM there is no graceful path, so go straight to
+    # forcing it rather than waiting for a request that cannot arrive.
+    kill(force=(os.name == "nt"))
+
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if not state_is_live(state):
+            config.state_file.unlink(missing_ok=True)
+            print(f"stopped (was {state['url']})")
+            return 0
+        time.sleep(0.2)
+
+    kill(force=True)
+    for _ in range(25):
+        if not state_is_live(state):
+            config.state_file.unlink(missing_ok=True)
+            print(f"stopped, after having to force it (pid {pid})")
+            return 0
+        time.sleep(0.2)
+
+    # Say so rather than leaving a record that claims it is stopped, and give
+    # the commands to finish the job. Nobody should have to go looking for
+    # these while a process they did not want is still running.
+    port = int(state.get("port") or 0)
+    print(f"could not stop snapgrid at {state['url']} (pid {pid}). Kill it with:\n",
+          file=sys.stderr)
+    if os.name == "nt":
+        print(f"  netstat -ano | grep {port}          # last column is the pid\n"
+              f"  taskkill //F //T //PID <pid>\n"
+              f"\n"
+              f"  Some shells need the slashes doubled as shown. A shell's own kill\n"
+              f"  command may not accept this process id, so prefer the one above.\n"
+              f"  Ending it from the system's own process viewer works too.",
+              file=sys.stderr)
+    else:
+        print(f"  lsof -ti tcp:{port} | xargs kill -9\n"
+              f"\n"
+              f"  or, if you know the pid:  kill -9 {pid}", file=sys.stderr)
+    print(f"\nThen remove the stale record:\n"
+          f"  rm -f {display_path(config.state_file)}", file=sys.stderr)
+    return 1
+
+
+def command_status(args: argparse.Namespace) -> int:
+    config = config_from(args)
+    state = running_state(config) or found_by_port(config)
+    if not state:
+        print("snapgrid is not running")
+        return 1
+    print(f"snapgrid is running at {state['url']}")
+    if state.get("elsewhere"):
+        # Running, but started from another plugins folder, so this config
+        # knows nothing about it beyond what it just answered.
+        print(f"  pid     {state['pid']}")
+        print(f"  plugins {state['plugins_dir'] or 'somewhere else'}")
+        print(f"  note    started with a different plugins folder, so its log "
+              f"is not {display_path(config.log_file)}")
+        print(f"  stop    ./server.py stop")
+        return 0
+    started = time.strftime("%H:%M:%S", time.localtime(state.get("started", 0)))
+    print(f"  pid     {state['pid']}, since {started}")
+    print(f"  plugins {display_path(config.plugins_dir)}")
+    print(f"  log     {display_path(config.log_file)}")
+    print(f"  stop    {command_hint(config, 'stop')}")
+    return 0
+
+
+def command_validate(args: argparse.Namespace) -> int:
+    from .validate import validate_plugin
+    try:
+        print(validate_plugin(args.path, args.csv))
+    except Exception as exc:
+        print(f"snapgrid: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ----- argument parsing --------------------------------------------------
+
+def plugins_path(value: str) -> Path:
+    if not value:
+        raise argparse.ArgumentTypeError("--dir must name the folder holding your plugins")
+    return Path(value)
+
+
+def add_location_arguments(parser: argparse.ArgumentParser, *, required: bool = False) -> None:
+    parser.add_argument(
+        "--dir", type=plugins_path, required=required,
+        help="the folder holding your plugins; data stays in <dir>/.snapgrid"
+             + (" (required)" if required else ""),
+    )
+
+
+def add_server_arguments(parser: argparse.ArgumentParser) -> None:
+    add_location_arguments(parser, required=True)
+    parser.add_argument("--host", help="default: 127.0.0.1, this machine only")
+    parser.add_argument("--port", type=int,
+                        help="default: 8765, or [server] port in snapgrid.toml")
+    parser.add_argument("--max-concurrent", type=int, help="how many plugins may run at once")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="snapgrid", description="Put a script in a folder, get a table in your browser."
+    )
+    parser.add_argument("--version", action="version", version=f"snapgrid {__version__}")
+    subparsers = parser.add_subparsers(dest="command")
+
+    start = subparsers.add_parser(
+        "start",
+        help="run in the background" + ("" if os.name == "nt" else " (the default)"),
+    )
+    add_server_arguments(start)
+    start.add_argument("--open", action="store_true", help="also open it in your browser")
+    start.set_defaults(func=command_start)
+
+    stop = subparsers.add_parser("stop", help="stop the background server")
+    add_location_arguments(stop)
+    stop.set_defaults(func=command_stop)
+
+    status = subparsers.add_parser("status", help="show whether it is running, and where")
+    add_location_arguments(status)
+    status.set_defaults(func=command_status)
+
+    serve = subparsers.add_parser(
+        "serve",
+        help="run in the foreground, Ctrl+C to stop"
+             + (" (the default)" if os.name == "nt" else ""),
+    )
+    add_server_arguments(serve)
+    serve.add_argument("--open", action="store_true", help="also open it in your browser")
+    serve.set_defaults(func=command_serve)
+
+    validate = subparsers.add_parser("validate", help="check a plugin without running it")
+    validate.add_argument("path", type=Path, help="the plugin folder")
+    validate.add_argument("--csv", type=Path, help="captured CSV stdout to check")
+    validate.set_defaults(func=command_validate)
+
+    return parser
+
+
+COMMANDS = {"start", "stop", "status", "serve", "validate"}
+
+# What running it with no command does. Where a background server can be
+# managed reliably that is "start": run detached and hand the terminal back.
+# Where it cannot, it is "serve": run here, Ctrl+C to stop.
+#
+# Background mode has to detach a process and later find and kill it again, and
+# without signals every part of that is less dependable - process ids may not be
+# the numbers the shell shows, kill may not accept them, and a server that will
+# not stop has to be ended some other way. A foreground server has none of those
+# problems: it is in front of you, and Ctrl+C ends it. "start" remains available
+# either way.
+DEFAULT_COMMAND = "serve" if os.name == "nt" else "start"
+# Flags that swallow the next word, so a folder called "stop" is not mistaken
+# for a command.
+VALUE_FLAGS = {"--dir", "--host", "--port", "--max-concurrent"}
+
+
+def normalise(argv: list[str]) -> list[str]:
+    """Allow the command anywhere, and default to starting in the background.
+
+    argparse wants the command first, but people write
+    "./server.py --dir somewhere status", and running it with no command at all
+    should do the thing you nearly always want.
+    """
+    if argv and argv[0] in ("-h", "--help", "--version"):
+        return argv
+
+    skip_next = False
+    for index, token in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if token in VALUE_FLAGS:
+            skip_next = True
+            continue
+        if token.startswith("-"):
+            continue
+        if token in COMMANDS:
+            return [token] + argv[:index] + argv[index + 1:]
+        break  # a positional that is not a command, so leave it alone
+    return [DEFAULT_COMMAND] + argv
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    argv = normalise(list(sys.argv[1:] if argv is None else argv))
+    args = parser.parse_args(argv)
+    if not hasattr(args, "func"):
+        args = parser.parse_args([DEFAULT_COMMAND])
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

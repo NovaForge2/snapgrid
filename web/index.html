@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snapgrid</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%232f6f4e'/><g fill='white'><rect x='3' y='4' width='10' height='1.6'/><rect x='3' y='7.2' width='10' height='1.6'/><rect x='3' y='10.4' width='10' height='1.6'/></g></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="banner" hidden></div>
+<div id="layout">
+  <aside id="sidebar">
+    <div id="brand">
+      <span id="brand-text">snapgrid</span>
+      <span class="grow"></span>
+      <button id="btn-pause-all" type="button" class="icon-btn" hidden></button>
+      <button id="sidebar-toggle" type="button" title="Hide the panel"
+              aria-label="Hide the plugin panel">&#171;</button>
+    </div>
+    <div id="plugin-list"></div>
+    <div id="sidebar-foot">
+      <span id="server-note"></span>
+      <span class="grow"></span>
+      <button id="btn-quit" type="button" class="quiet"
+              title="Stop snapgrid. The page will say how to start it again">Stop</button>
+    </div>
+  </aside>
+
+  <div id="sidebar-grip" class="grip" role="separator" aria-orientation="vertical"
+       tabindex="0" title="Drag to resize. Double-click to reset"></div>
+
+  <button id="sidebar-show" type="button" title="Show the plugin panel"
+          aria-label="Show the plugin panel">&#187;</button>
+
+  <main id="main">
+    <div id="empty" class="placeholder">
+      <h2 id="empty-title">No plugin selected</h2>
+      <p id="empty-text">Pick one on the left.</p>
+      <pre id="empty-command" hidden></pre>
+    </div>
+
+    <section id="panel" hidden>
+      <header id="panel-head">
+        <h1 id="p-name"></h1>
+        <p id="p-desc"></p>
+        <div id="p-meta"></div>
+        <div id="p-paused" hidden></div>
+      </header>
+
+      <!-- What is done to the data and to the table: run it, pick a result,
+           compare, search, choose columns, take it away. Everything that is a
+           preference rather than an action is behind the More button at the
+           end of the row. -->
+      <div id="toolbar">
+        <button id="btn-refresh" type="button"
+                title="Run the plugin now, without waiting for the schedule">Run now</button>
+        <button id="btn-cancel" type="button" hidden>Cancel</button>
+        <select id="snapshot-picker" hidden aria-label="Which result to show"></select>
+        <select id="compare-picker" hidden aria-label="Which result to compare with"></select>
+        <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
+        <span id="row-note"></span>
+        <!-- Back on this row. Moved down beside the table, it read well in a
+             screenshot and failed the only test that counts: the person who
+             uses this every day went looking for it and did not find it. -->
+        <button id="btn-columns" type="button" aria-haspopup="true"
+                aria-expanded="false" title="Choose which columns to show">Columns</button>
+        <button id="btn-compact" type="button"
+                title="Show rows that are identical in the visible columns once, with a count">Compact</button>
+        <button id="btn-clear" type="button" class="quiet" hidden>Clear filters</button>
+        <button id="btn-xlsx" class="quiet" type="button" title="Download the current view: visible columns and rows, in their displayed order">Export Excel</button>
+
+        <!-- A disclosure button rather than a role=menu: what is inside is a
+             pair of stepper buttons and a three-way switch, not a list of
+             commands, and claiming the menu role would promise arrow-key
+             navigation that these controls do not have. Tab walks it. -->
+        <div id="view-wrap">
+          <button id="btn-view" type="button" class="quiet" aria-haspopup="true"
+                  aria-expanded="false" aria-controls="view-popup"
+                  title="Text size, theme, log and configuration">More
+            <span class="caret" aria-hidden="true">&#9662;</span></button>
+          <div id="view-popup" hidden aria-label="View and preferences">
+            <div class="menu-row">
+              <span class="menu-label" id="text-size-label">Text in the table</span>
+              <span class="menu-controls" role="group" aria-labelledby="text-size-label">
+                <button id="btn-smaller" type="button"
+                        title="Smaller text in the table">A&#8722;</button>
+                <span id="text-size-now" aria-live="polite"></span>
+                <button id="btn-bigger" type="button"
+                        title="Bigger text in the table">A+</button>
+              </span>
+            </div>
+            <div class="menu-row">
+              <span class="menu-label" id="theme-label">Theme</span>
+              <span class="menu-controls">
+                <button id="theme" type="button" title="Light, dark, or follow the system"
+                        aria-label="Light, dark, or follow the system">auto</button>
+              </span>
+            </div>
+            <div class="menu-sep" role="separator"></div>
+            <button id="btn-log" type="button" class="menu-item">Log</button>
+            <button id="btn-config" type="button" class="menu-item">Config</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="message" hidden></div>
+
+      <div id="diff-bar" hidden>
+        <span id="diff-what"></span>
+        <span id="diff-tally"></span>
+        <span class="grow"></span>
+        <label id="diff-only"><input id="diff-only-box" type="checkbox"> Only what changed</label>
+      </div>
+
+
+      <div id="table-wrap"></div>
+
+      <aside id="side" hidden>
+        <div id="side-grip" class="grip" role="separator" aria-orientation="vertical"
+             tabindex="0" title="Drag to resize. Double-click to reset"></div>
+        <header id="side-head">
+          <button id="side-log" type="button" class="side-tab">Log</button>
+          <button id="side-config" type="button" class="side-tab">Config</button>
+          <span class="grow"></span>
+          <button id="side-follow" type="button" class="side-tab" hidden
+                  title="Keep the newest line in view as the log grows">Follow</button>
+          <button id="side-close" type="button" title="Close" aria-label="Close">&#215;</button>
+        </header>
+        <pre id="log-text" hidden></pre>
+        <div id="config-body" hidden></div>
+      </aside>
+    </section>
+  </main>
+</div>
+
+<div id="filter-popup" hidden></div>
+<div id="cell-history" hidden></div>
+<script src="colour.js"></script>
+<script src="compare.js"></script>
+<script src="data.js"></script>
+<script src="export.js"></script>
+<script src="app.js"></script>
+<!-- Shown after the server has been asked to stop. There is nothing to go
+     back to at that point, so it has to say how to start it again. -->
+<div id="stopped" hidden>
+  <div class="card">
+    <h2>snapgrid has stopped</h2>
+    <p>Nothing is running and nothing is listening on this address.</p>
+    <p class="how">To start it again, in the folder you cloned it into:</p>
+    <pre id="stopped-command"></pre>
+    <p class="small">Then reload this page.</p>
+  </div>
+</div>
+
+</body>
+</html>

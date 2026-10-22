@@ -1,0 +1,34 @@
+# snapgrid settings.
+#
+# This file configures the server. A plugin.toml inside a plugin folder
+# configures one plugin - different file, different job.
+#
+# It applies to every plugins folder used on this machine. A snapgrid.toml
+# placed beside a particular plugins folder overrides it, key by key, and a
+# command line option overrides both.
+
+[server]
+
+# Shown in the corner of the page and in the browser tab. Worth changing when
+# you run more than one, so you can tell them apart.
+title = "snapgrid"
+
+# The address does not move, so it can be bookmarked. If this port is taken,
+# snapgrid says so and stops rather than changing the address under you.
+# Changing it takes effect on the next start.
+port = 8765
+
+# How many plugins may run at once. The rest wait in a queue. Keep it low if
+# your plugins all talk to the same system with the same credentials.
+max_concurrent = 3
+
+
+# A message across the top of the page, for whoever is looking at this one.
+# Uncomment to show it. Readers can close it, and it comes back when the server
+# restarts or the message changes. Takes effect within a few seconds, no restart.
+#
+# level is one of: info (blue), warning (amber), error (red).
+#
+# [banner]
+# text  = "ENV2 is temporarily unavailable; ignore its versions."
+# level = "warning"

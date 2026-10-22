@@ -1,0 +1,31 @@
+# Whether each endpoint answers, and how quickly.
+# Edit urls.txt to say which ones. Nothing else to configure.
+
+[plugin]
+name        = "Endpoint health"
+description = "Status code and response time for each URL in urls.txt"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = "5m"            # each URL gets 8 seconds of its own
+every   = "5m"            # often enough to notice, rare enough to be polite
+
+[table]
+# What names a row, so two runs can be lined up. Defaults to the first column.
+key = "endpoint"
+
+# Anything that is not a 200 is worth looking at, and slow is worth noticing
+# before it becomes down. A host that could not be reached at all has no
+# status, and an empty cell is matched by neither rule, so it stays plain -
+# the row is there, which is the point.
+[colour.status]
+"= 200" = "green"
+"!= 200" = "red"
+
+[colour.ms]
+"> 2000" = "red"
+"> 800"  = "amber"
+
+[history]
+keep = 20

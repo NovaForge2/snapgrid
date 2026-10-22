@@ -1,0 +1,6 @@
+# One URL per line. Comments and blank lines are ignored.
+https://example.com
+https://www.python.org
+https://github.com
+# an internal service might look like:
+# https://intranet.example.internal/health

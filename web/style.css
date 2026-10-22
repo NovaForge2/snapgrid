@@ -1,0 +1,776 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+:root {
+  --bg: #f6f7f8;
+  --panel: #ffffff;
+  --text: #1c2024;
+  --muted: #6b7480;
+  --line: #dfe3e8;
+  --accent: #2f6f4e;
+  --accent-soft: #e6f1eb;
+  --ok: #2e8b57;
+  --fail: #c0392b;
+  --warn: #c98a12;
+  --run: #2b6cb0;
+  --hover: #eef2f5;
+  --zebra: #fafbfc;
+  --grid: #d3d9e0;
+  --guide: #e9edf1;
+  --syn-comment: #8a9199;
+  --syn-section: #2f6f4e;
+  --syn-key: #1c2024;
+  --syn-string: #a33d2f;
+  --syn-number: #2b6cb0;
+  --syn-bool: #7b4bb5;
+}
+/* Dark applies when the system asks for it, unless light was chosen here, and
+   whenever dark was chosen here regardless of the system. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171a;
+    --panel: #1b1f23;
+    --text: #e6e9ec;
+    --muted: #9aa4af;
+    --line: #2b3238;
+    --accent: #5fb98c;
+    --accent-soft: #23312b;
+    --ok: #5fb98c;
+    --fail: #e8776a;
+    --warn: #e0b24b;
+    --run: #6aa9e0;
+    --hover: #232a31;
+    --zebra: #1f242a;
+    --grid: #333b43;
+    --guide: #272e35;
+    --syn-comment: #77818b;
+    --syn-section: #5fb98c;
+    --syn-key: #e6e9ec;
+    --syn-string: #e0907f;
+    --syn-number: #7fb2e5;
+    --syn-bool: #bd9ae8;
+  }
+}
+:root[data-theme="dark"] {
+    --bg: #14171a;
+    --panel: #1b1f23;
+    --text: #e6e9ec;
+    --muted: #9aa4af;
+    --line: #2b3238;
+    --accent: #5fb98c;
+    --accent-soft: #23312b;
+    --ok: #5fb98c;
+    --fail: #e8776a;
+    --warn: #e0b24b;
+    --run: #6aa9e0;
+    --hover: #232a31;
+    --zebra: #1f242a;
+    --grid: #333b43;
+    --guide: #272e35;
+    --syn-comment: #77818b;
+    --syn-section: #5fb98c;
+    --syn-key: #e6e9ec;
+    --syn-string: #e0907f;
+    --syn-number: #7fb2e5;
+    --syn-bool: #bd9ae8;
+}
+
+* { box-sizing: border-box; }
+/* Elements below set display explicitly, which would otherwise beat [hidden]. */
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+#layout { display: flex; height: 100%; }
+
+/* ---------- resizing ----------
+   Both panels are dragged by a grip sitting on the edge between them. The
+   grip is wider than the line it draws, because a 1px target is a fight. */
+:root { --sidebar-width: 260px; --side-width: min(460px, 60%); }
+.grip {
+  flex: 0 0 9px; width: 9px; margin-left: -5px; z-index: 6;
+  cursor: col-resize; background: transparent;
+  transition: background .12s;
+}
+.grip:hover, .grip:focus-visible, .grip.dragging { background: var(--accent); opacity: .55; }
+.grip:focus-visible { outline: none; }
+#side-grip {
+  position: absolute; top: 0; bottom: 0; left: 0; margin: 0; height: 100%;
+}
+/* While dragging, nothing else should decide it is being selected or hovered. */
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe, body.resizing .grip { pointer-events: none; }
+
+/* ---------- hiding the left panel ----------
+   Worth having on a laptop, where 260px of plugin names is 260px not spent on
+   the table. The way back has to stay visible, so a collapsed panel leaves a
+   button behind rather than disappearing completely. */
+body.no-sidebar #sidebar, body.no-sidebar #sidebar-grip { display: none; }
+#sidebar-toggle, #sidebar-show {
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 5px;
+}
+#sidebar-toggle:hover, #sidebar-show:hover { background: var(--hover); color: var(--text); }
+#brand { display: flex; align-items: center; gap: 8px; }
+#brand .grow { flex: 1; }
+#sidebar-show {
+  position: absolute; top: 10px; left: 8px; z-index: 7;
+  background: var(--panel); border: 1px solid var(--line);
+}
+body:not(.no-sidebar) #sidebar-show { display: none; }
+/* A gutter for the button to live in, so it never sits on top of the title. */
+body.no-sidebar #main { padding-left: 32px; }
+body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-height)); }
+
+/* A message set in snapgrid.toml, for whoever is looking at this instance. */
+:root { --banner-height: 38px; }
+#banner {
+  height: var(--banner-height); display: flex; align-items: center;
+  padding: 0 20px; font-size: 13px; font-weight: 500;
+  border-bottom: 1px solid var(--line); background: var(--panel); color: var(--text);
+}
+.banner-text { flex: 1; }
+.banner-close {
+  border: 0; background: none; color: inherit; cursor: pointer;
+  font-size: 20px; line-height: 1; padding: 0 4px; border-radius: 4px; opacity: .65;
+}
+.banner-close:hover { opacity: 1; background: rgba(128, 128, 128, .18); }
+#banner.info { background: #e8f0fb; color: #1d4f91; border-bottom-color: #c3d8f2; }
+#banner.warning { background: #fdf3da; color: #7a5600; border-bottom-color: #ecd9a4; }
+#banner.error { background: #fbe9e7; color: #a32b1c; border-bottom-color: #f0c4bd; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  #banner.info { background: #17293d; color: #9dc4ef; border-bottom-color: #23405e; }
+  #banner.warning { background: #38300f; color: #e5c76b; border-bottom-color: #55481a; }
+  #banner.error { background: #3b1d18; color: #f0a093; border-bottom-color: #5a2a22; }
+  }
+}
+:root[data-theme="dark"] {
+  #banner.info { background: #17293d; color: #9dc4ef; border-bottom-color: #23405e; }
+  #banner.warning { background: #38300f; color: #e5c76b; border-bottom-color: #55481a; }
+  #banner.error { background: #3b1d18; color: #f0a093; border-bottom-color: #5a2a22; }
+}
+
+/* ---------- sidebar ---------- */
+#sidebar {
+  width: var(--sidebar-width); flex: 0 0 var(--sidebar-width); background: var(--panel);
+  border-right: 1px solid var(--line); display: flex; flex-direction: column;
+}
+#brand {
+  padding: 14px 16px; font-weight: 600; letter-spacing: .3px;
+  border-bottom: 1px solid var(--line); color: var(--accent);
+}
+#plugin-list { overflow-y: auto; flex: 1; padding: 8px 0; }
+.group-label {
+  padding: 12px 16px 4px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted);
+}
+/* A row, not a button: the pause control in front of the name has to be its
+   own button, and a button inside a button is not a thing. */
+.plugin { display: flex; align-items: center; width: 100%; }
+.plugin:hover { background: var(--hover); }
+.plugin.selected { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.plugin .pick {
+  display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
+  padding: 7px 16px 7px 4px; border: 0; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer; border-radius: 0;
+}
+.plugin .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin.paused .label { color: var(--muted); }
+
+/* ---------- pause and resume ----------
+   One control, two shapes: bars while it is running to its schedule, a
+   triangle while it is not. The triangle is the louder of the two on purpose -
+   a paused plugin shows a table that looks exactly like a current one, and
+   that is the thing worth noticing from across the list. */
+.icon-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  /* 24x24: the smallest a pointer target is allowed to be. The mark inside
+     is 10px, so it looks the same and is easier to hit. */
+  width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px;
+  background: none; color: var(--muted); cursor: pointer; opacity: .7;
+}
+.icon-btn:hover { opacity: 1; }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+.icon-btn svg { width: 10px; height: 10px; fill: currentColor; }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn.on { color: var(--changed); }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+
+.pause-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; margin-left: 6px; padding: 0;
+  border: 0; border-radius: 4px; background: none; cursor: pointer;
+  /* Always there, so the control is where you expect it rather than appearing
+     under the pointer - but quiet, so ten plugins read as a list of names with
+     something beside them rather than as a row of buttons. Not quieter than
+     .6, which is where it stops meeting the 3:1 a control has to have. */
+  color: var(--muted); opacity: .6;
+}
+.pause-btn svg { width: 9px; height: 9px; fill: currentColor; }
+.plugin:hover .pause-btn { opacity: .85; }
+.pause-btn:hover { background: var(--panel); color: var(--text); opacity: 1; }
+.pause-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; opacity: 1; }
+/* A paused one is not quiet: the table it is showing looks exactly like a
+   current one, and this is what says otherwise from across the list. */
+.pause-btn.on, .plugin:hover .pause-btn.on { color: var(--changed); opacity: 1; }
+.pause-btn:disabled { opacity: .5; cursor: default; }
+.pause-gap { flex: none; width: 24px; margin-left: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--ok); }
+.dot.failed, .dot.timeout, .dot.broken { background: var(--fail); }
+.dot.cancelled, .dot.disabled { background: var(--muted); }
+.dot.running { background: var(--run); animation: pulse 1s ease-in-out infinite; }
+.dot.queued { background: var(--warn); }
+@keyframes pulse { 50% { opacity: .25; } }
+#sidebar-foot {
+  padding: 8px 10px 8px 16px; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: 12px;
+  /* Wraps rather than squeezes: at 260px the count and two buttons do not sit
+     on one line, and two tidy rows beat three cramped columns. */
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px;
+}
+#sidebar-foot .grow { flex: 1; }
+/* Small, out of the way, and nowhere near anything used often. Stopping is
+   cheap to undo but annoying to do by accident. */
+#btn-quit, #btn-pause-all { font-size: 12px; padding: 2px 8px; }
+#server-note.some-paused { color: var(--changed); }
+
+/* A paused plugin shows a table that looks exactly like a current one, which
+   is the whole risk of the feature - so this is a chip rather than a line of
+   prose, and it says what still works as well as what has stopped. */
+#p-paused {
+  margin-top: 8px; font-size: 12px; color: var(--changed);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--changed) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--changed) 32%, transparent);
+}
+#p-paused svg { width: 9px; height: 9px; fill: currentColor; flex: none; }
+#btn-quit:hover { color: var(--fail); border-color: var(--fail); }
+
+/* ---------- after the server has gone ----------
+   Over everything, because nothing underneath it works any more and a page
+   that looks alive but answers nothing is worse than a plain message. */
+#stopped {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 24px;
+}
+#stopped[hidden] { display: none; }
+#stopped .card {
+  max-width: 460px; padding: 24px 28px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel);
+}
+#stopped h2 { margin: 0 0 10px; font-size: 18px; }
+#stopped p { margin: 0 0 10px; color: var(--muted); }
+#stopped .how { margin-top: 16px; color: var(--text); }
+#stopped pre {
+  margin: 0; padding: 10px 12px; border-radius: 6px;
+  background: var(--hover); border: 1px solid var(--line);
+  font-size: 13px; overflow-x: auto;
+}
+#stopped .small { margin: 10px 0 0; font-size: 12px; }
+/* In the toolbar rather than the sidebar foot, because hiding the sidebar
+   used to take the only way of changing the theme with it. */
+#theme { color: var(--muted); min-width: 5.5em; text-align: left; }
+#theme:hover { color: var(--text); border-color: var(--accent); }
+
+/* ---------- main ---------- */
+#main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.placeholder { margin: auto; max-width: 420px; text-align: center; color: var(--muted); padding: 24px; }
+.placeholder h2 { color: var(--text); font-size: 18px; margin-bottom: 6px; }
+#empty-command {
+  margin: 14px 0 0; padding: 10px 12px; text-align: left;
+  border: 1px solid var(--grid); border-radius: 6px; background: var(--zebra);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+#panel { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
+/* Name, what it is, and how it stands - in that order, down the left. The
+   state used to sit in the far corner, a screen's width from the heading it
+   belonged to, in the smallest type on the page: it is the first thing anyone
+   opening this wants to know. */
+/* The name leads, the description follows it, and the schedule, history and
+   freshness come third - they are facts about the plugin rather than the
+   thing you came to read, so they are smaller and quieter than the
+   description above them rather than the same size in a different colour. */
+#panel-head { padding: 14px 20px 10px; }
+#p-name { margin: 0; font-size: 19px; line-height: 1.25; }
+#p-desc { margin: 4px 0 0; color: var(--muted); max-width: 90ch; }
+/* Space between the facts rather than a character: every separator that can
+   be typed or drawn ends up orphaned at the start or the end of a line once
+   the row wraps, and this row wraps on any narrow window. */
+#p-meta {
+  margin-top: 8px; color: var(--muted); font-size: 11.5px;
+  display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: baseline;
+}
+#p-meta .fact { white-space: nowrap; }
+
+#toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 0 20px 12px; border-bottom: 1px solid var(--line);
+}
+/* The quietest thing on the row: a count, not a control. */
+#row-note { color: var(--muted); font-size: 11.5px; }
+/* Something is being kept from view, so the button says so. */
+#btn-columns.active, #btn-compact.active { color: var(--accent); border-color: var(--accent); }
+#btn-compact:disabled { opacity: .45; cursor: default; }
+button, select, input[type=search], #btn-xlsx {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px;
+}
+button, #btn-xlsx { cursor: pointer; text-decoration: none; }
+button:hover, #btn-xlsx:hover { background: var(--hover); }
+/* One visible focus ring, in the accent, for everything that takes the
+   keyboard. The browser's own is there by default and is the wrong colour
+   against the dark theme; the grips keep their own, which is the grip itself
+   lighting up rather than a rectangle around a 6px line. */
+button:focus-visible, select:focus-visible, input:focus-visible,
+a:focus-visible, .th-label:focus-visible, .value-row:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+/* Nine controls of equal weight is a wall, so the ones that change the view
+   rather than the data are quieter - in their lettering only. Taking their
+   borders away as well left them looking like stray words rather than things
+   to press, and Log and Config disappeared altogether. */
+.quiet { color: var(--muted); }
+.quiet:hover { color: var(--text); }
+#btn-refresh { background: var(--accent); border-color: var(--accent); color: #fff; }
+#btn-refresh:hover { filter: brightness(1.08); }
+#btn-refresh[disabled] { opacity: .55; cursor: default; filter: none; }
+/* Wide enough to read a search term in and no wider. It used to take all the
+   slack on the row, which was right when nine other controls were competing
+   for it - and wrong the moment five of them moved behind More: a search box
+   half the width of the screen for terms that are rarely longer than a word.
+   The slack goes to the gap before More instead, which is empty space and
+   does not mind having it. */
+input[type=search] { flex: 0 1 280px; min-width: 0; }
+/* A dropdown is as wide as its longest option unless it is told otherwise, and
+   these hold dated snapshot labels - 486px of the row went on two of them,
+   which is what pushed Config onto a line of its own. */
+#toolbar select { min-width: 0; max-width: 180px; flex: 0 1 auto; text-overflow: ellipsis; }
+/* Last on the line, however the line wraps. A fixed order with the search box
+   taking the slack put it in the middle of a narrow window. */
+#view-wrap { position: relative; margin-left: auto; flex: none; }
+#btn-view[aria-expanded="true"] { color: var(--text); border-color: var(--accent); background: var(--hover); }
+#btn-view .caret { font-size: 9px; margin-left: 3px; vertical-align: 1px; }
+/* Hung from the button's right edge by default, and moved by the script when
+   that would put its left edge off the screen. A width rather than a minimum,
+   so the cap below can actually win: min-width beats max-width in CSS, and a
+   menu that refuses to shrink is a menu with its controls off the edge. */
+#view-popup {
+  position: absolute; top: calc(100% + 4px); right: 0; z-index: 40;
+  width: 250px; max-width: calc(100vw - 16px); padding: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+}
+.menu-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 5px 8px;
+}
+.menu-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.menu-controls { display: flex; align-items: center; gap: 4px; flex: none; }
+#text-size-now {
+  color: var(--muted); font-size: 11px; min-width: 3.2em; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.menu-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+/* Full width and left aligned: these two open a panel, and a centred label
+   in a button the width of the menu reads as a dialog's OK. */
+.menu-item {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  padding: 6px 8px; border-radius: 6px; color: var(--text);
+}
+.menu-item:hover { background: var(--hover); }
+.menu-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* ---------- a narrow window ----------
+   Nothing here is hidden at a smaller width; the rows are allowed to wrap and
+   the parts that were holding the line open stop holding it. The pickers in
+   particular were capped at 180px to keep one long row together - on a narrow
+   screen there is no long row to keep together, and a clipped label is worse
+   than a second line. */
+@media (max-width: 760px) {
+  #panel-head { padding: 12px 14px 10px; }
+  #toolbar, #diff-bar, #message { padding-left: 14px; padding-right: 14px; }
+  #toolbar select { max-width: none; flex: 1 1 160px; }
+  input[type=search] { flex: 1 1 100%; }
+  /* Pushed right by a margin, which on its own line puts it in the middle of
+     nowhere. On a wrapped row it goes back to the left with everything else. */
+  #view-wrap { margin-left: 0; }
+  #p-name { font-size: 17px; }
+}
+
+#message {
+  margin: 12px 20px 0; padding: 10px 12px; border-radius: 6px;
+  border: 1px solid var(--fail); color: var(--fail); background: var(--panel);
+  white-space: pre-wrap; font-size: 13px;
+}
+#message.info { border-color: var(--line); color: var(--muted); }
+
+/* ---------- table ---------- */
+/* The table shrinks to its contents because it is a flex item that is not
+   allowed to grow. `width: max-content` on a table was the obvious way to
+   say this and is not honoured everywhere: where it is ignored the table
+   fills the box instead and hands the whole surplus to the last column. */
+#table-wrap {
+  flex: 1; min-height: 0; overflow: auto; padding: 0;
+  display: flex; flex-direction: column; align-items: flex-start;
+}
+table {
+  /* The one place the grid's text size is set. Everything inside is in em, so
+     changing this moves the padding and the smaller type with it rather than
+     leaving a bigger font in a box built for a smaller one. */
+  border-collapse: separate; border-spacing: 0; font-size: var(--grid-text, 13px);
+  /* Exactly as wide as the widest value in each column, and no wider. It used
+     to be stretched to fill the pane, and everything it gained that way became
+     slack inside the columns. */
+  width: auto; min-width: 0; flex: 0 0 auto; max-width: none;
+  margin: 0 20px 20px;
+  /* An edge all the way round. Without one a narrow table on a wide screen
+     has nothing to sit in, and the space beside it reads as missing content
+     rather than as space. */
+  border: 1px solid var(--grid); border-radius: 8px;
+  /* Numbers, versions and dates all line up when the digits are one width. */
+  font-variant-numeric: tabular-nums;
+}
+thead th {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--panel); background-clip: padding-box;
+  border-right: 1px solid var(--grid);
+  /* Drawn as shadows so they stay put while the header is stuck. */
+  box-shadow: inset 0 1px 0 var(--grid), inset 0 -2px 0 var(--grid);
+  text-align: left; padding: 0; white-space: nowrap;
+}
+.th-inner { display: flex; align-items: center; gap: .3em; padding: .62em .46em .62em .77em; }
+/* Clicking a heading sorts by it, which nothing on screen said: the only mark
+   in there is the filter caret, which means something else. */
+thead th .th-label { cursor: pointer; }
+thead th:hover .th-label { color: var(--accent); }
+
+/* ---------- column widths ----------
+   Once any column has been given a width, the table is laid out from those
+   widths: otherwise widening one column silently narrows another. */
+#table-wrap table.fixed {
+  table-layout: fixed;
+}
+#table-wrap table.fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* No `position: relative` here. It was added so the resize grip inside a
+   heading had something to anchor to, and it silently replaced the sticky
+   position set above - so the headings scrolled away with the rows, which is
+   the one thing a heading must not do. `sticky` is already a positioned
+   value, so the grip anchors to it just the same. */
+.col-grip {
+  /* Inside the heading, not hanging off it. At right: -3px the last column's
+     grip sat outside the table and could be clipped away by the scrolling
+     box around it, which made that one column impossible to grab. */
+  position: absolute; top: 0; right: 0; bottom: 0; width: 16px;
+  cursor: col-resize; z-index: 4;
+}
+.col-grip:hover, .col-grip:active { background: var(--accent); opacity: .5; }
+
+/* ---------- comparing two results ----------
+   Three marks, one per kind of change: a value that differs, a row that
+   arrived, a row that went. */
+:root { --added: #2f6f4e; --removed: #a13b3b; --changed: #8a6d1f; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --added: #5fb98c; --removed: #e08585; --changed: #d9b45c; }
+}
+:root[data-theme="dark"] { --added: #5fb98c; --removed: #e08585; --changed: #d9b45c; }
+
+#diff-bar {
+  display: flex; align-items: baseline; gap: 8px 16px; flex-wrap: wrap;
+  padding: 8px 20px; border-bottom: 1px solid var(--line);
+  background: var(--accent-soft); font-size: 13px;
+}
+#diff-bar > * { flex: none; }
+#diff-bar .grow { flex: 1; }
+#diff-what { font-weight: 600; }
+#diff-tally { color: var(--muted); display: flex; gap: 8px 16px; flex-wrap: wrap; align-items: baseline; }
+#diff-tally > span { white-space: nowrap; }
+#diff-tally b { font-weight: 600; }
+#diff-tally .c-changed b { color: var(--changed); }
+#diff-tally .c-added b { color: var(--added); }
+#diff-tally .c-removed b { color: var(--removed); }
+#diff-only { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+
+/* A cell holding several runs: newest on top, older ones quieter beneath.
+   Nothing is struck through - an older version was not deleted, it is just
+   older. A value equal to the line above is a dot, so the eye lands on the
+   cells that actually moved. */
+td.stack { padding: 0; vertical-align: top; }
+/* Every line in every cell of the row is the same height, which is what makes
+   the guides line up: line three is the third run the whole way across. The
+   height comes from the grid's text size rather than from each line's own
+   font, because an older line is set slightly smaller and an em there would
+   be a shorter em. */
+table { --stack-line: calc(var(--grid-text, 13px) * 2.1); }
+td.stack .v {
+  display: block; height: var(--stack-line); padding: .34em .77em;
+  /* A guide across the cells of one row, so a value can be traced back to
+     the run it belongs to in the legend above. Fainter than a cell rule:
+     it joins values along a row rather than dividing the table up. */
+  border-bottom: 1px solid var(--guide);
+  font-variant-numeric: tabular-nums; cursor: pointer;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+/* The bottom one is the row's own rule, and the cell draws that. */
+td.stack .v:last-child { border-bottom: 0; }
+/* A cell written once still has to carry the guides, or they stop at it and
+   the eye loses the line it was following. Empty rather than dotted: a dot
+   means "the same as the line above", and these are not saying that - the
+   one value above them covers every run. */
+td.stack .v.rule { cursor: default; }
+td.stack .v.now { font-weight: 600; }
+td.stack .v.old { color: var(--muted); font-size: .92em; }
+/* It says "the same as the line above", which is information, so it is not
+   allowed to fade into the background the way a decoration could. */
+td.stack .v.same { color: var(--muted); opacity: .6; }
+td.stack .v.gap { color: var(--muted); opacity: .55; font-size: .92em; }
+td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent); }
+/* The name is written once and sits at the top, beside its lines. */
+td.stack.name .v { border-bottom: 0; cursor: default; }
+/* An unstacked cell in a compared table opens that cell's history as well, so
+   it says so the same way a stacked line does. */
+td.has-history { cursor: pointer; }
+
+tr.added td { background: color-mix(in srgb, var(--added) 9%, transparent); }
+tr.removed td { background: color-mix(in srgb, var(--removed) 7%, transparent); color: var(--muted); }
+tr.added td:first-child { box-shadow: inset 3px 0 0 var(--added); }
+tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
+.chip {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  padding: 1px 5px; border-radius: 4px; margin-left: 8px; display: inline-block;
+}
+.chip.added { color: var(--added); background: color-mix(in srgb, var(--added) 16%, transparent); }
+.chip.removed { color: var(--removed); background: color-mix(in srgb, var(--removed) 16%, transparent); }
+/* How many rows were folded into this one. Quiet, because it is a footnote on
+   the row rather than a thing that happened to it - but present, because a
+   table claiming one of something when there are two is the one mistake this
+   must not make. */
+.chip.many {
+  color: var(--muted); background: var(--hover); text-transform: none;
+  letter-spacing: 0; font-variant-numeric: tabular-nums;
+}
+
+/* Which run each line is. Said once, because there is no room in a cell. */
+#diff-tally .legend { display: flex; gap: 14px; flex-wrap: wrap; }
+#diff-tally .legend .n {
+  display: inline-block; width: 15px; height: 15px; line-height: 15px; text-align: center;
+  border-radius: 3px; background: var(--hover); color: var(--muted);
+  font-size: 10px; margin-right: 5px; font-style: normal;
+}
+#diff-tally .legend .n.now { background: var(--accent-soft); color: var(--accent); }
+/* What a dot means, said where the runs are named. Guessing is the other
+   option, and the two guesses - "the same" and "nothing there" - are
+   opposites. */
+#diff-tally .legend .key { color: var(--muted); }
+#diff-tally .legend .key .dotmark {
+  font-weight: 700; color: var(--text); margin-right: 5px;
+  display: inline-block; width: 15px; text-align: center;
+}
+
+#cell-history {
+  position: absolute; z-index: 30; width: 270px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .28); padding: 10px 12px; font-size: 12px;
+}
+#cell-history h4 { font-size: 12px; margin: 0 0 8px; color: var(--muted); font-weight: 600; }
+#cell-history ol { list-style: none; margin: 0; padding: 0; }
+#cell-history li {
+  display: flex; gap: 10px; padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--line); margin-left: 3px;
+}
+#cell-history li.now { border-left-color: var(--accent); }
+#cell-history .when { color: var(--muted); width: 104px; flex: none; }
+#cell-history .val { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#cell-history li.now .val { color: var(--accent); font-weight: 600; }
+#cell-history .none { color: var(--muted); }
+
+.popup-foot { border-top: 1px solid var(--line); padding: 6px; display: flex; }
+.popup-foot button {
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  font: inherit; padding: 4px 8px; border-radius: 5px;
+}
+.popup-foot button:hover { background: var(--hover); color: var(--text); }
+.th-label { cursor: pointer; user-select: none; font-weight: 600; }
+.th-label:hover { color: var(--accent); }
+.sort-mark { color: var(--accent); font-size: 11px; }
+.filter-btn {
+  border: 0; background: none; padding: 2px 4px; border-radius: 4px;
+  color: var(--muted); cursor: pointer; line-height: 1;
+}
+.filter-btn:hover { background: var(--hover); color: var(--text); }
+.filter-btn.active { color: var(--accent); background: var(--accent-soft); }
+tbody td {
+  padding: .46em .77em;
+  /* Lines on both axes. This is a grid for reading a value off a row and a
+     column at once, and taking the vertical rules away left the headings
+     ruled and the body not, which looks like a mistake rather than a choice. */
+  border-bottom: 1px solid var(--grid); border-right: 1px solid var(--grid);
+  background: var(--panel);
+  /* In em as well, so a wide column stays proportionate when the text grows. */
+  /* Like a spreadsheet: one line per row, clipped, full value on hover.
+     Wrapping turns a wide table into an unreadable block of text. */
+  white-space: nowrap; max-width: 46ch; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- the size of the text in the grid ----------
+   A table is read, not glanced at, and how big its text should be depends on
+   the eyes and the screen rather than on anything snapgrid can work out. The
+   browser's own zoom would take the whole page with it, including the panels
+   that are already the right size. */
+#btn-smaller, #btn-bigger { font-size: 12px; padding: 2px 7px; min-width: 26px; }
+#btn-bigger { font-size: 15px; line-height: 1; padding: 0 7px 2px; }
+/* The cells carry the rounding: the table cannot clip its own corners with
+   overflow without breaking the sticky heading. The last row drops its rule
+   so it does not sit a second line on top of the table's own edge. */
+thead th:first-child { border-top-left-radius: 7px; }
+thead th:last-child { border-top-right-radius: 7px; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:last-child td:first-child { border-bottom-left-radius: 7px; }
+tbody tr:last-child td:last-child { border-bottom-right-radius: 7px; }
+/* The table's own edge draws the right-hand side; a cell rule there doubles it. */
+tbody td:last-child, thead th:last-child { border-right: 0; }
+
+tbody tr:nth-child(even) td { background: var(--zebra); }
+tbody tr:hover td { background: var(--hover); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- [colour] ----------
+   A value a plugin has given a colour to, drawn as a pill. Five shades and no
+   more: a plugin choosing its own would be a plugin deciding what the page
+   looks like, and both themes have to be able to live with the result.
+
+   The text keeps its own colour rather than going white on a strong fill,
+   because these sit in a dense table next to plain values and a row of loud
+   badges is harder to read than the words were. */
+.shade {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: .92em; font-weight: 600; line-height: 1.5;
+  border: 1px solid transparent;
+  /* A value wider than its column is clipped at the cell's edge. Plain text
+     ends in an ellipsis there; a pill is one box, so without this it kept its
+     full width, lost its right-hand edge mid-word and ran its colour under the
+     grid line - which reads as the table being broken rather than as a value
+     being too long for the space. Clipped inside the pill instead: the shape
+     survives, the ellipsis says there is more, and the title says what.
+     vertical-align, because a box that hides its overflow takes its baseline
+     from its bottom edge, which lifts the text off the line everything else
+     in the row sits on. */
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.shade.red    { color: var(--sh-red);   background: var(--sh-red-bg);   border-color: var(--sh-red-line); }
+.shade.amber  { color: var(--sh-amber); background: var(--sh-amber-bg); border-color: var(--sh-amber-line); }
+.shade.green  { color: var(--sh-green); background: var(--sh-green-bg); border-color: var(--sh-green-line); }
+.shade.blue   { color: var(--sh-blue);  background: var(--sh-blue-bg);  border-color: var(--sh-blue-line); }
+.shade.grey   { color: var(--sh-grey);  background: var(--sh-grey-bg);  border-color: var(--sh-grey-line); }
+
+/* An older value in a stacked cell is quieter than the current one, and its
+   pill goes with it rather than shouting from three rows down. */
+.v.old .shade { font-weight: 500; opacity: .75; }
+
+/* In a column of numbers the pill is wrong: its padding pushes the digits out
+   of line, so a coloured 95 no longer sits above a plain 70 and the column
+   stops being readable as a column. The colour goes on the figures instead,
+   which is enough to find them and costs nothing. */
+td.num .shade {
+  padding: 0; background: none; border-color: transparent;
+  font-size: inherit; line-height: inherit;
+}
+
+:root {
+  --sh-red: #9b2c2c;   --sh-red-bg: #fdecec;   --sh-red-line: #f3c9c9;
+  --sh-amber: #8a5a00; --sh-amber-bg: #fdf3e0; --sh-amber-line: #f0dcb4;
+  --sh-green: #1f6340; --sh-green-bg: #e7f5ed; --sh-green-line: #c2e3d2;
+  --sh-blue: #1f4e79;  --sh-blue-bg: #e8f1fa;  --sh-blue-line: #c4daf0;
+  --sh-grey: #4a5260;  --sh-grey-bg: #eef0f3;  --sh-grey-line: #d8dce2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sh-red: #f0a0a0;   --sh-red-bg: #3a2222;   --sh-red-line: #5a3030;
+    --sh-amber: #e6c173; --sh-amber-bg: #38301c; --sh-amber-line: #574828;
+    --sh-green: #8ed3ae; --sh-green-bg: #1e3329; --sh-green-line: #2f5040;
+    --sh-blue: #94c0e8;  --sh-blue-bg: #1d2c3a;  --sh-blue-line: #2d455c;
+    --sh-grey: #b3bcc8;  --sh-grey-bg: #282d34;  --sh-grey-line: #3c434d;
+  }
+}
+:root[data-theme="dark"] {
+  --sh-red: #f0a0a0;   --sh-red-bg: #3a2222;   --sh-red-line: #5a3030;
+  --sh-amber: #e6c173; --sh-amber-bg: #38301c; --sh-amber-line: #574828;
+  --sh-green: #8ed3ae; --sh-green-bg: #1e3329; --sh-green-line: #2f5040;
+  --sh-blue: #94c0e8;  --sh-blue-bg: #1d2c3a;  --sh-blue-line: #2d455c;
+  --sh-grey: #b3bcc8;  --sh-grey-bg: #282d34;  --sh-grey-line: #3c434d;
+}
+.empty-row { color: var(--muted); padding: 24px 10px; }
+
+/* ---------- filter popup ---------- */
+#filter-popup {
+  position: absolute; z-index: 20; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  width: 260px; padding: 10px; font-size: 13px;
+}
+#filter-popup input[type=search] { width: 100%; min-width: 0; margin-bottom: 8px; }
+.values { max-height: 240px; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 6px; }
+.value-row { display: flex; align-items: center; gap: 8px; padding: 3px 2px; cursor: pointer; }
+.value-row:hover { background: var(--hover); }
+.value-row .v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.value-row .c { color: var(--muted); font-size: 11px; }
+.popup-actions { display: flex; gap: 8px; margin-top: 8px; }
+.popup-actions button { flex: 1; padding: 4px 8px; }
+
+/* ---------- side panel: over the table, never taking its space ---------- */
+#side {
+  position: absolute; top: 0; right: 0; bottom: 0; width: var(--side-width);
+  display: flex; flex-direction: column; z-index: 5;
+  background: var(--panel); border-left: 1px solid var(--line);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .10);
+}
+#side-head {
+  display: flex; align-items: center; gap: 4px; padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+#side-head .grow { flex: 1; }
+.side-tab {
+  border: 0; background: none; color: var(--muted); padding: 4px 10px;
+  border-radius: 6px; cursor: pointer; font: inherit;
+}
+.side-tab:hover { background: var(--hover); color: var(--text); }
+.side-tab.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+#side-close { border: 0; background: none; font-size: 20px; line-height: 1; padding: 0 6px; cursor: pointer; }
+
+#log-text {
+  margin: 0; padding: 12px 14px; flex: 1; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; white-space: pre-wrap; color: var(--muted);
+}
+
+#config-body { padding: 12px 14px; flex: 1; overflow: auto; }
+.config-facts {
+  display: grid; grid-template-columns: auto 1fr; gap: 3px 14px;
+  font-size: 12.5px; margin-bottom: 10px;
+}
+.config-facts dt { color: var(--muted); }
+.config-facts dd {
+  margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px; overflow-wrap: anywhere;
+}
+.config-file {
+  margin: 0; padding: 10px 12px; border: 1px solid var(--grid); border-radius: 6px;
+  background: var(--zebra); font-size: 12px; white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+}
+.tok-comment { color: var(--syn-comment); font-style: italic; }
+.tok-section { color: var(--syn-section); font-weight: 600; }
+.tok-key { color: var(--syn-key); }
+.tok-string { color: var(--syn-string); }
+.tok-number { color: var(--syn-number); }
+.tok-bool { color: var(--syn-bool); }
+.config-note { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+.tag { color: var(--accent); }

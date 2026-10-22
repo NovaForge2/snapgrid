@@ -1,0 +1,463 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 NovaForge2
+"""Reading plugin.toml files and finding plugins on disk.
+
+A plugin is a folder inside plugins/ that contains a plugin.toml and something
+to run. A plugin that cannot be read is not hidden: it is kept with an error
+message so the web page can show what is wrong with it.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import PurePosixPath
+from dataclasses import dataclass, field
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - only on Python older than 3.11
+    print(
+        "snapgrid needs Python 3.11 or newer (for tomllib). "
+        f"This is Python {sys.version.split()[0]}.",
+        file=sys.stderr,
+    )
+    raise
+
+from .colour import COLOURS, THRESHOLD_RE, shade_for
+from .config import DEFAULT_EVERY
+from .crontab import CronError, parse as parse_cron
+
+MANIFEST_NAME = "plugin.toml"
+ENV_NAME = ".env"
+ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+DURATION_RE = re.compile(r"^(\d+)\s*([smhdw])$")
+
+
+class ManifestError(Exception):
+    """plugin.toml is missing something or says something impossible."""
+
+
+@dataclass
+class Plugin:
+    id: str
+    dir: Path
+    name: str
+    description: str = ""
+    group: str = ""
+    enabled: bool = True
+    command: list[str] = field(default_factory=list)
+    timeout: int = 300
+    every: int | None = None          # seconds between runs, None means manual only
+    cron: object | None = None        # a wall clock schedule instead of every
+    columns: list[str] | None = None  # expected header, None means take it from the output
+    key: str = ""                     # the column naming each row, for comparing runs
+    compare_ignore: list[str] = field(default_factory=list)
+    # columns left out of a comparison, from [compare] ignore
+    output_file: str = ""             # read the table from this file instead of stdout
+    output_sheet: str = ""            # which sheet of a workbook, if not the first
+    fresh_for: int | None = None      # skip the run while the file is younger than this
+    history_keep: int = 0             # how many different snapshots to keep
+    colours: dict[str, list[dict]] = field(default_factory=dict)
+    # column -> rules in the order written, from [colour]. See shade_for.
+    mtime: float = 0.0
+    error: str = ""                   # set when the manifest could not be read
+
+    @property
+    def env_file(self) -> Path:
+        return self.dir / ENV_NAME
+
+    @property
+    def runnable(self) -> bool:
+        return self.enabled and not self.error
+
+
+def parse_duration(value: object, field_name: str) -> int | None:
+    """Turn "15m" into 900. "off" and "" mean no schedule.
+
+    Seconds, minutes, hours, days and weeks, so that something checked twice a
+    day and something checked twice a month are both sayable.
+    """
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value if value > 0 else None
+    if not isinstance(value, str):
+        raise ManifestError(f"{field_name} must be text like \"15m\" or \"10d\", or \"off\"")
+
+    text = value.strip().lower()
+    if text in ("", "off", "never", "manual"):
+        return None
+    match = DURATION_RE.match(text)
+    if not match:
+        raise ManifestError(
+            f"{field_name} is \"{value}\" but should look like \"30s\", \"15m\", \"2h\", "
+            f"\"10d\", \"2w\" or \"off\""
+        )
+    amount, unit = int(match.group(1)), match.group(2)
+    seconds = amount * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[unit]
+    if seconds <= 0:
+        return None
+    return seconds
+
+
+def _output_file(output_table: dict) -> str:
+    value = output_table.get("file", "")
+    if not isinstance(value, str):
+        raise ManifestError('[output] file must be text, for example file = "report.csv"')
+    value = value.strip()
+    if value:
+        # The plugin folder is the plugin's world; reading outside it would let
+        # a manifest reach anywhere on the machine.
+        candidate = PurePosixPath(value.replace("\\", "/"))
+        if candidate.is_absolute() or ".." in candidate.parts:
+            raise ManifestError(
+                "[output] file must be inside the plugin folder, "
+                "so it cannot start with / or contain .."
+            )
+    return value
+
+
+# What belongs where. A key in the wrong section is accepted by TOML and would
+# otherwise be ignored in silence: "timeout = 600" written after [history]
+# belongs to [history], and the plugin quietly keeps the default.
+KNOWN_KEYS = {
+    "plugin": {"name", "description", "group", "enabled"},
+    "run": {"command", "timeout", "every", "cron"},
+    "table": {"columns", "key"},
+    "compare": {"ignore"},
+    "output": {"file", "sheet", "fresh_for"},
+    "history": {"keep"},
+}
+BELONGS_TO = {key: section for section, keys in KNOWN_KEYS.items() for key in keys}
+
+# [colour] is checked separately: the keys under it are column names, which
+# snapgrid cannot know in advance, so it cannot be a fixed list like the rest.
+COLOUR_SECTION = "colour"
+
+
+
+def _check_keys(data: dict) -> None:
+    """Refuse a key that is misplaced or misspelt, rather than ignoring it."""
+    for section in data:
+        if section == COLOUR_SECTION:
+            continue
+        if section == "color":
+            raise ManifestError("[color] is spelt [colour] here, like the rest "
+                                "of snapgrid")
+        if section not in KNOWN_KEYS:
+            known = ", ".join(f"[{name}]" for name in list(KNOWN_KEYS) + [COLOUR_SECTION])
+            raise ManifestError(f"[{section}] is not a section snapgrid knows. "
+                                f"The sections are {known}")
+
+    for section, keys in KNOWN_KEYS.items():
+        for key in data.get(section, {}):
+            if key in keys:
+                continue
+            home = BELONGS_TO.get(key)
+            if home:
+                raise ManifestError(
+                    f"{key} is in [{section}], but it belongs in [{home}]. "
+                    f"In TOML a key belongs to the section above it, so "
+                    f"\"{key} = ...\" has to be written under [{home}] to have "
+                    f"any effect"
+                )
+            raise ManifestError(
+                f"[{section}] {key} is not a setting snapgrid knows. "
+                f"In [{section}] there is {', '.join(sorted(keys))}"
+            )
+
+
+def _table(data: dict, name: str) -> dict:
+    value = data.get(name, {})
+    if not isinstance(value, dict):
+        raise ManifestError(f"[{name}] must be a section")
+    return value
+
+
+def _rule(written: str, column: str) -> dict:
+    """One rule from the left of the = sign, as something that can be tested.
+
+    Either a comparison against a number - "> 90", "<= 7" - or a value to
+    match whole, ignoring case. Parsed here rather than where it is used, so
+    the page and the spreadsheet both test the same thing without each having
+    to understand the syntax.
+    """
+    match = THRESHOLD_RE.match(written.strip())
+    if match:
+        return {"op": match.group(1), "n": float(match.group(2))}
+
+    # A key that starts with an operator but is not a valid comparison is a
+    # mistake worth catching: "> eighty" is not a value anybody means.
+    if written.strip()[:1] in "<>=!":
+        raise ManifestError(
+            f"[colour.{column}] \"{written}\" starts like a comparison but is "
+            f"not one. Write it as \"> 90\", \">= 90\", \"< 7\", \"<= 7\", "
+            f"\"= 0\" or \"!= 0\""
+        )
+    return {"is": written.lower()}
+
+
+def _colours(data: dict, columns: list[str] | None) -> dict[str, list[dict]]:
+    """[colour.<column>] - what to colour in a column, and what colour.
+
+    Each line is a test and a colour. The test is either a value matched whole
+    and without case, or a comparison against a number:
+
+        [colour.used_percent]
+        "> 90" = "red"
+        "> 80" = "amber"
+
+    **The first rule that matches wins**, in the order written, which is why
+    the severe one goes first. Anything no rule matches is left plain, which
+    is what makes this safe on a column that can hold anything at all.
+    """
+    section = data.get(COLOUR_SECTION, {})
+    if not isinstance(section, dict):
+        raise ManifestError("[colour] must be a section, with one for each "
+                            "column: [colour.status]")
+
+    out: dict[str, list[dict]] = {}
+    for column, mapping in section.items():
+        if not isinstance(mapping, dict):
+            raise ManifestError(
+                f"[colour] {column} must be a section of its own, naming a "
+                f"colour for each value: [colour.{column}] then \"ok\" = \"green\""
+            )
+        # Catchable here only when the columns are declared; otherwise the
+        # first result decides, and a colour for a column that is not there
+        # simply never matches anything.
+        if columns is not None and column not in columns:
+            raise ManifestError(
+                f"[colour.{column}] names a column that is not in "
+                f"[table] columns, which has {', '.join(columns)}"
+            )
+        rules: list[dict] = []
+        for written, colour in mapping.items():
+            if not isinstance(colour, str) or colour.lower() not in COLOURS:
+                raise ManifestError(
+                    f"[colour.{column}] {written} is {colour!r}, which is not a "
+                    f"colour snapgrid has. They are {', '.join(COLOURS)}"
+                )
+            rules.append({**_rule(written, column), "colour": colour.lower()})
+        if rules:
+            out[column] = rules
+    return out
+
+
+def _string_list(value: object, field_name: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ManifestError(f"{field_name} must be a list of text values")
+    return list(value)
+
+
+def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> Plugin:
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ManifestError(f"plugin.toml is not valid TOML: {exc}") from exc
+
+    _check_keys(data)
+
+    plugin_table = _table(data, "plugin")
+    run_table = _table(data, "run")
+    table_table = _table(data, "table")
+    compare_table = _table(data, "compare")
+    output_table = _table(data, "output")
+    history_table = _table(data, "history")
+
+    name = plugin_table.get("name", plugin_id)
+    if not isinstance(name, str) or not name.strip():
+        raise ManifestError("[plugin] name must be a non-empty text value")
+
+    description = plugin_table.get("description", "")
+    group = plugin_table.get("group", "")
+    enabled = plugin_table.get("enabled", True)
+    if not isinstance(description, str) or not isinstance(group, str):
+        raise ManifestError("[plugin] description and group must be text values")
+    if not isinstance(enabled, bool):
+        raise ManifestError("[plugin] enabled must be true or false")
+
+    # A plugin normally runs something. One that only reads a file does not
+    # need to, so the command is optional when [output] file says where to look.
+    output_file = _output_file(output_table)
+    if "command" in run_table:
+        command = _string_list(run_table["command"], "[run] command")
+        if not command:
+            raise ManifestError("[run] command cannot be empty")
+    elif output_file:
+        command = []
+    else:
+        raise ManifestError(
+            '[run] command is required, for example command = ["python", "main.py"] - '
+            'unless [output] file names a file to read instead'
+        )
+
+    # Seconds as a number, or the same units as every: timeout = "30m".
+    raw_timeout = run_table.get("timeout", 300)
+    if isinstance(raw_timeout, str):
+        timeout = parse_duration(raw_timeout, "[run] timeout")
+        if timeout is None:
+            raise ManifestError('[run] timeout cannot be "off" - a plugin that never '
+                                "stops would hold a worker for ever")
+    elif isinstance(raw_timeout, int) and not isinstance(raw_timeout, bool) and raw_timeout > 0:
+        timeout = raw_timeout
+    else:
+        raise ManifestError('[run] timeout must be a number of seconds, or text '
+                            'like "30m" or "2h"')
+
+    # A wall clock schedule, for the reports that have to exist by nine
+    # rather than every so often. It replaces `every` rather than sitting
+    # beside it, and writing both is refused: snapgrid does not quietly
+    # ignore a setting somebody took the trouble to write.
+    cron = None
+    if "cron" in run_table:
+        if "every" in run_table:
+            raise ManifestError(
+                "[run] has both every and cron, and they are two answers to "
+                "the same question. Keep cron for a wall clock time, or every "
+                "for a gap between runs, and delete the other")
+        raw_cron = run_table["cron"]
+        if not isinstance(raw_cron, str):
+            raise ManifestError('[run] cron must be text, for example '
+                                'cron = "0 9 * * 1-5"')
+        try:
+            cron = parse_cron(raw_cron)
+        except CronError as exc:
+            raise ManifestError(f"[run] cron: {exc}") from None
+
+    every = (None if cron is not None
+             else parse_duration(run_table.get("every", DEFAULT_EVERY), "[run] every"))
+
+    columns = None
+    if "columns" in table_table:
+        columns = _string_list(table_table["columns"], "[table] columns")
+        if not columns:
+            raise ManifestError("[table] columns cannot be an empty list")
+
+    # Which column says what a row is about, so two runs can be lined up. The
+    # first column is nearly always it, which is why this is rarely set.
+    key = table_table.get("key", "")
+    if not isinstance(key, str):
+        raise ManifestError('[table] key must be the name of a column, for example key = "repo"')
+    key = key.strip()
+    if key and columns and key not in columns:
+        raise ManifestError(
+            f'[table] key is "{key}", which is not one of the columns: {", ".join(columns)}'
+        )
+
+    # Columns a comparison does not look at. A column holding the time of the
+    # run, or a count of days, changes on its own every day: left in, every
+    # run differs from the one before and "what changed" answers with the
+    # clock instead of with the data.
+    compare_ignore: list[str] = []
+    if "ignore" in compare_table:
+        compare_ignore = _string_list(compare_table["ignore"], "[compare] ignore")
+        for column in compare_ignore:
+            if not column.strip():
+                raise ManifestError("[compare] ignore cannot contain an empty name")
+            # The naming column is identity, not a value: it is never compared
+            # as one, so listing it asks for something that already holds.
+            if column == (key or (columns[0] if columns else "")):
+                raise ManifestError(
+                    f'[compare] ignore names "{column}", which is the column that '
+                    f"names each row. That column is what two runs are lined up "
+                    f"by, and it is never compared as a value anyway"
+                )
+            # Catchable here only when the columns are declared, as with
+            # [colour]: otherwise the first result decides what they are.
+            if columns is not None and column not in columns:
+                raise ManifestError(
+                    f'[compare] ignore names "{column}", which is not in '
+                    f"[table] columns, which has {', '.join(columns)}"
+                )
+
+    output_sheet = output_table.get("sheet", "")
+    if not isinstance(output_sheet, str):
+        raise ManifestError('[output] sheet must be text, for example sheet = "Summary"')
+
+    fresh_for = parse_duration(output_table.get("fresh_for"), "[output] fresh_for")
+    if fresh_for is not None and not output_file:
+        raise ManifestError(
+            "[output] fresh_for only means something with [output] file, "
+            "since it is the age of that file"
+        )
+
+    history_keep = history_table.get("keep", 0)
+    if not isinstance(history_keep, int) or isinstance(history_keep, bool) or history_keep < 0:
+        raise ManifestError("[history] keep must be 0 or more")
+
+    colours = _colours(data, columns)
+
+    return Plugin(
+        id=plugin_id,
+        dir=directory,
+        name=name.strip(),
+        description=description.strip(),
+        group=group.strip(),
+        enabled=enabled,
+        command=command,
+        timeout=timeout,
+        every=every,
+        cron=cron,
+        columns=columns,
+        key=key,
+        compare_ignore=compare_ignore,
+        output_file=output_file,
+        output_sheet=output_sheet.strip(),
+        fresh_for=fresh_for,
+        history_keep=history_keep,
+        colours=colours,
+        mtime=mtime,
+    )
+
+
+def load_plugin(directory: Path) -> Plugin | None:
+    """Read one plugin folder. Returns None if it is not a plugin at all."""
+    manifest = directory / MANIFEST_NAME
+    if not manifest.is_file():
+        return None
+
+    plugin_id = directory.name
+    mtime = manifest.stat().st_mtime
+    if not ID_RE.match(plugin_id):
+        return Plugin(
+            id=plugin_id,
+            dir=directory,
+            name=plugin_id,
+            mtime=mtime,
+            error="folder name may only contain letters, digits, dot, dash and underscore",
+        )
+
+    try:
+        return parse_manifest(manifest.read_text(encoding="utf-8"), plugin_id, directory, mtime)
+    except ManifestError as exc:
+        return Plugin(id=plugin_id, dir=directory, name=plugin_id, mtime=mtime, error=str(exc))
+    except OSError as exc:
+        return Plugin(id=plugin_id, dir=directory, name=plugin_id, mtime=mtime, error=f"cannot read plugin.toml: {exc}")
+
+
+class Registry:
+    """Keeps the current list of plugins, re-read from disk when files change."""
+
+    def __init__(self, plugins_dir: Path) -> None:
+        self.plugins_dir = plugins_dir
+        self._plugins: dict[str, Plugin] = {}
+
+    def scan(self) -> None:
+        found: dict[str, Plugin] = {}
+        if self.plugins_dir.is_dir():
+            for entry in sorted(self.plugins_dir.iterdir()):
+                if not entry.is_dir() or entry.name.startswith("."):
+                    continue
+                plugin = load_plugin(entry)
+                if plugin is not None:
+                    found[plugin.id] = plugin
+        self._plugins = found
+
+    def all(self) -> list[Plugin]:
+        return sorted(self._plugins.values(), key=lambda p: (p.group.lower(), p.name.lower()))
+
+    def get(self, plugin_id: str) -> Plugin | None:
+        return self._plugins.get(plugin_id)

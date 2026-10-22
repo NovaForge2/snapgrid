@@ -1,0 +1,616 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 NovaForge2
+"""The HTTP server: a small JSON API plus the static web page.
+
+Two deliberate security choices, both cheap and both easy to get wrong later:
+
+* the server listens on 127.0.0.1, so nothing else on the network can reach it;
+* anything that starts or stops a run must be a POST carrying a header that a
+  web page from another site cannot add, and its Origin must match. Without
+  that, any site you happened to visit could quietly tell your browser to run
+  your plugins, with your credentials;
+* every request must be addressed to this machine by name. A site can point
+  its own hostname at 127.0.0.1 and the browser will then treat it as the same
+  origin and let it read the answers - but it still sends that site's name in
+  the Host header, which it cannot forge. Checking the name closes the only
+  way in that listening on loopback does not already close.
+"""
+
+from __future__ import annotations
+
+import csv
+import hashlib
+import io
+import json
+import re
+import ssl
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from . import store as store_module
+from .config import Config, display_path
+from .manifest import MANIFEST_NAME
+from .scheduler import interval_for
+from .workbook import write_xlsx
+
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+from .runner import resolve_command
+from .environment import parse_env_file
+from .settings import load_settings
+
+GUARD_HEADER = "X-Snapgrid"
+# The names this machine answers to. Anything else means the request was
+# addressed somewhere that was made to resolve here, which is the whole trick.
+LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".json": "application/json; charset=utf-8",
+}
+
+PLUGIN_RUN_RE = re.compile(r"^/api/plugins/([^/]+)/run$")
+PLUGIN_RUNS_RE = re.compile(r"^/api/plugins/([^/]+)/runs$")
+PLUGIN_PAUSE_RE = re.compile(r"^/api/plugins/([^/]+)/(pause|resume)$")
+PLUGIN_SNAPS_RE = re.compile(r"^/api/plugins/([^/]+)/snapshots$")
+PLUGIN_XLSX_RE = re.compile(r"^/api/plugins/([^/]+)/export\.xlsx$")
+PLUGIN_CONFIG_RE = re.compile(r"^/api/plugins/([^/]+)/config$")
+PLUGIN_CELL_RE = re.compile(r"^/api/plugins/([^/]+)/cell$")
+PLUGIN_RE = re.compile(r"^/api/plugins/([^/]+)$")
+RUN_CANCEL_RE = re.compile(r"^/api/runs/(\d+)/cancel$")
+RUN_RE = re.compile(r"^/api/runs/(\d+)$")
+SNAPSHOT_RE = re.compile(r"^/api/snapshots/(\d+)$")
+
+
+class HttpError(Exception):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def shell_quote(text: str) -> str:
+    """A path as it has to be typed, quoted only when it needs to be."""
+    if text and not any(ch in text for ch in " \t\"'\\$`*?[]{}()<>|&;#~!"):
+        return text
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
+def start_command(config: Config, default_port: int | None = None) -> str:
+    """What to type to start this server again, as the page should show it.
+
+    The same shape as the hint the command line prints, and worked out here
+    because the page is the one place where the folder is not already in front
+    of you - which also means it is the one place where a wrong command cannot
+    be corrected by looking at what you typed before.
+    """
+    parts = ["./server.py"]
+    where = display_path(config.plugins_dir)
+    parts += ["--dir", shell_quote(where)]
+    # The port is named whenever a bare restart would land somewhere else -
+    # which is not the same as "not 8765". snapgrid.toml can say 8770, and a
+    # server started with --port 8765 would then be told to restart without a
+    # port and come back on 8770, moving the address out from under whoever
+    # was reading the page. So the comparison is against what the file says,
+    # not against a constant.
+    if default_port is None:
+        default_port = load_settings()["port"]
+    if config.port != default_port:
+        parts += ["--port", str(config.port)]
+    return " ".join(parts)
+
+
+class Application:
+    """Turns requests into data. Kept separate from the HTTP plumbing."""
+
+    def __init__(self, config: Config, store, registry, runner) -> None:
+        self.config = config
+        self.store = store
+        self.registry = registry
+        self.runner = runner
+        self.started = time.time()
+        self.httpd = None          # set by make_server, so the page can stop it
+
+    # ----- helpers ------------------------------------------------------
+
+    def _plugin(self, plugin_id: str):
+        plugin = self.registry.get(plugin_id)
+        if plugin is None:
+            self.registry.scan()
+            plugin = self.registry.get(plugin_id)
+        if plugin is None:
+            raise HttpError(404, f"no plugin called {plugin_id!r}")
+        return plugin
+
+    def set_paused(self, plugin_id: str, paused: bool) -> dict:
+        """Pause or resume one plugin, by name."""
+        plugin = self._plugin(plugin_id)
+        since = self.store.set_paused(plugin.id, paused)
+        return {"id": plugin.id, "paused_since": since}
+
+    def pause_everything(self, paused: bool) -> dict:
+        """Quieten the whole machine, or let it go again.
+
+        Resuming releases only what this swept up. A plugin put aside on its
+        own stays put aside: "quiet while I do something heavy" is an hour,
+        and "I am not using this one" is a fortnight, and the second must not
+        be lost to the first.
+
+        What resuming does not do is run everything at once to catch up: each
+        plugin simply becomes due again, and the schedule picks them up a few
+        at a time as it always does.
+        """
+        if not paused:
+            return {"paused": False, "plugins": self.store.resume_all()}
+
+        touched = []
+        for plugin in self.registry.all():
+            if not plugin.runnable or (plugin.every is None and plugin.cron is None):
+                continue        # nothing the schedule would have run anyway
+            self.store.set_paused(plugin.id, True, by="all")
+            touched.append(plugin.id)
+        return {"paused": True, "plugins": touched}
+
+    def stop_server(self) -> dict:
+        """Stop snapgrid, from the page that is looking at it.
+
+        The terminal it was started from is usually somewhere else by now, and
+        hunting for it to type one command is the kind of friction that makes
+        a tool annoying to live with.
+
+        Nothing is forced: shutdown() lets serve_forever return and the
+        ordinary tidying up happens - the scheduler and any running plugin are
+        stopped, the database is closed and the state file is removed, exactly
+        as for Ctrl+C. It runs on a thread of its own because this one still
+        has a reply to deliver, and a server that has stopped cannot answer.
+        """
+        if self.httpd is None:      # not serving, which only happens in tests
+            raise HttpError(409, "this server cannot stop itself")
+
+        httpd = self.httpd
+
+        def shut_down() -> None:
+            time.sleep(0.25)        # long enough for the reply to be on its way
+            httpd.shutdown()
+
+        threading.Thread(target=shut_down, daemon=True).start()
+        return {
+            "stopping": True,
+            "start_again": start_command(self.config),
+        }
+
+    def _summary(self, plugin) -> dict:
+        live = self.runner.live(plugin.id)
+        last = self.store.last_finished_run(plugin.id)
+        last_finished, failures = self.store.get_state(plugin.id)
+        paused_since = self.store.paused_plugins().get(plugin.id)
+        next_run = None
+        if plugin.runnable and last_finished and paused_since is None:
+            if plugin.cron is not None:
+                # The next named moment after the last run, which is also the
+                # one that is already overdue when the machine has been off.
+                next_run = plugin.cron.next_after(last_finished)
+            elif plugin.every is not None:
+                next_run = last_finished + interval_for(plugin.every, failures)
+        status = "never"
+        if plugin.error:
+            status = "broken"
+        elif not plugin.enabled:
+            status = "disabled"
+        elif live:
+            status = live["status"]
+        elif last:
+            status = last["status"]
+        return {
+            "id": plugin.id,
+            "name": plugin.name,
+            "description": plugin.description,
+            "group": plugin.group,
+            "enabled": plugin.enabled,
+            "error": plugin.error,
+            "every": plugin.every,
+            # The expression as it was written, not as it was parsed: the page
+            # shows it back to the person who typed it.
+            "cron": plugin.cron.text if plugin.cron is not None else None,
+            "timeout": plugin.timeout,
+            "history_keep": plugin.history_keep,
+            "columns": plugin.columns,
+            "command": plugin.command,
+            "status": status,
+            "busy": bool(live),
+            "last_finished": last["finished_at"] if last else None,
+            "last_status": last["status"] if last else None,
+            "key": plugin.key,
+            # Columns a comparison leaves alone, so the page compares the same
+            # thing the manifest says to compare.
+            "compare_ignore": plugin.compare_ignore,
+            "colours": plugin.colours,
+            "paused_since": paused_since,
+            "failures": failures,
+            "next_run": next_run,
+            "row_count": last["row_count"] if last else None,
+        }
+
+    # ----- endpoints ----------------------------------------------------
+
+    def _banner_id(self, text: str) -> str:
+        seed = f"{int(self.started)}|{text}".encode("utf-8")
+        return hashlib.sha256(seed).hexdigest()[:16]
+
+    def list_plugins(self) -> dict:
+        # Read again each time, so editing snapgrid.toml shows up without a
+        # restart. It is a small file and this is not a hot path.
+        settings = load_settings()
+        return {
+            "plugins": [self._summary(p) for p in self.registry.all()],
+            "server": {
+                "max_concurrent": self.config.max_concurrent,
+                "plugins_dir": display_path(self.config.plugins_dir),
+                "examples_dir": display_path(EXAMPLES_DIR) if EXAMPLES_DIR.is_dir() else "",
+                "title": settings["title"],
+                "banner": {
+                    "text": settings["banner_text"],
+                    "level": settings["banner_level"],
+                    # Dismissing the banner hides this exact message from this
+                    # server run. A new message, or a restart, brings it back.
+                    "id": self._banner_id(settings["banner_text"]),
+                },
+            },
+        }
+
+    def plugin_cell(self, plugin_id: str, query: dict) -> dict:
+        """The history of one cell: which row, which column."""
+        plugin = self._plugin(plugin_id)
+        latest = self.store.latest_snapshot(plugin.id)
+        if not latest:
+            return {"history": []}
+
+        columns = latest["columns"]
+        key_name = plugin.key or (columns[0] if columns else "")
+        column_name = query.get("column", [""])[0]
+        key_value = query.get("row", [""])[0]
+        if key_name not in columns or column_name not in columns:
+            raise HttpError(404, "no such column")
+
+        return {
+            "row": key_value,
+            "column": column_name,
+            "history": self.store.cell_history(
+                plugin.id, key_name, key_value, column_name,
+                limit=max(plugin.history_keep, 1) + 1,
+            ),
+        }
+
+    def plugin_detail(self, plugin_id: str, query: dict) -> dict:
+        plugin = self._plugin(plugin_id)
+        payload = self._summary(plugin)
+        payload["live"] = self.runner.live(plugin.id)
+
+        snapshot_id = query.get("snapshot", [None])[0]
+        if snapshot_id:
+            snapshot = self.store.get_snapshot(int(snapshot_id))
+            if snapshot is None or snapshot["plugin_id"] != plugin.id:
+                raise HttpError(404, "no such snapshot")
+        else:
+            snapshot = self.store.latest_snapshot(plugin.id)
+
+        payload["snapshot"] = snapshot
+        payload["snapshots"] = self.store.list_snapshots(plugin.id, limit=50)
+        last = self.store.last_finished_run(plugin.id)
+        if last:
+            payload["last_run"] = {
+                "id": last["id"],
+                "status": last["status"],
+                "trigger": last["trigger"],
+                "started_at": last["started_at"],
+                "finished_at": last["finished_at"],
+                "error": last["error"],
+                "log": last["log"],
+                "changed": bool(last["changed"]),
+            }
+        else:
+            payload["last_run"] = None
+        return payload
+
+    def plugin_config(self, plugin_id: str) -> dict:
+        """What this plugin is configured to do, read fresh from disk.
+
+        Values from .env are never included, only the names, so that a panel
+        showing this cannot become a way to read a password. Which variables
+        exist is useful when working out why a plugin cannot log in; their
+        meaning belongs to the plugin.
+        """
+        plugin = self._plugin(plugin_id)
+        manifest = plugin.dir / MANIFEST_NAME
+        try:
+            text = manifest.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            text = f"(cannot read {MANIFEST_NAME}: {exc})"
+
+        entries = []
+        env_file = plugin.env_file
+        if env_file.is_file():
+            try:
+                for name, _ in parse_env_file(env_file.read_text(encoding="utf-8")):
+                    entries.append({
+                        "name": name,
+                    })
+            except OSError:
+                pass
+
+        return {
+            # Relative where possible: shorter to read, and a full path carries
+            # the account name of whoever is running it, which has a habit of
+            # ending up in screenshots.
+            "dir": display_path(plugin.dir),
+            "manifest": text,
+            "command": resolve_command(plugin.command) if plugin.command else [],
+            "error": plugin.error,
+            "env": {"present": env_file.is_file(), "entries": entries},
+        }
+
+    def plugin_runs(self, plugin_id: str) -> dict:
+        plugin = self._plugin(plugin_id)
+        return {"runs": self.store.list_runs(plugin.id, limit=50)}
+
+    def plugin_snapshots(self, plugin_id: str) -> dict:
+        plugin = self._plugin(plugin_id)
+        return {"snapshots": self.store.list_snapshots(plugin.id, limit=50)}
+
+    def start_run(self, plugin_id: str) -> dict:
+        plugin = self._plugin(plugin_id)
+        if plugin.error:
+            raise HttpError(400, plugin.error)
+        if not plugin.enabled:
+            raise HttpError(400, "this plugin is disabled in plugin.toml")
+        run_id = self.runner.submit(plugin, "manual")
+        return {"run_id": run_id}
+
+    def cancel_run(self, run_id: int) -> dict:
+        return {"cancelled": self.runner.cancel(run_id)}
+
+    def run_detail(self, run_id: int) -> dict:
+        run = self.store.get_run(run_id)
+        if run is None:
+            raise HttpError(404, "no such run")
+        live = self.runner.live(run["plugin_id"])
+        if live and live["run_id"] == run_id:
+            run["log"] = live.get("log") or run.get("log") or ""
+            run["elapsed"] = live.get("elapsed", 0)
+        return {"run": run}
+
+    def snapshot_detail(self, snapshot_id: int) -> dict:
+        snapshot = self.store.get_snapshot(snapshot_id)
+        if snapshot is None:
+            raise HttpError(404, "no such snapshot")
+        return {"snapshot": snapshot}
+
+    def _to_export(self, plugin_id: str, query: dict):
+        plugin = self._plugin(plugin_id)
+        snapshot_id = query.get("snapshot", [None])[0]
+        snapshot = (
+            self.store.get_snapshot(int(snapshot_id))
+            if snapshot_id
+            else self.store.latest_snapshot(plugin.id)
+        )
+        if snapshot is None or snapshot["plugin_id"] != plugin.id:
+            raise HttpError(404, "there is no result to export yet")
+        stamp = time.strftime("%Y%m%d-%H%M", time.localtime(snapshot["last_seen"]))
+        return plugin, snapshot, stamp
+
+    def export_xlsx(self, plugin_id: str, query: dict) -> tuple[bytes, str]:
+        plugin, snapshot, stamp = self._to_export(plugin_id, query)
+        body = write_xlsx(snapshot["columns"], snapshot["rows"], sheet_name=plugin.name,
+                          colours=plugin.colours)
+        return body, f"{plugin.id}-{stamp}.xlsx"
+
+    def export_view(self, plugin_id: str, view: object) -> tuple[bytes, str]:
+        plugin = self._plugin(plugin_id)
+        if not isinstance(view, dict):
+            raise HttpError(400, "the export must contain columns and rows")
+        columns, rows = view.get("columns"), view.get("rows")
+        if (not isinstance(columns, list) or not columns or len(columns) > 16384
+                or any(not isinstance(column, str) or len(column) > 32767 for column in columns)):
+            raise HttpError(400, "export columns must be a non-empty list of text values")
+        if not isinstance(rows, list) or len(rows) > 1048575:
+            raise HttpError(400, "export rows exceed Excel's row limit or are not a list")
+        for row in rows:
+            if (not isinstance(row, list) or len(row) != len(columns)
+                    or any(not isinstance(value, str) or len(value) > 32767 for value in row)):
+                raise HttpError(400, "each export row must match the columns, with text cells up to 32767 characters")
+        return (write_xlsx(columns, rows, sheet_name=plugin.name, colours=plugin.colours),
+                f"{plugin.id}-view.xlsx")
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "snapgrid"
+    # HTTP/1.1 keeps the connection open between requests. The page polls every
+    # few seconds, and on 1.0 each poll opened and closed a socket, leaving a
+    # trail of TIME_WAIT entries that look like something is wrong. Every
+    # response here sends a Content-Length, which is what 1.1 requires.
+    protocol_version = "HTTP/1.1"
+    app: Application
+
+    def log_message(self, fmt: str, *args) -> None:  # quieter than the default
+        return
+
+    # ----- plumbing -----------------------------------------------------
+
+    def _send(self, status: int, body: bytes, content_type: str, extra: dict | None = None) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for key, value in (extra or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _json(self, payload: dict, status: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._send(status, body, "application/json; charset=utf-8")
+
+    def _error(self, status: int, message: str) -> None:
+        self._json({"error": message}, status=status)
+
+    def _check_host(self) -> None:
+        """Refuse a request addressed to a name that is not this machine.
+
+        Browsers set Host from the address bar and a page cannot change it, so
+        this is what tells an ordinary visit apart from a site that has pointed
+        its own name here to read what it finds.
+        """
+        header = self.headers.get("Host")
+        if header is None:
+            raise HttpError(403, "the request did not say which host it was for")
+        name = header.rsplit(":", 1)[0] if not header.endswith("]") else header
+        if name.lower() in LOOPBACK_NAMES:
+            return
+        # Whatever it was told to listen on is also a name it answers to, for
+        # anyone who has deliberately bound something other than loopback.
+        if name == self.app.config.host:
+            return
+        raise HttpError(403, f"this server does not answer to {name!r}")
+
+    def _check_guard(self) -> None:
+        if self.headers.get(GUARD_HEADER) is None:
+            raise HttpError(403, "missing request header")
+        origin = self.headers.get("Origin")
+        if origin:
+            host = self.headers.get("Host", "")
+            scheme = "https" if isinstance(getattr(self, "connection", None), ssl.SSLSocket) \
+                     else "http"
+            if origin != f"{scheme}://{host}":
+                raise HttpError(403, "request came from another site")
+
+    def _static(self, path: str) -> None:
+        web_dir = self.app.config.web_dir.resolve()
+        name = "index.html" if path in ("/", "") else path.lstrip("/")
+        target = (web_dir / name).resolve()
+        if not str(target).startswith(str(web_dir)) or not target.is_file():
+            raise HttpError(404, "not found")
+        suffix = target.suffix.lower()
+        self._send(200, target.read_bytes(), CONTENT_TYPES.get(suffix, "application/octet-stream"))
+
+    # ----- routing ------------------------------------------------------
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        path, query = parsed.path, parse_qs(parsed.query)
+        try:
+            self._check_host()
+            if path == "/api/plugins":
+                return self._json(self.app.list_plugins())
+
+            match = PLUGIN_XLSX_RE.match(path)
+            if match:
+                body, filename = self.app.export_xlsx(match.group(1), query)
+                return self._send(
+                    200, body,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    {"Content-Disposition": f'attachment; filename="{filename}"'},
+                )
+
+            for pattern, method in (
+                (PLUGIN_RUNS_RE, self.app.plugin_runs),
+                (PLUGIN_SNAPS_RE, self.app.plugin_snapshots),
+                (PLUGIN_CONFIG_RE, self.app.plugin_config),
+            ):
+                match = pattern.match(path)
+                if match:
+                    return self._json(method(match.group(1)))
+
+            match = PLUGIN_CELL_RE.match(path)
+            if match:
+                return self._json(self.app.plugin_cell(match.group(1), query))
+
+            match = PLUGIN_RE.match(path)
+            if match:
+                return self._json(self.app.plugin_detail(match.group(1), query))
+
+            match = RUN_RE.match(path)
+            if match:
+                return self._json(self.app.run_detail(int(match.group(1))))
+
+            match = SNAPSHOT_RE.match(path)
+            if match:
+                return self._json(self.app.snapshot_detail(int(match.group(1))))
+
+            if path.startswith("/api/"):
+                raise HttpError(404, "no such endpoint")
+            return self._static(path)
+        except HttpError as exc:
+            return self._error(exc.status, exc.message)
+        except Exception as exc:  # never leak a stack trace to the browser
+            return self._error(500, f"internal error: {exc}")
+
+    def do_HEAD(self) -> None:  # noqa: N802
+        self.do_GET()
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = urlparse(self.path).path
+        try:
+            self._check_host()
+            self._check_guard()
+
+            match = PLUGIN_XLSX_RE.match(path)
+            if match:
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    raise HttpError(400, "invalid export body length")
+                if length <= 0 or length > 32 * 1024 * 1024:
+                    raise HttpError(413, "export must contain a JSON body no larger than 32 MiB")
+                try:
+                    view = json.loads(self.rfile.read(length))
+                except (ValueError, UnicodeError):
+                    raise HttpError(400, "export body is not valid JSON")
+                body, filename = self.app.export_view(match.group(1), view)
+                return self._send(
+                    200, body, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    {"Content-Disposition": f'attachment; filename="{filename}"'})
+
+            match = PLUGIN_RUN_RE.match(path)
+            if match:
+                return self._json(self.app.start_run(match.group(1)), status=202)
+
+            match = RUN_CANCEL_RE.match(path)
+            if match:
+                return self._json(self.app.cancel_run(int(match.group(1))))
+
+            if path == "/api/server/stop":
+                return self._json(self.app.stop_server())
+
+            if path in ("/api/server/pause", "/api/server/resume"):
+                return self._json(self.app.pause_everything(path.endswith("pause")))
+
+            match = PLUGIN_PAUSE_RE.match(path)
+            if match:
+                return self._json(
+                    self.app.set_paused(match.group(1), match.group(2) == "pause"))
+
+            raise HttpError(404, "no such endpoint")
+        except HttpError as exc:
+            return self._error(exc.status, exc.message)
+        except Exception as exc:
+            return self._error(500, f"internal error: {exc}")
+
+
+def make_server(config: Config, store, registry, runner) -> ThreadingHTTPServer:
+    handler = type("BoundHandler", (Handler,), {"app": Application(config, store, registry, runner)})
+    httpd = ThreadingHTTPServer((config.host, config.port), handler)
+    httpd.daemon_threads = True
+    # So the page can stop the server it is looking at. Giving the application
+    # the server rather than the other way round keeps the stopping in one
+    # place: shutdown() makes serve_forever return, and the ordinary tidying
+    # up in __main__ runs exactly as it does for Ctrl+C.
+    handler.app.httpd = httpd
+    return httpd
