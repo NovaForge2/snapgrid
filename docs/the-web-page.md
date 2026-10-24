@@ -104,9 +104,18 @@ markers. An empty filtered table exports only its column headers.
   whole column is made of numbers that come back **identical** - so figures
   you might want to add up stay addable, and everything else arrives exactly
   as the plugin printed it.
-- **The dropdown next to Run now** appears once there is history, and shows any
-  earlier result.
-- **The second dropdown compares runs** - see below.
+- **The dropdown next to Run now picks which result is on screen.** It appears
+  once there is more than one stored, and every entry says when that result is
+  from and how many rows it had: `Showing: latest (just now)`, `Showing: 2h ago
+  - 14 rows`. This is how you look at one earlier run on its own, without
+  comparing anything. The table, the sort, the filters, the search and the
+  Excel export all then work on that result exactly as they do on the latest.
+  It says `Showing:` because without it a closed dropdown reads as a label
+  saying when the result is from rather than as the control that changes it.
+  Which result you are looking at is in the address, as `snapshot=<id>`, so the
+  view can be sent to somebody.
+- **The second dropdown compares runs** - see below. The two are independent:
+  you can look at an earlier result and compare it with the ones before it.
 - **Log** and **Config** are at the foot of the **More** menu. They open a
   panel over the right of the table, with a tab for each and a close button, so
   a panel you are not using costs the grid no space at all. Escape closes the
@@ -234,6 +243,7 @@ http://127.0.0.1:8765/?plugin=disk-space&sort=used_percent:desc&filter.filesyste
 | | |
 |---|---|
 | `plugin` | which plugin to open |
+| `snapshot` | which stored result to show, by its id. Anything but this plugin's own ids is ignored |
 | `compare` | how many runs to show in each cell, 1 to 5. 1 is off |
 | `changed` | `1` to start with **Only what changed** ticked |
 | `sort` | a column, and `:asc` or `:desc`. Without a direction it is ascending |
@@ -324,9 +334,8 @@ A plugin that fails three times in a row is tried less often, doubling up to an
 hour, so that one expired password does not fill the history with hundreds of
 identical failures overnight.
 
-That used to be invisible. The line under the plugin's name now says so -
-`slowed after 4 failures, next try in 38 min` - and the error message says what
-to do about it. Two things clear it:
+That used to be invisible. The line under the plugin's name says so -
+`slowed after 4 failures, next try in 38 min`. Two things clear it:
 
 - **Run now**, which runs the plugin immediately whatever it is waiting for.
 - **Editing `plugin.toml`**, which clears the count within seconds. Changing a
@@ -334,3 +343,15 @@ to do about it. Two things clear it:
   out whether it worked is no answer.
 
 The first success puts it back to its normal interval.
+
+**A failed run is not announced above the table.** What is on screen is the
+last good result, which is still true, and a red block on top of a correct
+table every time one run in fifty fails is noise. What says it instead: the dot
+beside the plugin's name turns red, the line under the title says how old the
+result is and when the next try is, and the **Log** panel holds the error in
+full, with whatever the plugin printed before it stopped.
+
+The one place it is still said in words is a plugin with **nothing to show at
+all** - a first run that failed, so there is no table. Then the message is the
+whole screen, and saying "no result yet" would read as "nothing has happened"
+when what happened is that it ran and failed.

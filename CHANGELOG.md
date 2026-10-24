@@ -21,6 +21,10 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   says why. The column that names a row cannot be ignored, and the manifest is
   refused if it is.
 
+- **`snapshot=<id>` in the address**, so a link can point at one earlier
+  result and not only at the latest. An id that does not belong to the plugin
+  in the link is ignored rather than fetched.
+
 - **The sort, the search and the filters are in the address bar**, beside
   `plugin`, `compare` and `changed`: `?plugin=disk-space&sort=used_percent:desc`
   `&filter.filesystem=/dev/sda1&q=api`. A link now carries what you are looking
@@ -69,6 +73,22 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   without rewriting every other picture at a different minute.
 
 ### Table fixes
+
+- **The dropdown that picks which result to show now says so.** Its entries
+  read `Showing: latest (just now)` and `Showing: 2h ago - 14 rows`; before,
+  they read as a label stating when the result was from, so the only control
+  anybody found was the Compare dropdown beside it - which does say what it
+  does. Looking at a single earlier run was always possible; nothing on screen
+  said where.
+
+- **A failed run is no longer announced above the table.** What is on screen is
+  the last good result, which is still true, and a red block on top of a
+  correct table every time one run in fifty fails is noise. The dot beside the
+  plugin's name turns red, the line under the title says how old the result is
+  and when the next try is, and the Log panel keeps the error in full. The one
+  case still said in words is a plugin with nothing to show at all - a first
+  run that failed - where the message is the whole screen and "no result yet"
+  would read as "nothing has happened".
 
 - **A column no longer clips its values while there is space beside the
   table.** Dragging one column wrote down a width for *every* column, and those

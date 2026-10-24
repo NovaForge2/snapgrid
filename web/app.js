@@ -366,6 +366,9 @@ async function select(id) {
 function rememberInTheAddress() {
   const asked = new URLSearchParams();
   if (state.selected) asked.set("plugin", state.selected);
+  // Which result, not only which plugin: "this is what it said at nine" is a
+  // thing to send somebody.
+  if (state.snapshotId) asked.set("snapshot", String(state.snapshotId));
   if (state.depth > 1) asked.set("compare", String(state.depth));
   if (state.onlyChanged) asked.set("changed", "1");
   if (state.sort.column && state.sort.direction) {
@@ -519,19 +522,24 @@ function renderDetail(redraw = true) {
   el("btn-refresh").textContent = busy ? "Running..." : "Run now";
   el("btn-cancel").hidden = !busy;
 
+  // A failed run is not announced above the table. The table under it is the
+  // last good result, which is still true, and a red block sitting on top of a
+  // correct table every time one run in fifty fails is noise: the dot beside
+  // the plugin's name is already red, the line under the title already says
+  // when the result is from and when the next try is, and the Log panel still
+  // has the error in full.
+  //
+  // The exception is a plugin with nothing to show at all. Then the message is
+  // the whole screen, and "no result yet" would read as "nothing has happened"
+  // when what happened is that it ran and failed.
   const lastRun = detail.last_run;
+  const failed = lastRun && lastRun.status !== "ok";
   if (detail.error) {
     showMessage("This plugin cannot be loaded:\n" + detail.error, false);
-  } else if (lastRun && lastRun.status !== "ok" && !busy) {
-    let note = ("Last run " + lastRun.status + ": " + (lastRun.error || "")).trim();
-    if (detail.failures >= 3) {
-      note += `\n\nAfter ${detail.failures} failures in a row it is being tried less often` +
-              (detail.next_run ? `, next ${timeUntil(detail.next_run)}` : "") +
-              ". Run now starts it immediately, and editing plugin.toml clears the wait.";
-    }
-    showMessage(note, false);
   } else if (!detail.snapshot && !busy) {
-    showMessage("No result yet. Press Run now, or wait for the schedule.", true);
+    showMessage(failed
+      ? ("Last run " + lastRun.status + ": " + (lastRun.error || "")).trim()
+      : "No result yet. Press Run now, or wait for the schedule.", !failed);
   } else {
     showMessage("", true);
   }
@@ -570,8 +578,13 @@ function renderSnapshotPicker() {
     const option = document.createElement("option");
     option.value = String(snapshot.id);
     const when = timeAgo(snapshot.last_seen);
-    option.textContent =
-      index === 0 ? "latest (" + when + ")" : when + " - " + rowCount(snapshot.row_count);
+    // "Showing:", because without it the closed dropdown reads as a label
+    // saying when the result is from rather than as the control that picks
+    // which result is on screen - and then the only thing anybody finds is
+    // the Compare dropdown beside it, which says what it does.
+    option.textContent = index === 0
+      ? "Showing: latest (" + when + ")"
+      : "Showing: " + when + " - " + rowCount(snapshot.row_count);
     if (state.snapshotId ? Number(state.snapshotId) === snapshot.id : index === 0) {
       option.selected = true;
     }

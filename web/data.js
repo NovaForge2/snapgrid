@@ -45,6 +45,15 @@ async function loadPlugins() {
       state.depth = Math.min(MAX_DEPTH, Math.max(1, Number(asked.get("compare")) || 1));
       state.onlyChanged = asked.get("changed") === "1";
       el("diff-only-box").checked = state.onlyChanged;
+      // An earlier result, if the link names one. Checked against this
+      // plugin's own snapshots: an id from another plugin's link would
+      // otherwise fetch a table that has nothing to do with this one.
+      const askedSnapshot = asked.get("snapshot");
+      if (askedSnapshot
+          && (state.detail.snapshots || []).some((s) => String(s.id) === askedSnapshot)) {
+        state.snapshotId = askedSnapshot;
+        await loadDetail();
+      }
       // The sort, the search and the filters the link asks for. After select()
       // cleared them, and before the table is drawn with them.
       const view = viewFromTheAddress(asked);
