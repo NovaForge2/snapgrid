@@ -74,6 +74,15 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
 
 ### Table fixes
 
+- **Comparing runs now shows only what the current view shows.** Two places
+  ignored the filters: a row that had gone was drawn whatever the filters said,
+  so filtering a table to ENV1 still showed rows from ENV2 the moment the
+  comparison was switched on; and the strip above the table counted changes
+  across the whole run, so it could report fifty changed values above nine
+  visible rows. A row that has gone is now filtered on the values it last had,
+  and the strip counts the rows the table actually drew. The same rule the
+  Excel export follows: what is acted on is what is on screen.
+
 - **The dropdown that picks which result to show now says so.** Its entries
   read `Showing: latest (just now)` and `Showing: 2h ago - 14 rows`; before,
   they read as a label stating when the result was from, so the only control

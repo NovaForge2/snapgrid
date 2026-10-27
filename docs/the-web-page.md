@@ -173,7 +173,7 @@ was worth less than seeing, at a glance, which cells are deep.
 | a tinted cell | something moved in that cell |
 | a faint rule across the row | the line between one run and the next, drawn the whole width of the row so a value can be traced back to the run it belongs to |
 | `NEW` and a green edge | the row was not there in the earlier runs |
-| `GONE` and a red edge | the row is not in the current result. It is shown anyway, because a thing disappearing is worth noticing |
+| `GONE` and a red edge | the row is not in the current result. It is shown anyway, because a thing disappearing is worth noticing - but only if the filters and the search would have shown it, judged on the values it last had |
 | `not there` | the row did not exist in that particular run |
 
 **Nothing is struck through.** An older value was not deleted; it is just older.
@@ -184,6 +184,13 @@ inside a cell and every cell shares the same runs. The strip says what a dot
 means as well, since a dot read as "nothing there" says the opposite of what it
 does say. It also counts what moved, and holds the **Only what changed** tick,
 which narrows a forty row table to the rows that did something.
+
+**What the strip counts is what is on screen.** Filter the table to ENV1 and
+the count is of changes in ENV1: a strip reading "50 values changed" above nine
+visible rows is a count of a table nobody is looking at. Hidden columns come
+out of it for the same reason, and so do the rows a filter or the search has
+taken away - including the rows that have gone, which are filtered on the
+values they last had rather than put back on screen by disappearing.
 
 **A cell that never moved is written once**, with the guides carrying on
 beneath it. Blank lines there are not missing values: the one value above them

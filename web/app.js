@@ -727,12 +727,22 @@ function renderDiffBar(diff) {
   }
   tally.appendChild(legend);
 
-  const counts = [
-    ["c-changed", diff.changedCells, "value", "changed"],
-    ["c-added", diff.added, "row", "appeared"],
-    ["c-removed", diff.removed, "row", "gone"],
-  ];
-  for (const [css, number, noun, verb] of counts) {
+}
+
+// The counts beside the legend: values changed, rows appeared, rows gone.
+// Appended once the table has been drawn, and counted from the rows it drew.
+// Counted from the runs instead, the strip said "50 values changed" over nine
+// visible rows - a count of somebody else's table. A filter that takes ENV2
+// off the screen takes its changes out of the count with it.
+//
+// compareRuns still counts the whole table in diff.changedCells, diff.added
+// and diff.removed. That is the truth about the two runs, which is what its
+// tests check; it is not what this page shows.
+function renderDiffCounts(moved, added, gone) {
+  const tally = el("diff-tally");
+  for (const [css, number, noun, verb] of [["c-changed", moved, "value", "changed"],
+                                           ["c-added", added, "row", "appeared"],
+                                           ["c-removed", gone, "row", "gone"]]) {
     if (!number) continue;
     const span = document.createElement("span");
     span.className = css;
@@ -1329,22 +1339,36 @@ function renderTable() {
       tbody.appendChild(tr);
     };
 
-    // Which rows get a line per run: the ones where a cell on screen has more
-    // than one value to show. A row that never moved was given a line per run
-    // anyway, and so was one that arrived or went - where every earlier line
-    // is blank, because the arrival is said once by the chip and the edge
-    // rather than by each of its cells. Either way the table came out two or
-    // three times taller than it needed to be, with the handful of real
-    // changes lost in the blank lines.
-    //
-    // The cells it asks about are the ones being compared: not the name, not a
-    // column [compare] ignore took out, and not one that is off the screen.
-    const worthStacking = (over) => shownIndexes.some((index) => {
-      if (index === key || ignored.has(index)) return false;
-      const present = over.map((one) => (one ? cellValue(one, index) : null))
-                          .filter((value) => value !== null);
-      return present.some((value, at) => at > 0 && value !== present[at - 1]);
-    });
+    // How many cells of one row moved, counting only the cells on screen:
+    // not the name, not a column [compare] ignore took out, and not one that
+    // is hidden. It answers two questions with one walk - whether the row is
+    // worth stacking at all, and what the strip above the table should count.
+    const movedCellsIn = (over) => {
+      let moved = 0;
+      shownIndexes.forEach((index) => {
+        if (index === key || ignored.has(index)) return;
+        const present = over.map((one) => (one ? cellValue(one, index) : null))
+                            .filter((value) => value !== null);
+        for (let at = 1; at < present.length; at += 1) {
+          if (present[at] !== present[at - 1]) moved += 1;
+        }
+      });
+      return moved;
+    };
+
+    // A row gets a line per run only when a cell on screen has more than one
+    // value to show. A row that never moved was given a line per run anyway,
+    // and so was one that arrived or went - where every earlier line is blank,
+    // because the arrival is said once by the chip and the edge rather than by
+    // each of its cells. Either way the table came out two or three times
+    // taller than it needed to be, with the real changes lost in blank lines.
+    const worthStacking = (over) => movedCellsIn(over) > 0;
+
+    // What the strip above the table says, counted from the rows this draw
+    // actually puts on screen rather than from the runs as a whole.
+    let movedHere = 0;
+    let addedHere = 0;
+    let goneHere = 0;
 
     if (!usable) {
       for (const row of rows) drawRow(row, null, "");
@@ -1368,18 +1392,27 @@ function renderTable() {
         if (state.onlyChanged && !entry.moved) continue;
         const over = usable.whole || !worthStacking(entry.overRuns)
           ? null : entry.overRuns;
+        movedHere += movedCellsIn(entry.overRuns);
+        if (!entry.everBefore) addedHere += 1;
         drawRow(row, over, entry.everBefore ? "" : "added");
       }
-      // A row that has gone is not in this result at all, so no filter and no
-      // sort applies to it. It goes after the rows that are still here.
+      // The rows that have gone, after the ones that are still here. There is
+      // nothing to sort them by in this result, but the filter and the search
+      // still apply, on the row as it last was: a row whose environment the
+      // filter took off the screen is not put back on it by disappearing.
+      // That was the one place where comparing showed something the view had
+      // asked not to see.
       for (const name of usable.names) {
         const entry = usable.rows.get(name);
         if (entry.here) continue;
         const newest = entry.overRuns.find((one) => one !== null);
+        if (!visibleRows(columns, [newest], null).length) continue;
         const over = usable.whole || !worthStacking(entry.overRuns)
           ? null : entry.overRuns;
+        goneHere += 1;
         drawRow(newest, over, "removed");
       }
+      renderDiffCounts(movedHere, addedHere, goneHere);
       // Only what changed can take every row away while there are rows to
       // take: nothing moved except in a column that is not compared.
       if (!tbody.children.length) sayThereAreNone();
