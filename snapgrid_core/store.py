@@ -290,13 +290,16 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def cell_history(self, plugin_id: str, key_name: str, key_value: str,
+    def cell_history(self, plugin_id: str, key_names: list[str], key_values: list[str],
                      column_name: str, limit: int = 50) -> list[dict[str, Any]]:
         """What one cell has been, newest first, with repeats collapsed.
 
         Done here rather than in the page because answering "when did this
         change?" from the browser would mean downloading every snapshot in
         full to read one value out of each.
+
+        The row is named by every column [table] key lists, so a table where
+        no single column is unique still has one history per cell.
 
         Columns are found **by name in each snapshot**, not by position. A
         plugin that reorders or inserts a column would otherwise have old
@@ -315,13 +318,15 @@ class Store:
         for row in rows:
             columns = json.loads(row["columns_json"])
             try:
-                key_index = columns.index(key_name)
+                key_indexes = [columns.index(name) for name in key_names]
                 column_index = columns.index(column_name)
             except ValueError:
-                continue                      # that run did not have both columns
+                continue                      # that run did not have every column
             value = None
             for values in json.loads(row["rows_json"]):
-                if key_index < len(values) and values[key_index] == key_value:
+                named = all(at < len(values) and values[at] == wanted
+                            for at, wanted in zip(key_indexes, key_values))
+                if named:
                     value = values[column_index] if column_index < len(values) else ""
                     break
             if value is None:

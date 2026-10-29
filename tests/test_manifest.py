@@ -163,11 +163,11 @@ class TheKeyColumn(unittest.TestCase):
     """[table] key says which column names a row, for comparing two runs."""
 
     def test_it_defaults_to_empty_meaning_the_first_column(self):
-        self.assertEqual(parse('[run]\ncommand=["x"]\n').key, "")
+        self.assertEqual(parse('[run]\ncommand=["x"]\n').key, [])
 
     def test_it_can_be_named(self):
         plugin = parse('[run]\ncommand=["x"]\n[table]\nkey = "repo"\n')
-        self.assertEqual(plugin.key, "repo")
+        self.assertEqual(plugin.key, ["repo"])
 
     def test_it_must_be_one_of_the_declared_columns(self):
         with self.assertRaises(ManifestError) as caught:
@@ -176,7 +176,45 @@ class TheKeyColumn(unittest.TestCase):
 
     def test_it_is_not_checked_when_the_columns_are_not_declared(self):
         # The header decides the columns then, and it is not known until a run.
-        self.assertEqual(parse('[run]\ncommand=["x"]\n[table]\nkey="repo"\n').key, "repo")
+        self.assertEqual(parse('[run]\ncommand=["x"]\n[table]\nkey="repo"\n').key, ["repo"])
+
+    def test_several_columns_can_name_a_row_together(self):
+        # No single column is unique in "environment,repo,version": the
+        # environment repeats on every repo and the repo in every environment.
+        plugin = parse('[run]\ncommand=["x"]\n[table]\n'
+                       'key = ["environment", "repo"]\n')
+        self.assertEqual(plugin.key, ["environment", "repo"])
+
+    def test_every_named_column_is_checked_against_the_declared_ones(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse('[run]\ncommand=["x"]\n[table]\ncolumns=["a","b"]\n'
+                  'key=["a","repo"]\n')
+        self.assertIn("not one of the columns", str(caught.exception))
+
+    def test_an_empty_list_is_refused(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse('[run]\ncommand=["x"]\n[table]\nkey = []\n')
+        self.assertIn("empty list", str(caught.exception))
+
+    def test_the_same_column_twice_is_refused(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse('[run]\ncommand=["x"]\n[table]\nkey = ["repo", "repo"]\n')
+        self.assertIn("same column twice", str(caught.exception))
+
+    def test_naming_a_key_does_not_disturb_anything_else(self):
+        # The loop that checks the key columns once reused the variable
+        # holding the plugin's own name, and every plugin with [table] key
+        # was called after its last key column.
+        plugin = parse('[plugin]\nname = "Image versions"\ngroup = "Platform"\n'
+                       '[run]\ncommand=["x"]\n[table]\nkey = ["environment", "repo"]\n')
+        self.assertEqual(plugin.name, "Image versions")
+        self.assertEqual(plugin.group, "Platform")
+        self.assertEqual(plugin.key, ["environment", "repo"])
+
+    def test_a_number_is_refused(self):
+        with self.assertRaises(ManifestError) as caught:
+            parse('[run]\ncommand=["x"]\n[table]\nkey = 3\n')
+        self.assertIn("name of a column", str(caught.exception))
 
 
 class ColumnsLeftOutOfAComparison(unittest.TestCase):

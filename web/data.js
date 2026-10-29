@@ -43,6 +43,10 @@ async function loadPlugins() {
       const known = state.plugins.some((plugin) => plugin.id === wanted);
       await select(known ? wanted : state.plugins[0].id);
       state.depth = Math.min(MAX_DEPTH, Math.max(1, Number(asked.get("compare")) || 1));
+      // A link can name one stored run to compare with instead of a depth.
+      // Checked against this plugin's own snapshots below, once the detail
+      // has arrived, for the same reason the snapshot parameter is.
+      const askedAgainst = Number(asked.get("against")) || 0;
       state.onlyChanged = asked.get("changed") === "1";
       el("diff-only-box").checked = state.onlyChanged;
       // An earlier result, if the link names one. Checked against this
@@ -56,6 +60,11 @@ async function loadPlugins() {
       }
       // The sort, the search and the filters the link asks for. After select()
       // cleared them, and before the table is drawn with them.
+      if (askedAgainst
+          && (state.detail.snapshots || []).some((one) => one.id === askedAgainst)) {
+        state.against = askedAgainst;
+        state.depth = 2;
+      }
       const view = viewFromTheAddress(asked);
       if (state.depth > 1) {
         renderComparePicker();
@@ -122,7 +131,14 @@ async function loadComparison() {
   const snapshots = state.detail.snapshots || [];
   const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
   const at = snapshots.findIndex((snapshot) => snapshot.id === showing);
-  const older = snapshots.slice(at + 1, at + state.depth);
+  // Either the runs immediately before this one, stacked, or the single run
+  // that was named - which may be any of them, not only one of the last few.
+  // A named run that is no longer stored, or is not older than what is on
+  // screen, leaves nothing to compare with rather than quietly comparing
+  // something else.
+  const older = state.against
+    ? snapshots.slice(at + 1).filter((one) => one.id === state.against)
+    : snapshots.slice(at + 1, at + state.depth);
 
   const loaded = [];
   let unreadable = 0;

@@ -54,7 +54,7 @@ keep = 20
 | `run.every` | duration, or `"off"` | `"15m"` | how long after one run finishes the next starts |
 | `run.cron` | cron expression | none | a wall clock time to run at, in local time, instead of `every`. `"0 9 * * 1-5"` is nine on weekdays |
 | `table.columns` | list of text | none | if present, the header must match exactly |
-| `table.key` | text | the first column | which column names a row, used to line runs up when comparing |
+| `table.key` | text, or a list of text | the first column | which column names a row, used to line runs up when comparing. A list when no single column is unique |
 | `compare.ignore` | list of text | none | columns a comparison does not look at |
 | `output.file` | text | none | read the table from this file instead of stdout |
 | `output.sheet` | text | the first sheet | which sheet of an `.xlsx` |
@@ -301,16 +301,36 @@ rarely needed. Set it when the identifying column is not first:
 environment,repo,version     ->  key = "repo"
 ```
 
-Two rules follow from it:
+### When no single column names a row
 
-- **The key column is never compared.** A different value there is a different
-  row, not a changed one.
-- **Keys should be unique.** If two rows are called the same thing, cell by cell
-  comparison is impossible, so it falls back to whole rows appearing and
-  disappearing, and the page says so rather than guessing.
+In the table above neither column names a row on its own: `environment` repeats
+on every repo, and `repo` repeats in every environment. The **pair** names it.
+Say so with a list:
 
-If `[table] columns` is declared, the key has to be one of them, or the manifest
-is refused.
+```toml
+[table]
+key = ["environment", "repo"]
+```
+
+Given one column that repeats, two runs cannot be lined up row by row at all.
+The comparison then falls back to whole rows, where a version changing reads as
+one row leaving and another arriving - no history inside the cell, a `GONE` and
+a `NEW` instead. The strip above the table says which column repeated and that
+a list will fix it.
+
+Three rules follow:
+
+- **A key column is never compared.** A different value there is a different
+  row, not a changed one. That holds for each of them.
+- **The key has to be unique.** One column or several, the values have to name
+  each row once: `validate` refuses a table where two rows carry the same name,
+  with an empty value in any key column, before it is ever stored.
+- **Every named column has to exist.** If `[table] columns` is declared, each
+  key column has to be one of them, or the manifest is refused.
+
+Name only the columns that are needed to make a row unique. Adding a third
+column that is really a value - a version, a status - makes every change to it
+read as a different row.
 
 ## `[compare] ignore`
 
@@ -494,7 +514,7 @@ that says what is wrong with it.
 | `[output] fresh_for only means something with [output] file` | the age of a file that was never named |
 | `[history] keep must be 0 or more` | a negative number |
 | `[plugin] enabled must be true or false` | `enabled = "yes"` |
-| `[table] key is "x", which is not one of the columns` | the key names a column that is not declared |
+| `[table] key names "x", which is not one of the columns` | the key names a column that is not declared |
 | `[compare] ignore must be a list of text values` | a string instead of a list: `ignore = "checked_at"` |
 | `[compare] ignore names "x", which is the column that names each row` | the key column, which is never compared as a value |
 | `[compare] ignore names "x", which is not in [table] columns` | only catchable when the columns are declared |

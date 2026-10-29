@@ -50,6 +50,35 @@ class Validation(unittest.TestCase):
         with self.assertRaisesRegex(OutputError, 'missing'):
             validate_plugin(self.folder)
 
+    def test_several_key_columns_that_are_unique_together_are_accepted(self):
+        # Neither column is unique on its own. The pair is, which is the shape
+        # [table] key takes a list for.
+        (self.folder / 'plugin.toml').write_text(
+            '[output]\nfile="data.csv"\n[table]\nkey=["environment","repo"]\n')
+        self.table('environment,repo,version\nENV1,api,1\nENV2,api,2\nENV1,web,3\n')
+        self.assertIn('3 rows', validate_plugin(self.folder))
+
+    def test_several_key_columns_that_repeat_together_are_rejected(self):
+        (self.folder / 'plugin.toml').write_text(
+            '[output]\nfile="data.csv"\n[table]\nkey=["environment","repo"]\n')
+        self.table('environment,repo,version\nENV1,api,1\nENV1,api,2\n')
+        with self.assertRaisesRegex(OutputError, 'name each row once'):
+            validate_plugin(self.folder)
+
+    def test_an_empty_value_in_one_key_column_is_rejected(self):
+        (self.folder / 'plugin.toml').write_text(
+            '[output]\nfile="data.csv"\n[table]\nkey=["environment","repo"]\n')
+        self.table('environment,repo,version\nENV1,,1\n')
+        with self.assertRaisesRegex(OutputError, 'empty values'):
+            validate_plugin(self.folder)
+
+    def test_one_missing_key_column_of_several_is_rejected(self):
+        (self.folder / 'plugin.toml').write_text(
+            '[output]\nfile="data.csv"\n[table]\nkey=["environment","repo"]\n')
+        self.table('environment,version\nENV1,1\n')
+        with self.assertRaisesRegex(OutputError, 'missing'):
+            validate_plugin(self.folder)
+
     def test_an_ignored_column_that_is_not_in_the_table_is_rejected(self):
         # [compare] ignore names a column that is never compared. Misspelt, it
         # quietly does nothing - and the table looks as though the setting was

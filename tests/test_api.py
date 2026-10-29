@@ -130,6 +130,48 @@ class TheCellEndpoint(ApiTest):
         _, payload = self.get_json("/api/plugins/demo")
         self.assertIn("key", payload)
 
+    def test_too_few_row_values_for_the_key_is_refused(self):
+        # One value per key column, or the row being asked about is a guess.
+        status, _ = self.get_json("/api/plugins/demo/cell?column=b")
+        self.assertEqual(status, 400)
+
+    def test_too_many_row_values_for_the_key_is_refused(self):
+        status, _ = self.get_json("/api/plugins/demo/cell?row=one&row=two&column=b")
+        self.assertEqual(status, 400)
+
+
+class TheCellEndpointWithSeveralKeyColumns(ApiTest):
+    """A table where no single column names a row: the key is a pair."""
+
+    MANIFEST = ('[plugin]\nname = "Demo"\n[run]\ncommand = ["true"]\n'
+                '[table]\nkey = ["environment", "repo"]\n')
+
+    def setUp(self):
+        super().setUp()
+        (self.config.plugins_dir / "demo" / "plugin.toml").write_text(self.MANIFEST,
+                                                                       encoding="utf-8")
+        self.registry.scan()
+        columns = ["environment", "repo", "version"]
+        self.store.save_snapshot("demo", columns,
+                                 [["ENV1", "api", "1.0.0"], ["ENV2", "api", "9.0.0"]], 20)
+        self.store.save_snapshot("demo", columns,
+                                 [["ENV1", "api", "1.1.0"], ["ENV2", "api", "9.0.0"]], 20)
+
+    def test_both_values_pick_one_row(self):
+        _, payload = self.get_json(
+            "/api/plugins/demo/cell?row=ENV1&row=api&column=version")
+        self.assertEqual([entry["value"] for entry in payload["history"]],
+                         ["1.1.0", "1.0.0"])
+
+    def test_the_other_row_has_its_own_history(self):
+        _, payload = self.get_json(
+            "/api/plugins/demo/cell?row=ENV2&row=api&column=version")
+        self.assertEqual([entry["value"] for entry in payload["history"]], ["9.0.0"])
+
+    def test_one_value_is_not_enough_to_name_a_row(self):
+        status, _ = self.get_json("/api/plugins/demo/cell?row=ENV1&column=version")
+        self.assertEqual(status, 400)
+
 
 class Throttling(ApiTest):
     """What the page needs in order to say why nothing is happening."""

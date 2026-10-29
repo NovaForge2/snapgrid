@@ -373,6 +373,8 @@ every   = "15m"                   # s, m, h, d, w - or "off" for manual only
 [table]
 columns = ["repo", "ENV1", "ENV2"]  # optional: the header must then match
 key     = "repo"                    # which column names a row, for comparing
+                                    # or ["environment", "repo"] when no one
+                                    # column is unique on its own
 
 [compare]
 ignore = ["checked_at"]           # columns a comparison does not look at

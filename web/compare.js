@@ -18,21 +18,52 @@
 
 "use strict";
 
-// The column that names each row: [table] key, or the first column. Without
-// one, a changed value looks like a row leaving and another arriving, which
-// is true and useless.
-function keyIndexIn(columns, keyName) {
-  const index = keyName ? columns.indexOf(keyName) : 0;
-  return index >= 0 ? index : 0;
+// [table] key, as a list of names whatever it was written as. A plugin may
+// name one column or several, and an older server sends a bare string.
+function keyNamesOf(keyName) {
+  if (Array.isArray(keyName)) return keyName.filter(Boolean);
+  return keyName ? [keyName] : [];
 }
 
-// [table] key naming a column the result does not have. The manifest can only
+// The columns that name each row: [table] key, or the first column. Without
+// one, a changed value looks like a row leaving and another arriving, which
+// is true and useless.
+//
+// More than one when no single column is unique. In "environment,repo,version"
+// the environment repeats on every repo and the repo repeats in every
+// environment; the pair names the row, and nothing else does.
+function keyIndexesIn(columns, keyName) {
+  const names = keyNamesOf(keyName);
+  if (!names.length) return [0];
+  const out = names.map((name) => columns.indexOf(name)).filter((index) => index >= 0);
+  return out.length ? out : [0];
+}
+
+// Kept for the one caller that wants somewhere to hang the name chip: the
+// leftmost of the key columns.
+function keyIndexIn(columns, keyName) {
+  return keyIndexesIn(columns, keyName)[0];
+}
+
+// What names this row, across however many columns name it. Stringified
+// rather than joined, because any separator can also be a value and two
+// different rows would then read as one.
+function keyTextOf(row, keyIndexes) {
+  if (keyIndexes.length === 1) return cellValue(row, keyIndexes[0]);
+  return JSON.stringify(keyIndexes.map((index) => cellValue(row, index)));
+}
+
+// [table] key naming columns the result does not have. The manifest can only
 // catch that when [table] columns is declared as well, so most of the time
 // the first this can be known is here, with a result in hand. Falling back to
 // the leftmost column would compare by whatever happens to be there and say
 // nothing about it.
+function missingKeyColumns(columns, keyName) {
+  return keyNamesOf(keyName).filter((name) => !columns.includes(name));
+}
+
 function missingKeyColumn(columns, keyName) {
-  return keyName && !columns.includes(keyName) ? keyName : "";
+  return missingKeyColumns(columns, keyName)[0] || "";
 }
 
 function cellValue(row, index) {
@@ -55,7 +86,7 @@ function sameRow(a, b, columns, ignored) {
 // the same thing.
 function ignoredIndexes(columns, ignore, keyName) {
   const names = new Set(ignore || []);
-  names.delete(columns[keyIndexIn(columns, keyName)]);
+  for (const index of keyIndexesIn(columns, keyName)) names.delete(columns[index]);
   const out = new Set();
   columns.forEach((column, index) => { if (names.has(column)) out.add(index); });
   return out;
@@ -115,11 +146,11 @@ function duplicateCount(rows, shownIndexes) {
 }
 
 function byKey(columns, rows, keyName) {
-  const index = keyIndexIn(columns, keyName);
+  const indexes = keyIndexesIn(columns, keyName);
   const map = new Map();
   let duplicates = false;
   for (const row of rows) {
-    const key = cellValue(row, index);
+    const key = keyTextOf(row, indexes);
     if (map.has(key)) duplicates = true;
     else map.set(key, row);
   }
@@ -140,20 +171,27 @@ function compareRuns(runs, keyName, ignore) {
     return { impossible: "the columns are not the same in every run" };
   }
 
-  const missing = missingKeyColumn(columns, keyName);
-  if (missing) {
-    return { impossible: `[table] key is "${missing}", and this result has no column `
-                         + `of that name - it has ${columns.join(", ")}` };
+  const missing = missingKeyColumns(columns, keyName);
+  if (missing.length) {
+    return { impossible: `[table] key names ${missing.map((name) => `"${name}"`).join(", ")}, `
+                         + `and this result has no column of that name - it has `
+                         + columns.join(", ") };
   }
 
-  const key = keyIndexIn(columns, keyName);
+  const keys = keyIndexesIn(columns, keyName);
+  const key = keys[0];
   const ignored = ignoredIndexes(columns, ignore, keyName);
   const indexed = runs.map((run) => byKey(run.columns, run.rows, keyName));
   if (indexed.some((one) => one.duplicates)) {
     // Cell by cell comparison needs one row per name. Without that, whole
     // rows can still be compared - a row is the same row or it is not -
     // which is less, and is better than showing nothing.
-    return wholeRows(runs, `more than one row is called the same thing in "${columns[key]}"`,
+    const named = keys.map((index) => `"${columns[index]}"`).join(" and ");
+    return wholeRows(runs, `more than one row is called the same thing in ${named}`
+                           + (keys.length === 1
+                              ? ' - name the columns that together make a row unique with '
+                                + '[table] key'
+                              : ""),
                      ignored);
   }
 
@@ -177,13 +215,14 @@ function compareRuns(runs, keyName, ignore) {
     const everBefore = overRuns.slice(1).some((row) => row !== null);
     const moved = overRuns.some((row, at) =>
       at > 0 && !sameRow(row, overRuns[at - 1], columns, ignored));
+    const keySet = new Set(keys);
 
     if (here && !everBefore) added += 1;
     else if (!here && everBefore) removed += 1;
 
     if (here && everBefore && moved) {
       columns.forEach((_, index) => {
-        if (index === key || ignored.has(index)) return;   // not a compared value
+        if (keySet.has(index) || ignored.has(index)) return;   // not a compared value
         const values = overRuns.map((row) => (row ? cellValue(row, index) : null));
         for (let at = 1; at < values.length; at += 1) {
           if (values[at] !== null && values[at] !== values[at - 1]) changedCells += 1;
@@ -192,7 +231,7 @@ function compareRuns(runs, keyName, ignore) {
     }
     rows.set(name, { overRuns, here, everBefore, moved });
   }
-  return { rows, names, runs, changedCells, added, removed, ignored };
+  return { rows, names, runs, changedCells, added, removed, ignored, keys };
 }
 
 function wholeRows(runs, why, ignored) {
@@ -261,7 +300,8 @@ function wholeRows(runs, why, ignored) {
 // the tests, and this is the one line that makes that work.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    keyIndexIn, missingKeyColumn, cellValue, sameRow, rowText, rowTextIgnoring,
+    keyIndexIn, keyIndexesIn, keyNamesOf, keyTextOf,
+    missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
     ignoredIndexes, byKey, compareRuns, wholeRows, compactRows, duplicateCount,
   };
 }

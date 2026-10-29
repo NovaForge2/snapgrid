@@ -353,6 +353,15 @@ input[type=search] { flex: 0 1 280px; min-width: 0; }
    these hold dated snapshot labels - 486px of the row went on two of them,
    which is what pushed Config onto a line of its own. */
 #toolbar select { min-width: 0; max-width: 180px; flex: 0 1 auto; text-overflow: ellipsis; }
+/* The two that name a stored run carry a date, a clock time with its minutes
+   and a row count, and 180px cuts the clock off - the one part anybody picks
+   a run by. They get room for the whole label and, with min-width, they keep
+   it: the row above wraps, which it is already allowed to do, instead of
+   squeezing these two down to the arrow. Measured in em rather than px
+   because the text size on this page is adjustable, and a cap in pixels
+   starts clipping again two presses in. */
+#toolbar #snapshot-picker { flex: 0 0 auto; min-width: 19.5em; max-width: 21em; }
+#toolbar #compare-picker  { flex: 0 0 auto; min-width: 22em;   max-width: 24em; }
 /* Last on the line, however the line wraps. A fixed order with the search box
    taking the slack put it in the middle of a narrow window. */
 #view-wrap { position: relative; margin-left: auto; flex: none; }
@@ -398,6 +407,9 @@ input[type=search] { flex: 0 1 280px; min-width: 0; }
   #panel-head { padding: 12px 14px 10px; }
   #toolbar, #diff-bar, #message { padding-left: 14px; padding-right: 14px; }
   #toolbar select { max-width: none; flex: 1 1 160px; }
+  /* On their own line there is nothing to keep together, so they take it. */
+  #toolbar #snapshot-picker,
+  #toolbar #compare-picker { flex: 1 1 100%; min-width: 0; max-width: none; }
   input[type=search] { flex: 1 1 100%; }
   /* Pushed right by a margin, which on its own line puts it in the middle of
      nowhere. On a wrapped row it goes back to the left with everything else. */

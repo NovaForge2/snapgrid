@@ -27,9 +27,10 @@ def validate_plugin(folder: Path, csv_path: Path | None = None) -> str:
             columns, rows = parse_table(read_output_file(plugin, 0), plugin)
         if any(not name for name in columns) or len(set(columns)) != len(columns):
             raise OutputError("column names must be non-empty and unique")
-        key = plugin.key or columns[0]
-        if key not in columns:
-            raise OutputError(f"key column {key!r} is missing")
+        key = plugin.key or [columns[0]]
+        for name in key:
+            if name not in columns:
+                raise OutputError(f"key column {name!r} is missing")
         # A name here that is not a column does nothing at all, in silence:
         # the manifest can only check it when [table] columns is declared.
         for ignored in plugin.compare_ignore:
@@ -38,12 +39,17 @@ def validate_plugin(folder: Path, csv_path: Path | None = None) -> str:
                     f"[compare] ignore names {ignored!r}, which the table does not "
                     f"have - it has {', '.join(columns)}"
                 )
-        index = columns.index(key)
+        indexes = [columns.index(name) for name in key]
+        named = ", ".join(repr(name) for name in key)
         seen = set()
         for row in rows:
-            value = row[index]
-            if not value.strip() or value in seen:
-                raise OutputError(f"key column {key!r} must contain non-empty, unique values")
+            parts = [row[at] for at in indexes]
+            value = tuple(parts)
+            if not all(part.strip() for part in parts) or value in seen:
+                raise OutputError(f"key column {named} must contain non-empty, unique values"
+                                  if len(key) == 1 else
+                                  f"the key columns {named} must together name each row "
+                                  f"once, with no empty values")
             seen.add(value)
     except Exception as exc:
         raise OutputError(str(exc)) from exc

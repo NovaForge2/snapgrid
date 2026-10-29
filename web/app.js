@@ -15,6 +15,8 @@ const state = {
   configFor: null,    // which plugin the config panel is currently showing
   side: null,         // null, "log" or "config"
   depth: 1,           // how many runs are shown in each cell; 1 means off
+  against: 0,         // compare with this one stored run instead of the last
+                      // few: its snapshot id, or 0 for the stack above
   past: [],           // the older snapshots, newest first, once fetched
   unreadable: 0,      // how many of those could not be read
   pastFor: "",        // what those older snapshots were fetched for
@@ -98,6 +100,39 @@ function timeAgo(seconds) {
   if (delta < 45) return "just now";
   if (delta < 172800) return duration(delta) + " ago";
   return new Date(seconds * 1000).toLocaleString();
+}
+
+// A date and a clock time, for the two dropdowns that name a stored run.
+// "2h ago" is the friendlier form in a sentence and the wrong one in a list
+// of runs to choose between: several of them are "2h ago", and the minutes
+// are the only thing that tells them apart.
+//
+// A 24 hour clock whatever the machine's locale says, for width: "19:47" is
+// five characters where "07:47 PM" is eight, in a dropdown where the clock
+// is the part that was being cut off. The date keeps the locale's own order.
+function clockOf(seconds, withSeconds) {
+  if (!seconds) return "never";
+  const when = new Date(seconds * 1000);
+  const day = when.toLocaleDateString([], { day: "numeric", month: "short" });
+  const clock = when.toLocaleTimeString([], {
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    ...(withSeconds ? { second: "2-digit" } : {}),
+  });
+  return `${day} ${clock}`;
+}
+
+// Two runs a few seconds apart read as the same entry to the minute, and a
+// list of runs where two lines are identical cannot be chosen from. Seconds
+// are added to all of them when that happens, rather than to the pair, so
+// that every line in the list is still the same shape.
+function clockNeedsSeconds(snapshots) {
+  const seen = new Set();
+  for (const snapshot of snapshots) {
+    const label = clockOf(snapshot.last_seen, false);
+    if (seen.has(label)) return true;
+    seen.add(label);
+  }
+  return false;
 }
 
 function timeUntil(seconds) {
@@ -369,7 +404,8 @@ function rememberInTheAddress() {
   // Which result, not only which plugin: "this is what it said at nine" is a
   // thing to send somebody.
   if (state.snapshotId) asked.set("snapshot", String(state.snapshotId));
-  if (state.depth > 1) asked.set("compare", String(state.depth));
+  if (state.against) asked.set("against", String(state.against));
+  else if (state.depth > 1) asked.set("compare", String(state.depth));
   if (state.onlyChanged) asked.set("changed", "1");
   if (state.sort.column && state.sort.direction) {
     asked.set("sort", state.sort.column + (state.sort.direction > 0 ? ":asc" : ":desc"));
@@ -574,17 +610,22 @@ function renderSnapshotPicker() {
   }
   picker.hidden = false;
   picker.textContent = "";
+  const seconds = clockNeedsSeconds(snapshots);
   snapshots.forEach((snapshot, index) => {
     const option = document.createElement("option");
     option.value = String(snapshot.id);
-    const when = timeAgo(snapshot.last_seen);
-    // "Showing:", because without it the closed dropdown reads as a label
+    // The time in full, with its minutes. Said as "2h ago", two runs an hour
+    // apart read as the same entry, and the one thing anybody picks a stored
+    // run by - when it was - is the part that was missing.
+    //
+    // "Showing", because without it the closed dropdown reads as a label
     // saying when the result is from rather than as the control that picks
     // which result is on screen - and then the only thing anybody finds is
     // the Compare dropdown beside it, which says what it does.
+    const when = clockOf(snapshot.last_seen, seconds);
     option.textContent = index === 0
-      ? "Showing: latest (" + when + ")"
-      : "Showing: " + when + " - " + rowCount(snapshot.row_count);
+      ? "Showing " + when + " (latest)"
+      : "Showing " + when + " - " + rowCount(snapshot.row_count);
     if (state.snapshotId ? Number(state.snapshotId) === snapshot.id : index === 0) {
       option.selected = true;
     }
@@ -603,20 +644,55 @@ function renderComparePicker() {
   picker.hidden = false;
   picker.textContent = "";
 
-  // Five is the most, and it is a limit of height rather than of arithmetic:
-  // five runs of a forty row table is a very tall page.
-  const options = [[1, "Compare: off"], [2, "Compare with: the one before"]];
+  const chosen = pickerValue();
+  const add = (into, value, label) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    if (value === chosen) option.selected = true;
+    into.appendChild(option);
+  };
+  const group = (label) => {
+    const holder = document.createElement("optgroup");
+    holder.label = label;
+    picker.appendChild(holder);
+    return holder;
+  };
+
+  add(picker, "1", "Compare: off");
+
+  // Stacking every run in between answers "when did this move?". Five is the
+  // most, and it is a limit of height rather than of arithmetic: five runs of
+  // a forty row table is a very tall page.
+  const stack = group("The last few runs, stacked");
+  add(stack, "2", "Compare with: the one before");
   for (let depth = 3; depth <= Math.min(MAX_DEPTH, snapshots.length); depth += 1) {
-    options.push([depth, `Compare: last ${depth} runs`]);
+    add(stack, String(depth), `Compare: last ${depth} runs`);
   }
 
-  for (const [value, label] of options) {
-    const option = document.createElement("option");
-    option.value = String(value);
-    option.textContent = label;
-    if (value === state.depth) option.selected = true;
-    picker.appendChild(option);
+  // A pair instead, which answers the other question: what is different now
+  // from how it was then. Every stored run is reachable, not only the last
+  // five, and the runs in between are not drawn - two lines in a cell, now
+  // and then. Only differing results are stored, so the oldest entry here is
+  // the last time the table said something else.
+  const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
+  const at = snapshots.findIndex((snapshot) => snapshot.id === showing);
+  const older = snapshots.slice(at + 1);
+  if (older.length) {
+    const seconds = clockNeedsSeconds(older);
+    const pair = group("One earlier run, on its own");
+    for (const snapshot of older) {
+      add(pair, "at:" + snapshot.id,
+          "Compare with " + clockOf(snapshot.last_seen, seconds)
+          + " - " + rowCount(snapshot.row_count));
+    }
   }
+}
+
+// What the compare dropdown should have selected: a stored run if one was
+// named, otherwise the depth of the stack.
+function pickerValue() {
+  return state.against ? "at:" + state.against : String(state.depth);
 }
 
 const MAX_DEPTH = 5;
@@ -627,8 +703,15 @@ const MAX_DEPTH = 5;
 // functions, given the runs and the key column, returning what differs.
 // These three are the seam, and the only part that knows about state.
 
+// The columns that name a row: [table] key, or the leftmost one. More than
+// one when no single column is unique, which is the usual case in a table
+// shaped "environment,repo,version".
+function keyIndexes(columns) {
+  return keyIndexesIn(columns, state.detail && state.detail.key);
+}
+
 function keyIndex(columns) {
-  return keyIndexIn(columns, state.detail && state.detail.key);
+  return keyIndexes(columns)[0];
 }
 
 // Every run being shown, newest first: what is on screen, then the older ones.
@@ -656,7 +739,7 @@ function comparisonFor(current) {
 function comparisonSignature() {
   const snapshots = (state.detail && state.detail.snapshots) || [];
   const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
-  return `${state.selected}|${showing}|${state.depth}`;
+  return `${state.selected}|${showing}|${state.depth}|${state.against}`;
 }
 
 // Bumped on every request, so a slow answer cannot land after a newer one and
@@ -693,9 +776,12 @@ function renderDiffBar(diff) {
   const left = named.length
     ? ` - ${named.join(", ")} ${named.length > 1 ? "are" : "is"} not compared`
     : "";
+  const against = state.against && diff.runs.length === 2
+    ? `Comparing with the run of ${clockOf(diff.runs[1].last_seen)}`
+    : `Showing the last ${diff.runs.length} runs`;
   what.textContent = (diff.degraded
     ? `Whole rows only, because ${diff.degraded}`
-    : `Showing the last ${diff.runs.length} runs`) + left + short;
+    : against) + left + short;
 
   // The runs are the same for every cell, so they are named once, here.
   // There is no room for a date inside a cell.
@@ -759,13 +845,16 @@ function closeCellHistory() {
   el("cell-history").hidden = true;
 }
 
-async function openCellHistory(rowName, column, anchor) {
+// rowValues holds one value per column [table] key names, in that order:
+// that is what says which row this cell is in when no single column is unique.
+async function openCellHistory(rowValues, column, anchor) {
+  const names = Array.isArray(rowValues) ? rowValues : [rowValues];
   const popup = el("cell-history");
   popup.textContent = "";
   popup.hidden = false;
 
   const heading = document.createElement("h4");
-  heading.textContent = `${rowName} - ${column}`;
+  heading.textContent = `${names.join(" / ")} - ${column}`;
   popup.appendChild(heading);
 
   const loading = document.createElement("div");
@@ -776,9 +865,9 @@ async function openCellHistory(rowName, column, anchor) {
 
   let payload;
   try {
+    const asked = names.map((value) => "row=" + encodeURIComponent(value)).join("&");
     payload = await api("/api/plugins/" + encodeURIComponent(state.selected) + "/cell"
-                        + "?row=" + encodeURIComponent(rowName)
-                        + "&column=" + encodeURIComponent(column));
+                        + "?" + asked + "&column=" + encodeURIComponent(column));
   } catch (error) {
     loading.textContent = "the history could not be read";
     return;
@@ -1100,7 +1189,12 @@ function renderTable() {
                                 : null);
   const usable = diff && diff.rows ? diff : null;
   const ignored = (usable && usable.ignored) || new Set();
-  const key = keyIndex(columns);
+  const keys = keyIndexes(columns);
+  const key = keys[0];            // where the new/gone chip hangs
+  const keySet = new Set(keys);   // every column that is identity, not a value
+  // What to ask the server for when a cell's own history is opened: one value
+  // per key column, in the order [table] key names them.
+  const keyValuesOf = (row) => keys.map((index) => cellValue(row, index));
   // Hidden columns still filter and sort - they are out of sight, not out of
   // the table - so everything below works on indexes into the full row.
   const hidden = hiddenColumns();
@@ -1250,11 +1344,11 @@ function renderTable() {
           // back than the comparison does. Before this, stacking was what
           // made a cell clickable, so the rows that stopped stacking took
           // their history with them.
-          if (usable && index !== key) {
+          if (usable && !keySet.has(index)) {
             td.classList.add("has-history");
             td.addEventListener("click", (event) => {
               event.stopPropagation();
-              openCellHistory(cellValue(row, key), columns[index], td);
+              openCellHistory(keyValuesOf(row), columns[index], td);
             });
           }
           tr.appendChild(td);
@@ -1263,13 +1357,14 @@ function renderTable() {
 
         td.classList.add("stack");
 
-        // The column that names the row is not a value: it says the same
-        // thing in every run by definition, so it is written once.
-        if (index === key) {
+        // A column that names the row is not a value: it says the same
+        // thing in every run by definition, so it is written once. With a
+        // composite key that holds for each of them.
+        if (keySet.has(index)) {
           const line = document.createElement("span");
           line.className = "v now";
           line.textContent = cellValue(row, index);
-          if (kind) {
+          if (kind && index === key) {
             const chip = document.createElement("span");
             chip.className = "chip " + kind;
             chip.textContent = kind === "added" ? "new" : "gone";
@@ -1299,7 +1394,7 @@ function renderTable() {
           putValue(line, columns[index], cellValue(row, index));
           line.addEventListener("click", (event) => {
             event.stopPropagation();
-            openCellHistory(cellValue(row, key), columns[index], td);
+            openCellHistory(keyValuesOf(row), columns[index], td);
           });
           td.appendChild(line);
           // The guides have to cross this cell even though it has nothing to
@@ -1330,7 +1425,7 @@ function renderTable() {
             // Without this the same click reaches the document handler below
             // and closes the popup in the same tick as it opens.
             event.stopPropagation();
-            openCellHistory(cellValue(row, key), columns[index], td);
+            openCellHistory(keyValuesOf(row), columns[index], td);
           });
           td.appendChild(line);
         }
@@ -1346,7 +1441,7 @@ function renderTable() {
     const movedCellsIn = (over) => {
       let moved = 0;
       shownIndexes.forEach((index) => {
-        if (index === key || ignored.has(index)) return;
+        if (keySet.has(index) || ignored.has(index)) return;
         const present = over.map((one) => (one ? cellValue(one, index) : null))
                             .filter((value) => value !== null);
         for (let at = 1; at < present.length; at += 1) {
@@ -1380,7 +1475,7 @@ function renderTable() {
       // one on screen takes the first entry, the second takes the second.
       const taken = new Map();
       const nameOf = (row) => {
-        if (!usable.whole) return row[key];
+        if (!usable.whole) return keyTextOf(row, keys);
         const text = rowTextIgnoring(row, columns, usable.ignored);
         const n = taken.get(text) || 0;
         taken.set(text, n + 1);
@@ -1933,6 +2028,11 @@ el("btn-cancel").addEventListener("click", async () => {
 el("snapshot-picker").addEventListener("change", (event) => {
   const picker = event.target;
   state.snapshotId = picker.selectedIndex === 0 ? null : picker.value;
+  // A run named to compare with is named relative to what is on screen. Move
+  // the screen to an older result and that run may now be the newer of the
+  // two, which is not a comparison anybody asked for.
+  state.against = 0;
+  if (state.depth > 1) state.depth = 2;
   loadDetail();
 });
 
@@ -1942,7 +2042,16 @@ el("search").addEventListener("input", (event) => {
 });
 
 el("compare-picker").addEventListener("change", async (event) => {
-  state.depth = Number(event.target.value) || 1;
+  const chosen = String(event.target.value);
+  if (chosen.startsWith("at:")) {
+    // A pair: this result and that one run. Two runs deep, so everything
+    // downstream that asks "is the comparison on?" keeps working unchanged.
+    state.against = Number(chosen.slice(3));
+    state.depth = 2;
+  } else {
+    state.against = 0;
+    state.depth = Number(chosen) || 1;
+  }
   state.onlyChanged = false;
   el("diff-only-box").checked = false;
   closeCellHistory();

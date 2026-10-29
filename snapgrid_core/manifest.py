@@ -52,7 +52,9 @@ class Plugin:
     every: int | None = None          # seconds between runs, None means manual only
     cron: object | None = None        # a wall clock schedule instead of every
     columns: list[str] | None = None  # expected header, None means take it from the output
-    key: str = ""                     # the column naming each row, for comparing runs
+    key: list[str] = field(default_factory=list)
+    # the columns naming each row, for comparing runs. Empty means the
+    # first column. More than one when no single column is unique.
     compare_ignore: list[str] = field(default_factory=list)
     # columns left out of a comparison, from [compare] ignore
     output_file: str = ""             # read the table from this file instead of stdout
@@ -336,16 +338,38 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
         if not columns:
             raise ManifestError("[table] columns cannot be an empty list")
 
-    # Which column says what a row is about, so two runs can be lined up. The
+    # Which columns say what a row is about, so two runs can be lined up. The
     # first column is nearly always it, which is why this is rarely set.
-    key = table_table.get("key", "")
-    if not isinstance(key, str):
-        raise ManifestError('[table] key must be the name of a column, for example key = "repo"')
-    key = key.strip()
-    if key and columns and key not in columns:
-        raise ManifestError(
-            f'[table] key is "{key}", which is not one of the columns: {", ".join(columns)}'
-        )
+    #
+    # A list, because plenty of tables have no single unique column. In
+    # "environment,repo,version" neither the environment nor the repo names a
+    # row on its own; the pair does. Given one column that repeats, two runs
+    # cannot be lined up row by row at all, and the comparison falls back to
+    # whole rows - which is where a changed value reads as one row leaving and
+    # another arriving instead of as a value that moved.
+    raw_key = table_table.get("key", "")
+    if isinstance(raw_key, str):
+        key = [raw_key.strip()] if raw_key.strip() else []
+    elif isinstance(raw_key, list):
+        key = _string_list(raw_key, "[table] key")
+        if not key:
+            raise ManifestError("[table] key cannot be an empty list")
+    else:
+        raise ManifestError('[table] key must be the name of a column, for example '
+                            'key = "repo", or a list of them, for example '
+                            'key = ["environment", "repo"]')
+    for column in key:
+        if not column.strip():
+            raise ManifestError("[table] key cannot contain an empty name")
+    if len(set(key)) != len(key):
+        raise ManifestError("[table] key names the same column twice")
+    if columns:
+        for column in key:
+            if column not in columns:
+                raise ManifestError(
+                    f'[table] key names "{column}", which is not one of the columns: '
+                    f'{", ".join(columns)}'
+                )
 
     # Columns a comparison does not look at. A column holding the time of the
     # run, or a count of days, changes on its own every day: left in, every
@@ -359,7 +383,7 @@ def parse_manifest(text: str, plugin_id: str, directory: Path, mtime: float) -> 
                 raise ManifestError("[compare] ignore cannot contain an empty name")
             # The naming column is identity, not a value: it is never compared
             # as one, so listing it asks for something that already holds.
-            if column == (key or (columns[0] if columns else "")):
+            if column in (key or ([columns[0]] if columns else [])):
                 raise ManifestError(
                     f'[compare] ignore names "{column}", which is the column that '
                     f"names each row. That column is what two runs are lined up "

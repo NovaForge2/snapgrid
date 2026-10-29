@@ -72,7 +72,52 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   (`./tools/make-screenshots.py docs/demo`), so one picture can be redone
   without rewriting every other picture at a different minute.
 
+### Comparing runs
+
+- **`[table] key` takes a list of columns.** Plenty of tables have no single
+  unique column: in `environment,repo,version` the environment repeats on every
+  repo and the repo repeats in every environment, so neither names a row. Given
+  one column that repeats, two runs cannot be lined up row by row at all, and
+  the comparison fell back to whole rows - a changed version read as one row
+  leaving and another arriving, with a `GONE` and a `NEW` where the history
+  inside the cell should have been. Name the columns that are unique together:
+
+  ```toml
+  [table]
+  key = ["environment", "repo"]
+  ```
+
+  Each of them is identity rather than a value, so none is ever compared, none
+  can be taken out by `[compare] ignore`, and `validate` refuses a table where
+  the named columns do not name each row exactly once. One cell's own history,
+  the popover on a click, is found by all of them too. Where only one column
+  repeats, the strip above the table now says that a list will fix it rather
+  than only naming the column.
+
+- **A comparison can name one earlier run instead of the last few.** The
+  dropdown used to offer the last 3, 4 or 5 runs, stacked, and nothing else:
+  with twenty runs kept, the version from last week could not be reached at
+  all, because reaching it meant twenty lines in every cell and the limit is
+  five. It now also lists every stored run by its date and clock time -
+  `Compare with 28 Oct 09:02 - 14 rows` - and comparing with one of those draws
+  exactly two values in a cell, now and then, with the runs in between left
+  out. The stack is still there, under its own heading, for the other
+  question: not what is different, but when it moved. A link carries the
+  choice as `against=<id>`.
+
 ### Table fixes
+
+- **The two dropdowns that name a stored run show the time in full.** Both were
+  capped at 180px, and the clock - the one part anybody picks a run by - was
+  what the cap cut off; the first of them said `2h ago`, which several stored
+  runs say at once. They now read `Showing 28 Oct 19:47 (latest)` and
+  `Compare with 28 Oct 09:02 - 14 rows`, on a 24 hour clock whatever the
+  machine's locale prefers, because `07:47 PM` spends three more characters in
+  the dropdown that had no room. Where two stored runs fall inside the same
+  minute, every entry in that list gains its seconds. The cap is gone and a
+  minimum has replaced it, measured in `em` so that it still holds after a few
+  presses of the text size control: the toolbar wraps, which it was always
+  allowed to do, instead of squeezing these two down to the arrow.
 
 - **Comparing runs now shows only what the current view shows.** Two places
   ignored the filters: a row that had gone was drawn whatever the filters said,

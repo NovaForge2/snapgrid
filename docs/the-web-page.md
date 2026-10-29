@@ -106,11 +106,16 @@ markers. An empty filtered table exports only its column headers.
   as the plugin printed it.
 - **The dropdown next to Run now picks which result is on screen.** It appears
   once there is more than one stored, and every entry says when that result is
-  from and how many rows it had: `Showing: latest (just now)`, `Showing: 2h ago
-  - 14 rows`. This is how you look at one earlier run on its own, without
-  comparing anything. The table, the sort, the filters, the search and the
+  from and how many rows it had: `Showing 28 Oct 19:47 (latest)`, `Showing 28
+  Oct 09:02 - 14 rows`. This is how you look at one earlier run on its own,
+  without comparing anything. The time is a date and a clock, to the minute,
+  rather than "2h ago": in a list of runs to choose between, several of them
+  are "2h ago" and the minutes are the only thing telling them apart. Where two
+  stored runs fall in the same minute, every entry gains its seconds. The
+  dropdown is wide enough for the whole line - capped narrower, the clock is
+  what got cut, which is the one part anybody picks a run by. The table, the sort, the filters, the search and the
   Excel export all then work on that result exactly as they do on the latest.
-  It says `Showing:` because without it a closed dropdown reads as a label
+  It says `Showing` because without it a closed dropdown reads as a label
   saying when the result is from rather than as the control that changes it.
   Which result you are looking at is in the address, as `snapshot=<id>`, so the
   view can be sent to somebody.
@@ -152,9 +157,26 @@ markers. An empty filtered table exports only its column headers.
   </picture>
 </p>
 
-The second dropdown chooses how far back to look: **off**, **the one before**,
-or the **last 3, 4 or 5 runs**. It only offers as many as have been stored, and
-it is off until you ask.
+The second dropdown chooses what to compare with, and it offers two kinds of
+answer:
+
+- **The last few runs, stacked** - **the one before**, or the **last 3, 4 or 5
+  runs**. Every run in between is drawn, one line per run, which is the way to
+  see *when* a value moved. Five is the most, and that is a limit of height
+  rather than arithmetic: five runs of a forty row table is a very tall page.
+- **One earlier run, on its own** - every stored run is listed by its date and
+  clock time, `Compare with 28 Oct 09:02 - 14 rows`. That compares exactly two
+  results, now and then, with nothing in between drawn. Reach is the point:
+  with twenty runs kept, the run from this time last week is one choice, where
+  stacking would need twenty lines in a cell and stops at five. Only differing
+  results are stored, so the oldest entry in the list is the last time the
+  table said something else.
+
+It only offers as many runs as have been stored, and it is off until you ask.
+Which one is chosen is in the address, as `compare=<n>` for a stack and
+`against=<id>` for a single run. Moving the first dropdown to an earlier result
+clears the choice, because a run named to compare with is named relative to
+what is on screen.
 
 With it on, a cell whose value moved holds one line per run, newest on top. A
 cell that never moved is written once, as it always is.
@@ -232,10 +254,19 @@ Two things it will refuse to do, rather than guess:
   next had five, there is no honest way to line the columns up, so it says so.
 - **Rows that cannot be told apart.** Rows are matched by the column that names
   them - the first one, or whichever `[table] key` names. If two rows share a
-  name, it falls back to whole rows appearing and disappearing.
+  name, it falls back to whole rows appearing and disappearing, and says which
+  column repeated.
 
-Five runs is the most, and that is a limit of height rather than arithmetic:
-five runs of a forty row table is a very tall page.
+  That last one is worth setting right rather than living with. In a table
+  shaped `environment,repo,version` neither column names a row on its own, so
+  the fallback is what you get: a changed version reads as one row leaving and
+  another arriving, with no history inside the cell. Name the columns that are
+  unique together and the cells stack as they should:
+
+  ```toml
+  [table]
+  key = ["environment", "repo"]
+  ```
 
 ## The address bar
 
@@ -252,6 +283,7 @@ http://127.0.0.1:8765/?plugin=disk-space&sort=used_percent:desc&filter.filesyste
 | `plugin` | which plugin to open |
 | `snapshot` | which stored result to show, by its id. Anything but this plugin's own ids is ignored |
 | `compare` | how many runs to show in each cell, 1 to 5. 1 is off |
+| `against` | one stored run to compare with instead, by its id - two results, now and then. Ignored unless it names a run of this plugin's that is older than the one on screen |
 | `changed` | `1` to start with **Only what changed** ticked |
 | `sort` | a column, and `:asc` or `:desc`. Without a direction it is ascending |
 | `q` | what to put in the search box |

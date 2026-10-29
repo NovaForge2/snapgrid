@@ -272,17 +272,23 @@ class Application:
             return {"history": []}
 
         columns = latest["columns"]
-        key_name = plugin.key or (columns[0] if columns else "")
+        key_names = plugin.key or ([columns[0]] if columns else [])
         column_name = query.get("column", [""])[0]
-        key_value = query.get("row", [""])[0]
-        if key_name not in columns or column_name not in columns:
+        # One "row" value per key column, in the order [table] key names them.
+        # A composite key needs all of them to say which row is meant.
+        key_values = query.get("row", [])
+        if len(key_values) != len(key_names):
+            raise HttpError(400, "the row is named by "
+                                 f"{len(key_names)} column(s), and {len(key_values)} "
+                                 "were given")
+        if column_name not in columns or any(name not in columns for name in key_names):
             raise HttpError(404, "no such column")
 
         return {
-            "row": key_value,
+            "row": " / ".join(key_values),
             "column": column_name,
             "history": self.store.cell_history(
-                plugin.id, key_name, key_value, column_name,
+                plugin.id, key_names, key_values, column_name,
                 limit=max(plugin.history_keep, 1) + 1,
             ),
         }

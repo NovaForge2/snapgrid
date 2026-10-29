@@ -22,7 +22,8 @@ const assert = require("node:assert");
 const path = require("node:path");
 
 const {
-  keyIndexIn, missingKeyColumn, cellValue, sameRow, rowText, rowTextIgnoring,
+  keyIndexIn, keyIndexesIn, keyNamesOf, keyTextOf,
+  missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
   ignoredIndexes, byKey, compareRuns, wholeRows, compactRows, duplicateCount,
 } = require(path.join(__dirname, "..", "web", "compare.js"));
 
@@ -157,8 +158,65 @@ test("a key column the result does not have is refused, and the message says wha
     run(VERSIONS, [["a", "1", "9"]]),
     run(VERSIONS, [["a", "2", "9"]]),
   ], "repoo");
-  assert.match(diff.impossible, /\[table\] key is "repoo"/);
+  assert.match(diff.impossible, /\[table\] key names "repoo"/);
   assert.match(diff.impossible, /repo, ENV1, ENV2/);
+});
+
+test("a key of several columns names a row no single column names", () => {
+  // environment repeats on every repo, repo repeats in every environment:
+  // one column alone cannot line two runs up, and the pair can.
+  const columns = ["environment", "repo", "version"];
+  const before = [["ENV1", "payments", "1.0.0"], ["ENV1", "orders", "2.0.0"],
+                  ["ENV2", "payments", "1.0.0"]];
+  const after = [["ENV1", "payments", "1.1.0"], ["ENV1", "orders", "2.0.0"],
+                 ["ENV2", "payments", "1.0.0"]];
+  const diff = compareRuns([run(columns, after), run(columns, before)],
+                           ["environment", "repo"]);
+  assert.ok(!diff.whole, "it should not fall back to whole rows");
+  assert.equal(diff.changedCells, 1);
+  assert.equal(diff.added, 0);
+  assert.equal(diff.removed, 0);
+  assert.equal(diff.rows.size, 3);
+  const moved = [...diff.rows.values()].filter((entry) => entry.moved);
+  assert.equal(moved.length, 1);
+});
+
+test("one of several key columns is enough to tell two rows apart", () => {
+  const columns = ["environment", "repo", "version"];
+  const rows = [["ENV1", "payments", "1.0.0"], ["ENV2", "payments", "1.0.0"]];
+  // On "environment" alone this is two rows called different things, so it
+  // is not degraded either way. On "repo" alone it is one name twice.
+  const onRepo = compareRuns([run(columns, rows), run(columns, rows)], "repo");
+  assert.ok(onRepo.whole, "repo alone repeats, so whole rows is right");
+  const onBoth = compareRuns([run(columns, rows), run(columns, rows)],
+                             ["environment", "repo"]);
+  assert.ok(!onBoth.whole);
+});
+
+test("a value holding the separator does not merge two rows", () => {
+  // Any separator can also be a value. "a" + "b,c" and "a,b" + "c" are two
+  // different rows, and joining the parts on a comma would make them one.
+  const columns = ["left", "right", "version"];
+  const rows = [["a", "b,c", "1.0.0"], ["a,b", "c", "2.0.0"]];
+  const diff = compareRuns([run(columns, rows), run(columns, rows)],
+                           ["left", "right"]);
+  assert.ok(!diff.whole, "the two rows are named differently");
+  assert.equal(diff.rows.size, 2);
+});
+
+test("whole row mode says to name the columns when one key repeats", () => {
+  const columns = ["environment", "repo", "version"];
+  const rows = [["ENV1", "payments", "1.0.0"], ["ENV1", "orders", "2.0.0"]];
+  const diff = compareRuns([run(columns, rows), run(columns, rows)], "environment");
+  assert.ok(diff.whole);
+  assert.match(diff.degraded, /\[table\] key/);
+});
+
+test("a key column is never left out of a comparison by [compare] ignore", () => {
+  const columns = ["environment", "repo", "version"];
+  const kept = ignoredIndexes(columns, ["environment", "repo", "version"],
+                              ["environment", "repo"]);
+  assert.deepEqual([...kept], [2]);
 });
 
 test("the column order does not have to match the key's position", () => {

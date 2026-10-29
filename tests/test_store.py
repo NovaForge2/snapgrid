@@ -152,7 +152,7 @@ class CellHistory(StoreTest):
         self.store.save_snapshot("p", self.COLUMNS, rows, 20)
 
     def history(self, repo="payments-api", column="ENV1"):
-        return self.store.cell_history("p", "repo", repo, column)
+        return self.store.cell_history("p", ["repo"], [repo], column)
 
     def test_one_snapshot_gives_one_entry(self):
         self.save([["payments-api", "2.14.1"]])
@@ -193,7 +193,7 @@ class CellHistory(StoreTest):
         # values as its own history.
         self.store.save_snapshot("p", ["repo", "ENV2"], [["api", "from-ENV2"]], 20)
         self.store.save_snapshot("p", ["repo", "ENV1"], [["api", "from-ENV1"]], 20)
-        got = [e["value"] for e in self.store.cell_history("p", "repo", "api", "ENV1")]
+        got = [e["value"] for e in self.store.cell_history("p", ["repo"], ["api"], "ENV1")]
         self.assertEqual(got, ["from-ENV1"],
                          "a run without this column has no history to give")
 
@@ -204,7 +204,7 @@ class CellHistory(StoreTest):
                                  [["api", "1.0", "x"]], 20)
         self.store.save_snapshot("p", ["repo", "ENV2", "ENV1"],
                                  [["api", "x", "2.0"]], 20)
-        got = [e["value"] for e in self.store.cell_history("p", "repo", "api", "ENV1")]
+        got = [e["value"] for e in self.store.cell_history("p", ["repo"], ["api"], "ENV1")]
         self.assertEqual(got, ["2.0", "1.0"])
 
     def test_an_unknown_row_has_no_history(self):
