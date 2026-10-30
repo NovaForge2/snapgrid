@@ -207,6 +207,22 @@ class CellHistory(StoreTest):
         got = [e["value"] for e in self.store.cell_history("p", ["repo"], ["api"], "ENV1")]
         self.assertEqual(got, ["2.0", "1.0"])
 
+    def test_every_line_under_one_name_is_in_the_cell(self):
+        # Two lines under one name are that row's values, and the cell on
+        # screen holds both of them. Reading only the first would answer with
+        # half the cell.
+        self.save([["payments-api", "2.14.1"], ["payments-api", "2.15.0"]])
+        self.assertEqual([e["value"] for e in self.history()], ["2.14.1\n2.15.0"])
+
+    def test_the_order_the_lines_came_in_is_not_a_change(self):
+        self.save([["payments-api", "2.14.1"], ["payments-api", "2.15.0"]])
+        self.save([["payments-api", "2.15.0"], ["payments-api", "2.14.1"]])
+        self.assertEqual(len(self.history()), 1, "the same two values are one entry")
+
+    def test_the_same_value_twice_is_written_once(self):
+        self.save([["payments-api", "2.14.1"], ["payments-api", "2.14.1"]])
+        self.assertEqual([e["value"] for e in self.history()], ["2.14.1"])
+
     def test_an_unknown_row_has_no_history(self):
         self.save([["payments-api", "2.14.1"]])
         self.assertEqual(self.history("never-existed"), [])

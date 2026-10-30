@@ -18,6 +18,13 @@
 
 "use strict";
 
+// What separates the values inside one cell. A plugin printing several lines
+// under one name has them merged into one row, and the cell holds them as
+// lines. A zero byte, because any character a person can type is a character
+// some table already holds: a separator that can also be a value would split
+// one value into two and say it changed.
+const LINES = "\u0000";
+
 // [table] key, as a list of names whatever it was written as. A plugin may
 // name one column or several, and an older server sends a bare string.
 function keyNamesOf(keyName) {
@@ -92,7 +99,8 @@ function ignoredIndexes(columns, ignore, keyName) {
   return out;
 }
 
-// A row compared as a whole, for when rows cannot be told apart by name.
+// A row as one piece of text, for asking whether two of them say the same
+// thing without walking their columns twice.
 function rowText(row) {
   return JSON.stringify(row);
 }
@@ -145,21 +153,84 @@ function duplicateCount(rows, shownIndexes) {
   return rows.length - compactRows(rows, shownIndexes).rows.length;
 }
 
-function byKey(columns, rows, keyName) {
+// Every row the key names, in the order the plugin printed them. One row is
+// the ordinary case. Several mean the plugin printed more than one line under
+// the same name, and those lines are that row's values rather than rows of
+// their own: blue and green of one service, two pods of one deployment.
+function groupByKey(columns, rows, keyName) {
   const indexes = keyIndexesIn(columns, keyName);
-  const map = new Map();
-  let duplicates = false;
+  const groups = new Map();
   for (const row of rows) {
-    const key = keyTextOf(row, indexes);
-    if (map.has(key)) duplicates = true;
-    else map.set(key, row);
+    const name = keyTextOf(row, indexes);
+    const group = groups.get(name);
+    if (group) group.push(row);
+    else groups.set(name, [row]);
   }
-  return { map, duplicates };
+  return groups;
+}
+
+// What one column holds across a group, each value written once, in the order
+// the plugin printed it. Printed order rather than sorted: a cell is read
+// beside the cells next to it, and sorting each column on its own would put
+// one line's status next to another line's branch.
+function valuesIn(group, index) {
+  const out = [];
+  const seen = new Set();
+  for (const row of group) {
+    const value = cellValue(row, index);
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+// One row for the key, whatever the plugin printed under it. A cell holding
+// several values holds them as lines, and the table draws a line each.
+function mergeGroup(columns, group) {
+  if (group.length === 1) return group[0];
+  return columns.map((_, index) => valuesIn(group, index).join(LINES));
+}
+
+// A cell as the lines it holds. Every cell has at least one.
+function linesOf(value) {
+  return String(value === undefined || value === null ? "" : value).split(LINES);
+}
+
+// Whether two groups of the same name say the same thing. The order the rows
+// arrived in is not part of it: a plugin that lists two pods the other way
+// round has not changed anything.
+function sameGroup(a, b, columns, ignored) {
+  if (a === null || b === null) return a === b;
+  if (a.length !== b.length) return false;
+  const textOf = (group) => group.map((row) => rowTextIgnoring(row, columns, ignored)).sort();
+  const left = textOf(a);
+  const right = textOf(b);
+  return left.every((text, at) => text === right[at]);
+}
+
+// How many of one column's values changed between two groups. One value each
+// side and a different value is one change, which is the ordinary row. Where
+// a group holds several, it is the larger of what arrived and what went, so
+// that one image replacing another counts once rather than twice.
+function changedValues(before, after, index) {
+  const was = new Set(valuesIn(before, index));
+  const now = new Set(valuesIn(after, index));
+  let gone = 0;
+  let fresh = 0;
+  for (const value of was) if (!now.has(value)) gone += 1;
+  for (const value of now) if (!was.has(value)) fresh += 1;
+  return Math.max(gone, fresh);
 }
 
 // What each row looks like across the runs given, newest first, or a reason it
 // cannot be worked out. A row is included if it was there in any of them, so
 // one that has gone is still visible - that is the thing worth noticing.
+//
+// A row here is a name and the lines the plugin printed under it. A repeating
+// key is not an error and never was worth refusing to compare: the lines under
+// one name are that row's values, and a value that moved is drawn inside the
+// cell it moved in.
 function compareRuns(runs, keyName, ignore) {
   if (!runs || runs.length < 2) return null;
 
@@ -179,26 +250,14 @@ function compareRuns(runs, keyName, ignore) {
   }
 
   const keys = keyIndexesIn(columns, keyName);
-  const key = keys[0];
+  const keySet = new Set(keys);
   const ignored = ignoredIndexes(columns, ignore, keyName);
-  const indexed = runs.map((run) => byKey(run.columns, run.rows, keyName));
-  if (indexed.some((one) => one.duplicates)) {
-    // Cell by cell comparison needs one row per name. Without that, whole
-    // rows can still be compared - a row is the same row or it is not -
-    // which is less, and is better than showing nothing.
-    const named = keys.map((index) => `"${columns[index]}"`).join(" and ");
-    return wholeRows(runs, `more than one row is called the same thing in ${named}`
-                           + (keys.length === 1
-                              ? ' - name the columns that together make a row unique with '
-                                + '[table] key'
-                              : ""),
-                     ignored);
-  }
+  const grouped = runs.map((run) => groupByKey(run.columns, run.rows, keyName));
 
   const names = [];
   const seen = new Set();
-  for (const one of indexed) {
-    for (const name of one.map.keys()) {
+  for (const one of grouped) {
+    for (const name of one.keys()) {
       if (!seen.has(name)) { seen.add(name); names.push(name); }
     }
   }
@@ -209,90 +268,32 @@ function compareRuns(runs, keyName, ignore) {
   let removed = 0;
 
   for (const name of names) {
-    // One entry per run: the row as it was then, or null if it was not there.
-    const overRuns = indexed.map((one) => one.map.get(name) || null);
+    // One entry per run: the lines printed under this name then, or null if
+    // the name was not there at all.
+    const overRuns = grouped.map((one) => one.get(name) || null);
     const here = overRuns[0] !== null;
-    const everBefore = overRuns.slice(1).some((row) => row !== null);
-    const moved = overRuns.some((row, at) =>
-      at > 0 && !sameRow(row, overRuns[at - 1], columns, ignored));
-    const keySet = new Set(keys);
+    const everBefore = overRuns.slice(1).some((group) => group !== null);
+    const moved = overRuns.some((group, at) =>
+      at > 0 && !sameGroup(group, overRuns[at - 1], columns, ignored));
 
     if (here && !everBefore) added += 1;
     else if (!here && everBefore) removed += 1;
 
     if (here && everBefore && moved) {
+      // The runs the row was in, in order. A row that went away and came back
+      // is compared across the gap rather than through it: the arrival is a
+      // fact about the row, said once by the chip, not by each of its cells.
+      const present = overRuns.filter((group) => group !== null);
       columns.forEach((_, index) => {
         if (keySet.has(index) || ignored.has(index)) return;   // not a compared value
-        const values = overRuns.map((row) => (row ? cellValue(row, index) : null));
-        for (let at = 1; at < values.length; at += 1) {
-          if (values[at] !== null && values[at] !== values[at - 1]) changedCells += 1;
+        for (let at = 1; at < present.length; at += 1) {
+          changedCells += changedValues(present[at], present[at - 1], index);
         }
       });
     }
     rows.set(name, { overRuns, here, everBefore, moved });
   }
   return { rows, names, runs, changedCells, added, removed, ignored, keys };
-}
-
-function wholeRows(runs, why, ignored) {
-  // Rows are compared as whole lines here, so two identical lines are two
-  // things, not one. Everything below counts copies: three of a row yesterday
-  // and none today is three rows gone, and it is drawn as three.
-  const columns = runs[0].columns;
-  const textOf = (row) => rowTextIgnoring(row, columns, ignored);
-  const counts = runs.map((run) => {
-    const seen = new Map();
-    for (const row of run.rows) {
-      const text = textOf(row);
-      seen.set(text, (seen.get(text) || 0) + 1);
-    }
-    return seen;
-  });
-
-  const distinct = [];
-  const seen = new Set();
-  for (const run of runs) {
-    for (const row of run.rows) {
-      const text = textOf(row);
-      if (!seen.has(text)) { seen.add(text); distinct.push({ text, row }); }
-    }
-  }
-
-  const rows = new Map();
-  const names = [];
-  let added = 0;
-  let removed = 0;
-
-  for (const { text, row } of distinct) {
-    const perRun = counts.map((one) => one.get(text) || 0);
-    const copies = Math.max(...perRun);
-
-    // One entry per copy. Copy n exists in a run if that run held more than n
-    // of it, which is what turns "three became one" into two rows gone rather
-    // than one row that is somehow still here.
-    for (let n = 0; n < copies; n += 1) {
-      const presence = perRun.map((held) => held > n);
-      const here = presence[0];
-      const everBefore = presence.slice(1).some(Boolean);
-      // Moved if this copy was not there in every run being compared, which
-      // also catches one that went away and came back inside the window.
-      const moved = presence.some((one) => one !== presence[0]);
-
-      if (here && !everBefore) added += 1;
-      else if (!here && everBefore) removed += 1;
-
-      rows.set(`${text}#${n}`, {
-        overRuns: here ? [row] : [null, row],
-        here,
-        everBefore,
-        moved,
-      });
-      names.push(`${text}#${n}`);
-    }
-  }
-
-  return { rows, names, runs, changedCells: 0, added, removed,
-           whole: true, degraded: why, ignored: ignored || new Set() };
 }
 
 // In the browser these are already global, because this is an ordinary script
@@ -302,6 +303,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     keyIndexIn, keyIndexesIn, keyNamesOf, keyTextOf,
     missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
-    ignoredIndexes, byKey, compareRuns, wholeRows, compactRows, duplicateCount,
+    ignoredIndexes, compareRuns, compactRows, duplicateCount,
+    groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, LINES,
   };
 }

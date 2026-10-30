@@ -301,6 +301,11 @@ class Store:
         The row is named by every column [table] key lists, so a table where
         no single column is unique still has one history per cell.
 
+        A run that printed several lines under that name has one cell holding
+        all of their values, each written once and separated by a newline -
+        the same cell the table shows. Reading only the first of them would
+        say a version went away on the run where the lines changed order.
+
         Columns are found **by name in each snapshot**, not by position. A
         plugin that reorders or inserts a column would otherwise have old
         values read out of whichever column now happens to sit at that index,
@@ -322,18 +327,22 @@ class Store:
                 column_index = columns.index(column_name)
             except ValueError:
                 continue                      # that run did not have every column
-            value = None
+            found: list[str] = []
             for values in json.loads(row["rows_json"]):
                 named = all(at < len(values) and values[at] == wanted
                             for at, wanted in zip(key_indexes, key_values))
                 if named:
-                    value = values[column_index] if column_index < len(values) else ""
-                    break
-            if value is None:
+                    one = values[column_index] if column_index < len(values) else ""
+                    if one not in found:
+                        found.append(one)
+            if not found:
                 continue                      # the row did not exist then
-            if history and history[-1]["value"] == value:
+            value = "\n".join(found)
+            if history and set(history[-1]["value"].split("\n")) == set(found):
                 # The same value seen again: stretch the entry back in time
-                # rather than repeating it.
+                # rather than repeating it. Compared as a set, so a run that
+                # printed the same lines the other way round is the same
+                # answer rather than a change nobody made.
                 history[-1]["since"] = row["first_seen"]
                 continue
             history.append({"value": value, "since": row["first_seen"],

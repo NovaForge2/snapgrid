@@ -248,25 +248,46 @@ now            2.17.0
 22 Sep 11:30   2.14.1
 ```
 
-Two things it will refuse to do, rather than guess:
+It will refuse one thing rather than guess it: **columns that differ between
+runs**. If a run had four environments and the next had five, there is no
+honest way to line the columns up, so it says so.
 
-- **Columns that differ between runs.** If a run had four environments and the
-  next had five, there is no honest way to line the columns up, so it says so.
-- **Rows that cannot be told apart.** Rows are matched by the column that names
-  them - the first one, or whichever `[table] key` names. If two rows share a
-  name, it falls back to whole rows appearing and disappearing, and says which
-  column repeated.
+### Several lines under one name
 
-  That last one is worth setting right rather than living with. In a table
-  shaped `environment,repo,version` neither column names a row on its own, so
-  the fallback is what you get: a changed version reads as one row leaving and
-  another arriving, with no history inside the cell. Name the columns that are
-  unique together and the cells stack as they should:
+Rows are matched by the column that names them - the first one, or whichever
+`[table] key` names. A plugin may print several lines under one name: two pods
+of one service, blue and green of one deployment. Those lines are the row's
+values rather than rows of their own, so they are **merged into the row they
+name**, and its cells hold a line each.
 
-  ```toml
-  [table]
-  key = ["environment", "repo"]
-  ```
+```
+Environment  Service  Pod              Status   Image
+SIT2         admin    admin-blue-1     Running  2.14.1
+                      admin-green-7    Running  2.15.1
+                      admin-green-6             2.15.0
+```
+
+Comparing marks the lines where they are, instead of the whole row arriving and
+leaving:
+
+- a value that **arrived** since the run being compared with is marked on its
+  left edge,
+- a value that **went** is kept on screen and struck through,
+- the cell's own history, on a click, shows what the whole cell was on each
+  earlier run,
+- and the count under the toolbar says `4 rows - 6 lines printed`, so a key
+  that merged more than expected is visible.
+
+A filter applies inside the cell too: filtering `Status` to `Running` takes the
+line that is not running out of that row's cells, and out of the tally.
+
+A cell holding ten values is a row that should have been ten. Name what tells
+the lines apart, and they stay rows of their own:
+
+```toml
+[table]
+key = ["environment", "repo"]
+```
 
 ## The address bar
 

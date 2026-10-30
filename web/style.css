@@ -544,6 +544,15 @@ td.stack .v.old { color: var(--muted); font-size: .92em; }
 td.stack .v.same { color: var(--muted); opacity: .6; }
 td.stack .v.gap { color: var(--muted); opacity: .55; font-size: .92em; }
 td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent); }
+/* A cell holding several values - two pods of one service - says what became
+   of each of them where it is, rather than by the whole row arriving or
+   leaving. The mark is on the left edge of the line, which is where the eye
+   already is when it reads down a cell. */
+td.stack .v.fresh { box-shadow: inset 2px 0 0 var(--added); }
+td.stack .v.went {
+  color: var(--muted); box-shadow: inset 2px 0 0 var(--removed);
+  text-decoration: line-through; text-decoration-color: var(--removed);
+}
 /* The name is written once and sits at the top, beside its lines. */
 td.stack.name .v { border-bottom: 0; cursor: default; }
 /* An unstacked cell in a compared table opens that cell's history as well, so
@@ -599,7 +608,12 @@ tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
 }
 #cell-history li.now { border-left-color: var(--accent); }
 #cell-history .when { color: var(--muted); width: 104px; flex: none; }
-#cell-history .val { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* A run that printed several lines under one name has them all in this cell,
+   so the value can be several lines here too. */
+#cell-history .val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-line;
+}
 #cell-history li.now .val { color: var(--accent); font-weight: 600; }
 #cell-history .none { color: var(--muted); }
 

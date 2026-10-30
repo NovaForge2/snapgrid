@@ -75,12 +75,9 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
 ### Comparing runs
 
 - **`[table] key` takes a list of columns.** Plenty of tables have no single
-  unique column: in `environment,repo,version` the environment repeats on every
-  repo and the repo repeats in every environment, so neither names a row. Given
-  one column that repeats, two runs cannot be lined up row by row at all, and
-  the comparison fell back to whole rows - a changed version read as one row
-  leaving and another arriving, with a `GONE` and a `NEW` where the history
-  inside the cell should have been. Name the columns that are unique together:
+  column that names a row: in `environment,repo,version` the environment
+  repeats on every repo and the repo repeats in every environment. Name the
+  ones that name a row together:
 
   ```toml
   [table]
@@ -88,11 +85,42 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   ```
 
   Each of them is identity rather than a value, so none is ever compared, none
-  can be taken out by `[compare] ignore`, and `validate` refuses a table where
-  the named columns do not name each row exactly once. One cell's own history,
-  the popover on a click, is found by all of them too. Where only one column
-  repeats, the strip above the table now says that a list will fix it rather
-  than only naming the column.
+  can be taken out by `[compare] ignore`, and `validate` refuses an empty value
+  in any of them. One cell's own history, the popover on a click, is found by
+  all of them too.
+
+- **Lines sharing a name are one row, holding several values.** A plugin
+  printing one line per pod has two or three lines for one service - blue and
+  green, two replicas - and no column that tells them apart stays the same from
+  one deployment to the next. Until now a repeating name made the whole table
+  fall back to comparing rows as whole lines: a new image read as one row
+  leaving and another arriving, two `GONE` rows at the foot of the table and
+  two `NEW` ones among the rest, with nothing at all inside the cell. The count
+  said `93 of 85 rows`, because the rows that had gone were counted as rows of
+  the result.
+
+  Those lines are now merged into the row they name, and the cells hold them a
+  line each:
+
+  ```
+  Environment  Service  Pod             Status   Image
+  SIT2         admin    admin-blue-1    Running  2.14.1
+                        admin-green-7   Running  2.15.1
+                        admin-green-6            2.15.0
+  ```
+
+  A value that arrived since the run being compared with is marked on its left
+  edge; one that went is kept on screen and struck through, where it is, in the
+  column it is in. The cell's own history shows what the whole cell was on each
+  earlier run. A filter reaches inside the cell as well - filtering `Status` to
+  `Running` takes the line that is not running out of that row's cells and out
+  of the tally - and the count under the toolbar reads `4 rows - 6 lines
+  printed`, so a key that merges more than expected is visible rather than
+  silent. `validate` says the same thing instead of refusing the table.
+
+  Whole row mode is gone with it, along with the strip that explained it. The
+  comparison now refuses exactly one thing, which it always should have: runs
+  whose columns are not the same.
 
 - **A comparison can name one earlier run instead of the last few.** The
   dropdown used to offer the last 3, 4 or 5 runs, stacked, and nothing else:

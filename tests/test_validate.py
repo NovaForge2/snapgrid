@@ -32,11 +32,19 @@ class Validation(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('2 rows', out.getvalue())
 
-    def test_duplicate_or_empty_keys_are_rejected(self):
-        for text in ['name,value\na,1\na,2\n', 'name,value\n,1\n']:
-            self.table(text)
-            with self.assertRaisesRegex(OutputError, 'unique'):
-                validate_plugin(self.folder)
+    def test_an_empty_key_is_rejected(self):
+        self.table('name,value\n,1\n')
+        with self.assertRaisesRegex(OutputError, 'must not be empty'):
+            validate_plugin(self.folder)
+
+    def test_a_repeating_key_is_accepted_and_counted(self):
+        # Two lines under one name are that row's values, not two rows, and
+        # the table merges them. Said in the count rather than refused: the
+        # plugin printed two lines and gets one row, which is worth knowing.
+        self.table('name,value\na,1\na,2\nb,3\n')
+        said = validate_plugin(self.folder)
+        self.assertIn('3 lines printed, 2 rows', said)
+        self.assertIn('merged', said)
 
     def test_duplicate_or_empty_headers_are_rejected(self):
         for text in ['name,name\na,b\n', 'name,\na,b\n']:
@@ -58,18 +66,17 @@ class Validation(unittest.TestCase):
         self.table('environment,repo,version\nENV1,api,1\nENV2,api,2\nENV1,web,3\n')
         self.assertIn('3 rows', validate_plugin(self.folder))
 
-    def test_several_key_columns_that_repeat_together_are_rejected(self):
+    def test_several_key_columns_that_repeat_together_are_merged(self):
         (self.folder / 'plugin.toml').write_text(
             '[output]\nfile="data.csv"\n[table]\nkey=["environment","repo"]\n')
         self.table('environment,repo,version\nENV1,api,1\nENV1,api,2\n')
-        with self.assertRaisesRegex(OutputError, 'name each row once'):
-            validate_plugin(self.folder)
+        self.assertIn('2 lines printed, 1 row', validate_plugin(self.folder))
 
     def test_an_empty_value_in_one_key_column_is_rejected(self):
         (self.folder / 'plugin.toml').write_text(
             '[output]\nfile="data.csv"\n[table]\nkey=["environment","repo"]\n')
         self.table('environment,repo,version\nENV1,,1\n')
-        with self.assertRaisesRegex(OutputError, 'empty values'):
+        with self.assertRaisesRegex(OutputError, 'must not be empty'):
             validate_plugin(self.folder)
 
     def test_one_missing_key_column_of_several_is_rejected(self):

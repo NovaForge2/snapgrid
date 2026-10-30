@@ -77,7 +77,7 @@ keep = 20
 | `run.every` | string | `"15m"` | a number and a unit: `s`, `m`, `h`, `d`, `w`. So `"30s"`, `"15m"`, `"2h"`, `"10d"`, `"2w"`, or `"off"` for manual only. Measured from the end of the previous run |
 | `run.cron` | string | none | a five field cron expression in **local time** - `"0 9 * * 1-5"` is nine on weekdays. Use it instead of `every` when the table has to exist by a particular time rather than every so often. Writing both is refused |
 | `table.columns` | list of strings | none | when present, the header line must match it exactly. Omit it and the header defines the columns |
-| `table.key` | string, or a list of strings | the first column | which column names a row. Used to line two runs up when comparing them, so it must be stable and unique. A list when no single column is unique - `key = ["environment", "repo"]` - because one column that repeats makes a cell by cell comparison impossible |
+| `table.key` | string, or a list of strings | the first column | which column names a row. Used to line two runs up when comparing them, so it must be stable. A list when no single column names a row - `key = ["environment", "repo"]`. Lines sharing a name are merged into one row whose cells hold several values |
 | `compare.ignore` | list of strings | none | columns a comparison does not look at. For a column that moves on its own, such as the time of the run. Never the naming column, which is refused |
 | `output.file` | string | none | read the table from this file instead of stdout. Anything printed then becomes log. `.xlsx` is read as a spreadsheet |
 | `output.sheet` | string | first sheet | which sheet of a workbook to read |
@@ -192,9 +192,24 @@ repeats in every environment, so neither names a row:
 key = ["environment", "repo"]
 ```
 
-Left as one repeating column, two runs cannot be lined up row by row, and the
-comparison falls back to whole rows: a changed version reads as one row leaving
-and another arriving, with no history inside the cell.
+Left as one repeating column, every line of an environment is the same row, so
+they are all merged into it - see below.
+
+**Lines sharing a name are one row, holding several values.** Two pods of one
+service, blue and green of one deployment: print a line each, name the row with
+`[table] key`, and snapgrid merges them into one row whose cells hold both
+values, a line each. A value that arrived or went is marked in the cell it is
+in, rather than the whole row arriving or leaving.
+
+```
+Environment,Service,Pod,Status,Image      ->  key = ["Environment", "Service"]
+SIT2,admin,admin-blue-1,Running,2.14.1        one row, two pods, two images
+SIT2,admin,admin-green-7,Running,2.15.1
+```
+
+This is for lines that genuinely belong to one thing. If two lines are two
+separate things, name what tells them apart and they stay two rows: a merged
+cell holding ten values is a row that should have been ten.
 
 Set `history.keep` when looking back matters — versions, counts, anything you
 would ask "when did that change?" about. A run producing an identical table does

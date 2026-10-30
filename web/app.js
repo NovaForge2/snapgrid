@@ -779,18 +779,13 @@ function renderDiffBar(diff) {
   const against = state.against && diff.runs.length === 2
     ? `Comparing with the run of ${clockOf(diff.runs[1].last_seen)}`
     : `Showing the last ${diff.runs.length} runs`;
-  what.textContent = (diff.degraded
-    ? `Whole rows only, because ${diff.degraded}`
-    : against) + left + short;
+  what.textContent = against + left + short;
 
   // The runs are the same for every cell, so they are named once, here.
   // There is no room for a date inside a cell.
   const legend = document.createElement("span");
   legend.className = "legend";
-  // Whole row mode draws one line per row, so numbering five runs would point
-  // at lines that are not there.
-  const listed = diff.whole ? diff.runs.slice(0, 1) : diff.runs;
-  listed.forEach((run, at) => {
+  diff.runs.forEach((run, at) => {
     const item = document.createElement("span");
     const number = document.createElement("i");
     number.className = at === 0 ? "n now" : "n";
@@ -799,9 +794,8 @@ function renderDiffBar(diff) {
     legend.appendChild(item);
   });
   // A dot is read either as "the same" or as "nothing there", and those are
-  // opposites, so it is not left to be guessed at. Only where there are dots
-  // to explain: whole row mode draws no stacked lines.
-  if (!diff.whole && diff.runs.length > 1) {
+  // opposites, so it is not left to be guessed at.
+  if (diff.runs.length > 1) {
     const key = document.createElement("span");
     key.className = "key";
     const dot = document.createElement("i");
@@ -1201,7 +1195,16 @@ function renderTable() {
   const shownIndexes = columns.map((column, index) => (hidden.has(column) ? -1 : index))
                               .filter((index) => index >= 0);
   const shownColumns = shownIndexes.map((index) => columns[index]);
-  let rows = visibleRows(columns, snapshot.rows, null);
+  // One row per name, whatever the plugin printed. Lines sharing a name are
+  // that row's values - blue and green of one service - and they are merged
+  // into one row whose cells hold several values. Filtered first, so a filter
+  // taking one of them off the screen takes it out of the cell as well.
+  const keyName = state.detail && state.detail.key;
+  const merge = (someRows) =>
+    Array.from(groupByKey(columns, someRows, keyName).values())
+         .map((group) => mergeGroup(columns, group));
+  const printed = snapshot.rows.length;
+  let rows = merge(visibleRows(columns, snapshot.rows, null));
 
   // After the filters, because what is compacted is what is on screen; before
   // the sort, because the sort then orders the rows that are left rather than
@@ -1304,26 +1307,59 @@ function renderTable() {
   if (!rows.length && !(usable && usable.removed)) {
     sayThereAreNone();
   } else {
-    // Without a comparison this is one line per row, as it always was. With
-    // one, every cell in the row holds the same number of lines, so line two
-    // means "the run before" the whole way across.
+    // A cell written as lines, one per value it holds. `marks` says what
+    // became of a line since the run being compared with - nothing, or that it
+    // arrived, or that it is not there any more.
+    const putLines = (td, column, values, marks) => {
+      td.classList.add("stack");
+      for (const value of (values.length ? values : [""])) {
+        const line = document.createElement("span");
+        const mark = marks && marks.get(value);
+        line.className = "v now" + (mark ? " " + mark : "");
+        putValue(line, column, value);
+        line.title = value;
+        td.appendChild(line);
+      }
+    };
+
+    // Without a comparison this is one line per value. With one, a row whose
+    // name holds a single line gets a line per run - the history of that one
+    // value - and a row holding several gets a line per value, with the ones
+    // that arrived or went marked. Five runs of three values is fifteen lines
+    // in a cell, which is not a table any more.
     const drawRow = (row, over, kind) => {
       const tr = document.createElement("tr");
       if (kind) tr.className = kind;
-      const depth = over ? over.length : 1;
+      const several = over
+        ? over.some((group) => group && group.length > 1)
+        : false;
+      const depth = over && !several ? over.length : 1;
+      const last = shownIndexes[shownIndexes.length - 1];
 
       shownIndexes.forEach((index) => {
         const td = document.createElement("td");
         if (kinds[index] === "number") td.className = "num";
+        const column = columns[index];
+        const openHistory = () => {
+          td.classList.add("has-history");
+          td.addEventListener("click", (event) => {
+            event.stopPropagation();
+            openCellHistory(keyValuesOf(row), column, td);
+          });
+        };
 
         if (!over) {
-          const value = cellValue(row, index);
-          putValue(td, columns[index], value);
-          td.title = value;   // cells are clipped, so keep the full value reachable
+          const values = linesOf(cellValue(row, index));
+          if (values.length > 1) {
+            putLines(td, column, values, null);
+          } else {
+            putValue(td, column, values[0]);
+            td.title = values[0];   // cells are clipped, keep the full value reachable
+          }
           // At the end of the row, not the start. On the first cell it reads
           // as a count of that one value - "nginx x4" - when what it counts
           // is the whole row.
-          if (counts && index === shownIndexes[shownIndexes.length - 1]) {
+          if (counts && index === last) {
             const many = counts.get(row) || 1;
             if (many > 1) {
               const chip = document.createElement("span");
@@ -1339,28 +1375,21 @@ function renderTable() {
             chip.textContent = kind === "added" ? "new" : "gone";
             td.appendChild(chip);
           }
-          // A row drawn as one line while the runs are being compared is
+          // A row drawn without a stack while the runs are being compared is
           // still a compared row, and the history of one cell goes further
           // back than the comparison does. Before this, stacking was what
           // made a cell clickable, so the rows that stopped stacking took
           // their history with them.
-          if (usable && !keySet.has(index)) {
-            td.classList.add("has-history");
-            td.addEventListener("click", (event) => {
-              event.stopPropagation();
-              openCellHistory(keyValuesOf(row), columns[index], td);
-            });
-          }
+          if (usable && !keySet.has(index)) openHistory();
           tr.appendChild(td);
           return;
         }
 
-        td.classList.add("stack");
-
         // A column that names the row is not a value: it says the same
-        // thing in every run by definition, so it is written once. With a
-        // composite key that holds for each of them.
+        // thing in every run and in every line by definition, so it is
+        // written once. With a composite key that holds for each of them.
         if (keySet.has(index)) {
+          td.classList.add("stack", "name");
           const line = document.createElement("span");
           line.className = "v now";
           line.textContent = cellValue(row, index);
@@ -1371,12 +1400,38 @@ function renderTable() {
             line.appendChild(chip);
           }
           td.appendChild(line);
-          td.classList.add("name");
           tr.appendChild(td);
           return;
         }
 
-        const values = over.map((one) => (one ? cellValue(one, index) : null));
+        if (several) {
+          // What this column holds now, then what it held before and does not
+          // hold any more. A value that arrived is marked where it is; a value
+          // that went is kept on screen, because a version that disappeared is
+          // the thing worth seeing.
+          const now = over[0] ? valuesIn(over[0], index) : [];
+          const before = new Set();
+          for (const group of over.slice(1)) {
+            if (group) for (const value of valuesIn(group, index)) before.add(value);
+          }
+          const compared = !ignored.has(index) && over.slice(1).some((group) => group);
+          const marks = new Map();
+          const went = [];
+          if (compared) {
+            for (const value of now) if (!before.has(value)) marks.set(value, "fresh");
+            for (const value of before) {
+              if (!now.includes(value)) { went.push(value); marks.set(value, "went"); }
+            }
+          }
+          if (marks.size) td.classList.add("moved");
+          putLines(td, column, now.concat(went), marks);
+          openHistory();
+          tr.appendChild(td);
+          return;
+        }
+
+        td.classList.add("stack");
+        const values = over.map((one) => (one ? cellValue(one[0], index) : null));
         // Whether this value ever changed, ignoring the runs the row was not
         // in: a row arriving or leaving is a fact about the row, said once by
         // the chip and the tint, not something each of its cells repeats.
@@ -1391,10 +1446,10 @@ function renderTable() {
         if (!moved) {
           const line = document.createElement("span");
           line.className = "v now";
-          putValue(line, columns[index], cellValue(row, index));
+          putValue(line, column, cellValue(row, index));
           line.addEventListener("click", (event) => {
             event.stopPropagation();
-            openCellHistory(keyValuesOf(row), columns[index], td);
+            openCellHistory(keyValuesOf(row), column, td);
           });
           td.appendChild(line);
           // The guides have to cross this cell even though it has nothing to
@@ -1419,13 +1474,13 @@ function renderTable() {
             line.title = value;
           } else {
             line.className = at === 0 ? "v now" : "v old";
-            putValue(line, columns[index], value);
+            putValue(line, column, value);
           }
           line.addEventListener("click", (event) => {
             // Without this the same click reaches the document handler below
             // and closes the popup in the same tick as it opens.
             event.stopPropagation();
-            openCellHistory(keyValuesOf(row), columns[index], td);
+            openCellHistory(keyValuesOf(row), column, td);
           });
           td.appendChild(line);
         }
@@ -1440,24 +1495,36 @@ function renderTable() {
     // worth stacking at all, and what the strip above the table should count.
     const movedCellsIn = (over) => {
       let moved = 0;
+      const present = over.filter((group) => group !== null);
       shownIndexes.forEach((index) => {
         if (keySet.has(index) || ignored.has(index)) return;
-        const present = over.map((one) => (one ? cellValue(one, index) : null))
-                            .filter((value) => value !== null);
         for (let at = 1; at < present.length; at += 1) {
-          if (present[at] !== present[at - 1]) moved += 1;
+          moved += changedValues(present[at], present[at - 1], index);
         }
       });
       return moved;
     };
 
-    // A row gets a line per run only when a cell on screen has more than one
-    // value to show. A row that never moved was given a line per run anyway,
+    // A row whose name holds several lines always draws them, so the cell can
+    // say which of them arrived. Otherwise a row gets a line per run only when
+    // a cell on screen has more than one value to show. A row that never moved was given a line per run anyway,
     // and so was one that arrived or went - where every earlier line is blank,
     // because the arrival is said once by the chip and the edge rather than by
     // each of its cells. Either way the table came out two or three times
     // taller than it needed to be, with the real changes lost in blank lines.
-    const worthStacking = (over) => movedCellsIn(over) > 0;
+    const worthStacking = (over) => over.some((group) => group && group.length > 1)
+                                 || movedCellsIn(over) > 0;
+
+    // The lines of a row that the filters and the search leave on screen, run
+    // by run. What is compared is what is being looked at: a filter that takes
+    // one pod of a service off the screen takes it out of that service's cells
+    // as well, and out of the count above the table. A run whose lines are all
+    // filtered away is read as a run the row was not in.
+    const asSeen = (overRuns) => overRuns.map((group) => {
+      if (!group) return null;
+      const left = visibleRows(columns, group, null);
+      return left.length ? left : null;
+    });
 
     // What the strip above the table says, counted from the rows this draw
     // actually puts on screen rather than from the runs as a whole.
@@ -1471,25 +1538,14 @@ function renderTable() {
       // Walk the rows in the order the table was sorted and filtered into,
       // rather than the order the snapshot happened to store them in, so that
       // clicking a heading still does something while comparing.
-      // Identical rows are separate things in whole row mode, so the first
-      // one on screen takes the first entry, the second takes the second.
-      const taken = new Map();
-      const nameOf = (row) => {
-        if (!usable.whole) return keyTextOf(row, keys);
-        const text = rowTextIgnoring(row, columns, usable.ignored);
-        const n = taken.get(text) || 0;
-        taken.set(text, n + 1);
-        return `${text}#${n}`;
-      };
       for (const row of rows) {
-        const entry = usable.rows.get(nameOf(row));
+        const entry = usable.rows.get(keyTextOf(row, keys));
         if (!entry) continue;
         if (state.onlyChanged && !entry.moved) continue;
-        const over = usable.whole || !worthStacking(entry.overRuns)
-          ? null : entry.overRuns;
-        movedHere += movedCellsIn(entry.overRuns);
+        const seen = asSeen(entry.overRuns);
+        movedHere += movedCellsIn(seen);
         if (!entry.everBefore) addedHere += 1;
-        drawRow(row, over, entry.everBefore ? "" : "added");
+        drawRow(row, worthStacking(seen) ? seen : null, entry.everBefore ? "" : "added");
       }
       // The rows that have gone, after the ones that are still here. There is
       // nothing to sort them by in this result, but the filter and the search
@@ -1500,12 +1556,11 @@ function renderTable() {
       for (const name of usable.names) {
         const entry = usable.rows.get(name);
         if (entry.here) continue;
-        const newest = entry.overRuns.find((one) => one !== null);
-        if (!visibleRows(columns, [newest], null).length) continue;
-        const over = usable.whole || !worthStacking(entry.overRuns)
-          ? null : entry.overRuns;
+        const seen = asSeen(entry.overRuns);
+        const group = seen.find((one) => one !== null);
+        if (!group) continue;
         goneHere += 1;
-        drawRow(newest, over, "removed");
+        drawRow(mergeGroup(columns, group), worthStacking(seen) ? seen : null, "removed");
       }
       renderDiffCounts(movedHere, addedHere, goneHere);
       // Only what changed can take every row away while there are rows to
@@ -1517,12 +1572,16 @@ function renderTable() {
   wrap.appendChild(table);
   applyWidths(table, shownColumns);
 
-  const total = snapshot.rows.length;
-  // While comparing, what is on screen includes rows that have gone, so the
-  // count is of lines drawn rather than of rows in this result.
-  const drawn = tbody.querySelectorAll("tr:not(.no-rows)").length;
+  // Of the rows this result holds, not of the lines the plugin printed: a
+  // plugin printing two lines under one name has one row here, and the count
+  // says how many lines that was. Rows that have gone are drawn as well and
+  // are not counted - they are not rows of this result - and the strip above
+  // the table says how many there are.
+  const total = groupByKey(columns, snapshot.rows, keyName).size;
+  const drawn = tbody.querySelectorAll("tr:not(.no-rows):not(.removed)").length;
   const shown = usable ? drawn : rows.length;
   const said = [shown === total ? rowCount(total) : shown + " of " + rowCount(total)];
+  if (printed !== total) said.push(`${printed} lines printed`);
   const missing = columns.length - shownIndexes.length;
   if (missing) said.push(`${missing} column${missing > 1 ? "s" : ""} hidden`);
   // While it is off, the count is the only thing that says there is anything

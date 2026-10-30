@@ -24,7 +24,8 @@ const path = require("node:path");
 const {
   keyIndexIn, keyIndexesIn, keyNamesOf, keyTextOf,
   missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
-  ignoredIndexes, byKey, compareRuns, wholeRows, compactRows, duplicateCount,
+  ignoredIndexes, compareRuns, compactRows, duplicateCount,
+  groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, LINES,
 } = require(path.join(__dirname, "..", "web", "compare.js"));
 
 // A run, newest first when passed to compareRuns.
@@ -122,7 +123,9 @@ test("up to five runs line up, newest first", () => {
   const runs = ["5", "4", "3", "2", "1"].map((v) => run(VERSIONS, [["a", v, "9"]]));
   const diff = compareRuns(runs, "repo");
   assert.equal(diff.runs.length, 5);
-  assert.deepEqual(entry(diff, "a").overRuns.map((r) => r[1]), ["5", "4", "3", "2", "1"]);
+  // One entry per run, and each entry is the lines that run printed under the
+  // name - one line here, which is the ordinary table.
+  assert.deepEqual(entry(diff, "a").overRuns.map((g) => g[0][1]), ["5", "4", "3", "2", "1"]);
   assert.equal(diff.changedCells, 4, "four steps between five values");
 });
 
@@ -172,7 +175,6 @@ test("a key of several columns names a row no single column names", () => {
                  ["ENV2", "payments", "1.0.0"]];
   const diff = compareRuns([run(columns, after), run(columns, before)],
                            ["environment", "repo"]);
-  assert.ok(!diff.whole, "it should not fall back to whole rows");
   assert.equal(diff.changedCells, 1);
   assert.equal(diff.added, 0);
   assert.equal(diff.removed, 0);
@@ -184,13 +186,13 @@ test("a key of several columns names a row no single column names", () => {
 test("one of several key columns is enough to tell two rows apart", () => {
   const columns = ["environment", "repo", "version"];
   const rows = [["ENV1", "payments", "1.0.0"], ["ENV2", "payments", "1.0.0"]];
-  // On "environment" alone this is two rows called different things, so it
-  // is not degraded either way. On "repo" alone it is one name twice.
+  // On "repo" alone both lines are called the same thing, so they are one
+  // row holding two environments. Name the pair and they are two rows.
   const onRepo = compareRuns([run(columns, rows), run(columns, rows)], "repo");
-  assert.ok(onRepo.whole, "repo alone repeats, so whole rows is right");
+  assert.equal(onRepo.rows.size, 1);
   const onBoth = compareRuns([run(columns, rows), run(columns, rows)],
                              ["environment", "repo"]);
-  assert.ok(!onBoth.whole);
+  assert.equal(onBoth.rows.size, 2);
 });
 
 test("a value holding the separator does not merge two rows", () => {
@@ -200,16 +202,16 @@ test("a value holding the separator does not merge two rows", () => {
   const rows = [["a", "b,c", "1.0.0"], ["a,b", "c", "2.0.0"]];
   const diff = compareRuns([run(columns, rows), run(columns, rows)],
                            ["left", "right"]);
-  assert.ok(!diff.whole, "the two rows are named differently");
   assert.equal(diff.rows.size, 2);
 });
 
-test("whole row mode says to name the columns when one key repeats", () => {
+test("a repeating key is one row holding several values, not a refusal", () => {
   const columns = ["environment", "repo", "version"];
   const rows = [["ENV1", "payments", "1.0.0"], ["ENV1", "orders", "2.0.0"]];
   const diff = compareRuns([run(columns, rows), run(columns, rows)], "environment");
-  assert.ok(diff.whole);
-  assert.match(diff.degraded, /\[table\] key/);
+  assert.equal(diff.rows.size, 1, "one environment is one row");
+  assert.equal(entry(diff, "ENV1").overRuns[0].length, 2, "holding both lines");
+  assert.equal(diff.changedCells, 0, "and nothing changed between the runs");
 });
 
 test("a key column is never left out of a comparison by [compare] ignore", () => {
@@ -238,44 +240,99 @@ test("no key named means the first column", () => {
   assert.ok(diff.rows.has("a"));
 });
 
-/* ------------------------------------------- rows that cannot be told apart */
+/* ----------------------------------------- several lines under one name ----
+ *
+ * A plugin printing two lines with the same name has printed one row holding
+ * two values - blue and green of one service, two pods of one deployment. The
+ * lines are merged into one row, and a value that arrived or went is marked
+ * in the cell it is in. Before this the whole table fell back to comparing
+ * rows as whole lines, where a changed version read as one row leaving and
+ * another arriving, and nothing could be seen inside a cell.
+ */
 
-test("duplicate names fall back to whole rows, and say why", () => {
+test("lines sharing a name are one row, not a row each", () => {
   const diff = compareRuns([
     run(VERSIONS, [["a", "1", "9"], ["a", "2", "9"]]),
     run(VERSIONS, [["a", "1", "9"]]),
   ], "repo");
-  assert.equal(diff.whole, true);
-  assert.match(diff.degraded, /more than one row is called the same thing in "repo"/);
-  assert.equal(diff.added, 1, 'the second "a" is a row that was not there before');
-});
-
-test("identical rows are counted, not collapsed", () => {
-  // Three yesterday, none today, is three rows gone.
-  const diff = wholeRows([
-    run(VERSIONS, []),
-    run(VERSIONS, [["a", "1", "9"], ["a", "1", "9"], ["a", "1", "9"]]),
-  ], "test");
-  assert.equal(diff.removed, 3);
-  assert.equal(diff.names.length, 3);
-});
-
-test("one copy becoming two is an addition", () => {
-  const diff = wholeRows([
-    run(VERSIONS, [["a", "1", "9"], ["a", "1", "9"]]),
-    run(VERSIONS, [["a", "1", "9"]]),
-  ], "test");
-  assert.equal(diff.added, 1);
+  assert.equal(diff.rows.size, 1);
+  assert.equal(diff.added, 0, "the row was there before; one of its values is new");
   assert.equal(diff.removed, 0);
+  assert.equal(diff.changedCells, 1, "one version arrived in the version column");
+  assert.equal(entry(diff, "a").moved, true);
 });
 
-test("a copy that disappears and returns counts as moved", () => {
-  const diff = wholeRows([
+test("one value replacing another counts once, not twice", () => {
+  const diff = compareRuns([
+    run(VERSIONS, [["a", "1", "9"], ["a", "3", "9"]]),
+    run(VERSIONS, [["a", "1", "9"], ["a", "2", "9"]]),
+  ], "repo");
+  assert.equal(diff.changedCells, 1, "2 became 3; 1 stayed");
+});
+
+test("the order the lines arrive in is not a change", () => {
+  const diff = compareRuns([
+    run(VERSIONS, [["a", "2", "9"], ["a", "1", "9"]]),
+    run(VERSIONS, [["a", "1", "9"], ["a", "2", "9"]]),
+  ], "repo");
+  assert.equal(diff.changedCells, 0);
+  assert.equal(entry(diff, "a").moved, false);
+});
+
+test("a line that goes is a changed value, not a row that left", () => {
+  const diff = compareRuns([
     run(VERSIONS, [["a", "1", "9"]]),
-    run(VERSIONS, []),
+    run(VERSIONS, [["a", "1", "9"], ["a", "2", "9"]]),
+  ], "repo");
+  assert.equal(diff.removed, 0, "the row is still here");
+  assert.equal(diff.changedCells, 1);
+});
+
+test("a name that goes entirely is still a row that left", () => {
+  const diff = compareRuns([
     run(VERSIONS, [["a", "1", "9"]]),
-  ], "test");
-  assert.equal([...diff.rows.values()][0].moved, true);
+    run(VERSIONS, [["a", "1", "9"], ["b", "2", "9"], ["b", "3", "9"]]),
+  ], "repo");
+  assert.equal(diff.removed, 1, "both of b's lines went, which is one row gone");
+  assert.equal(entry(diff, "b").here, false);
+});
+
+test("identical lines under one name are one value, written once", () => {
+  const group = [["a", "1", "9"], ["a", "1", "9"], ["a", "1", "9"]];
+  assert.deepEqual(valuesIn(group, 1), ["1"]);
+  assert.deepEqual(mergeGroup(VERSIONS, group), ["a", "1", "9"]);
+});
+
+test("a merged cell holds its values as lines, in the order they were printed", () => {
+  const group = [["a", "2", "9"], ["a", "1", "8"]];
+  const merged = mergeGroup(VERSIONS, group);
+  assert.deepEqual(linesOf(merged[1]), ["2", "1"]);
+  assert.deepEqual(linesOf(merged[2]), ["9", "8"]);
+  assert.equal(merged[0], "a", "the name itself is written once");
+});
+
+test("a value holding a newline is one value, not two lines", () => {
+  // The separator is a zero byte for exactly this reason: a plugin can print
+  // a value with a line break in it, and splitting on that would say a value
+  // changed when the table is the same.
+  const merged = mergeGroup(VERSIONS, [["a", "one\ntwo", "9"]]);
+  assert.deepEqual(linesOf(merged[1]), ["one\ntwo"]);
+  assert.equal(LINES, "\u0000");
+});
+
+test("groupByKey keeps every line, in the order it came", () => {
+  const groups = groupByKey(VERSIONS, [["a", "1", ""], ["b", "9", ""], ["a", "2", ""]],
+                            "repo");
+  assert.equal(groups.size, 2);
+  assert.deepEqual(groups.get("a").map((row) => row[1]), ["1", "2"]);
+});
+
+test("changedValues counts what arrived and what went, whichever is larger", () => {
+  const was = [["a", "1", ""], ["a", "2", ""]];
+  assert.equal(changedValues(was, [["a", "1", ""], ["a", "2", ""]], 1), 0);
+  assert.equal(changedValues(was, [["a", "1", ""], ["a", "3", ""]], 1), 1);
+  assert.equal(changedValues(was, [["a", "1", ""]], 1), 1);
+  assert.equal(changedValues(was, [["a", "3", ""], ["a", "4", ""]], 1), 2);
 });
 
 /* ------------------------------------------- columns left out of it ----
@@ -345,28 +402,28 @@ test("a column that is not in the table is ignored harmlessly", () => {
   assert.equal(diff.changedCells, 2);
 });
 
-test("whole row mode leaves the ignored columns out of the row itself", () => {
-  // Rows cannot be told apart by name here, so they are compared as whole
-  // lines. With the clock in the line, the same row at two different times is
-  // one row gone and another arrived.
+test("sameGroup leaves the ignored columns out of the lines it compares", () => {
+  // Two lines under one name, and the clock is the only thing that moved.
+  // With the clock in the line, that reads as both lines leaving and two
+  // others arriving.
   const ignored = ignoredIndexes(WITH_TIME, ["checked_at"], "repo");
-  const diff = wholeRows([
-    run(WITH_TIME, [["a", "1", "10:05"], ["a", "1", "10:05"]]),
-    run(WITH_TIME, [["a", "1", "10:00"], ["a", "1", "10:00"]]),
-  ], "two rows are called the same thing", ignored);
-  assert.equal(diff.added, 0);
-  assert.equal(diff.removed, 0);
-  assert.equal([...diff.rows.values()][0].moved, false);
+  const now = [["a", "1", "10:05"], ["a", "2", "10:05"]];
+  const before = [["a", "1", "10:00"], ["a", "2", "10:00"]];
+  assert.equal(sameGroup(now, before, WITH_TIME, ignored), true);
+  assert.equal(sameGroup(now, before, WITH_TIME, new Set()), false);
+  assert.equal(sameGroup(now, null, WITH_TIME, ignored), false);
+  assert.equal(sameGroup(null, null, WITH_TIME, ignored), true);
 });
 
-test("duplicate names and an ignored clock still report what left", () => {
+test("several lines and an ignored clock still report what went", () => {
   const diff = compareRuns([
     run(WITH_TIME, [["a", "1", "10:05"], ["a", "2", "10:05"]]),
     run(WITH_TIME, [["a", "1", "10:00"], ["a", "2", "10:00"], ["a", "3", "10:00"]]),
   ], "repo", ["checked_at"]);
-  assert.equal(diff.whole, true);
-  assert.equal(diff.removed, 1, "the third row, and not the clock on the other two");
-  assert.equal(diff.added, 0);
+  assert.equal(diff.rows.size, 1);
+  assert.equal(diff.removed, 0, "the row is still here with two of its three values");
+  assert.equal(diff.changedCells, 1, "the third version went; the clock did not count");
+  assert.equal(entry(diff, "a").moved, true);
 });
 
 test("rowTextIgnoring reads a short row the same as a blank one", () => {
@@ -438,12 +495,6 @@ test("keyIndexIn falls back to the first column when the name is unknown", () =>
   assert.equal(keyIndexIn(VERSIONS, "ENV2"), 2);
   assert.equal(missingKeyColumn(VERSIONS, "nope"), "nope");
   assert.equal(missingKeyColumn(VERSIONS, "ENV2"), "");
-});
-
-test("byKey reports duplicates without throwing any row away", () => {
-  const { map, duplicates } = byKey(VERSIONS, [["a", "1", ""], ["a", "2", ""]], "repo");
-  assert.equal(duplicates, true);
-  assert.equal(map.size, 1, "the first one wins, and the caller is told why that is wrong");
 });
 
 // ---- compacting ------------------------------------------------------

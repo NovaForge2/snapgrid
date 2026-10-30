@@ -374,7 +374,7 @@ every   = "15m"                   # s, m, h, d, w - or "off" for manual only
 columns = ["repo", "ENV1", "ENV2"]  # optional: the header must then match
 key     = "repo"                    # which column names a row, for comparing
                                     # or ["environment", "repo"] when no one
-                                    # column is unique on its own
+                                    # column names a row on its own
 
 [compare]
 ignore = ["checked_at"]           # columns a comparison does not look at
@@ -397,7 +397,8 @@ Four things worth knowing without reading further:
 - **`timeout` is per plugin**, not a server setting, because it depends
   entirely on the work.
 - **`key` is how two runs are lined up** when comparing them, and defaults to
-  the first column. Keep its values stable and unique.
+  the first column. Keep its values stable. Lines sharing a name are merged
+  into the row they name, with a line per value in the cells that differ.
 
 **[docs/plugin-toml.md](docs/plugin-toml.md) is the full reference** - every
 key, its default, what it accepts, and every message it can refuse with.
@@ -425,7 +426,9 @@ This checks the manifest and, when `[output] file` is configured, the existing
 CSV or workbook. For plugins that print CSV, capture their output yourself and
 pass it with `--csv report.csv`. Without a file, validation reports that only
 the manifest was checked. Tables must have non-empty, unique column names and
-non-empty, unique values in the key column. Validation exits non-zero on errors.
+non-empty values in the key columns; lines sharing a name are merged into the
+row they name, and the report says how many did. Validation exits non-zero on
+errors.
 
 The open table follows scheduled runs automatically. Selecting a historical
 snapshot keeps that snapshot selected during refreshes. Requests that arrive

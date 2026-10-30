@@ -54,7 +54,7 @@ keep = 20
 | `run.every` | duration, or `"off"` | `"15m"` | how long after one run finishes the next starts |
 | `run.cron` | cron expression | none | a wall clock time to run at, in local time, instead of `every`. `"0 9 * * 1-5"` is nine on weekdays |
 | `table.columns` | list of text | none | if present, the header must match exactly |
-| `table.key` | text, or a list of text | the first column | which column names a row, used to line runs up when comparing. A list when no single column is unique |
+| `table.key` | text, or a list of text | the first column | which column names a row, used to line runs up when comparing. A list when no single column names a row. Lines sharing a name are merged into the row they name |
 | `compare.ignore` | list of text | none | columns a comparison does not look at |
 | `output.file` | text | none | read the table from this file instead of stdout |
 | `output.sheet` | text | the first sheet | which sheet of an `.xlsx` |
@@ -312,25 +312,51 @@ Say so with a list:
 key = ["environment", "repo"]
 ```
 
-Given one column that repeats, two runs cannot be lined up row by row at all.
-The comparison then falls back to whole rows, where a version changing reads as
-one row leaving and another arriving - no history inside the cell, a `GONE` and
-a `NEW` instead. The strip above the table says which column repeated and that
-a list will fix it.
+Given one column that repeats, every line of an environment is the same row,
+and they are merged into it - which is right when the lines belong to one
+thing, and wrong when they are separate things sharing a column.
 
 Three rules follow:
 
 - **A key column is never compared.** A different value there is a different
   row, not a changed one. That holds for each of them.
-- **The key has to be unique.** One column or several, the values have to name
-  each row once: `validate` refuses a table where two rows carry the same name,
-  with an empty value in any key column, before it is ever stored.
+- **The key has to be stable.** `payments-api` yesterday and `payments-api`
+  today have to be recognisably the same row, or a changed version reads as one
+  row leaving and another arriving.
 - **Every named column has to exist.** If `[table] columns` is declared, each
   key column has to be one of them, or the manifest is refused.
 
-Name only the columns that are needed to make a row unique. Adding a third
-column that is really a value - a version, a status - makes every change to it
-read as a different row.
+Name only the columns that tell one row from another. Adding a third column
+that is really a value - a version, a status - makes every change to it read as
+a different row.
+
+### Several lines under one name
+
+A name may repeat. The lines under it are that row's values rather than rows of
+their own - two pods of one service, blue and green of one deployment - and they
+are merged into the row they name:
+
+```
+Environment,Service,Pod,Status,Image      ->  key = ["Environment", "Service"]
+SIT2,admin,admin-blue-1,Running,2.14.1
+SIT2,admin,admin-green-7,Running,2.15.1
+```
+
+One row, whose Pod cell holds two pods and whose Image cell holds two images, a
+line each. Comparing two runs then marks the lines: an image that arrived is
+marked where it is, one that went is kept on screen and struck through, and the
+cell's own history shows what the whole cell was on each earlier run.
+
+- **An empty name is still refused.** It names nothing, and every line without
+  one would be one row.
+- **The printed order is the order in the cell.** Values are written once, in
+  the order the plugin printed them, so the lines of one cell sit beside the
+  lines of the next. A run that prints the same lines in a different order has
+  not changed anything.
+- **`validate` says how many lines merged**, so a key that is accidentally too
+  short shows up as a count that is lower than expected.
+- **A cell holding many values is a row that should have been many.** Merging
+  is for lines that genuinely belong to one thing.
 
 ## `[compare] ignore`
 
@@ -355,10 +381,9 @@ as a change:
 - the row is not marked as having moved, so its cells are not stacked,
 - its values are not added to the tally in the strip above the table,
 - **Only what changed** does not show the row,
-- and in whole row mode - where two rows share a name and cannot be told apart
-  - the ignored columns are left out of the row itself, so the same row at two
-  different times is one row that stayed rather than one that went and another
-  that arrived.
+- and where several lines share a name, the ignored columns are left out of
+  deciding whether those lines are the same lines, so the same two pods at two
+  different ages are the same two pods.
 
 The strip above the table says which columns these are, so a table reading
 "nothing changed" says why.

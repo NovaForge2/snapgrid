@@ -41,16 +41,24 @@ def validate_plugin(folder: Path, csv_path: Path | None = None) -> str:
                 )
         indexes = [columns.index(name) for name in key]
         named = ", ".join(repr(name) for name in key)
-        seen = set()
+        # A repeating name is not an error. The lines under one name are that
+        # row's values - blue and green of one service - and the table merges
+        # them into one row whose cells hold several values. An empty name is
+        # an error: it names nothing, and every line without one would be the
+        # same row.
+        seen: dict[tuple[str, ...], int] = {}
         for row in rows:
             parts = [row[at] for at in indexes]
-            value = tuple(parts)
-            if not all(part.strip() for part in parts) or value in seen:
-                raise OutputError(f"key column {named} must contain non-empty, unique values"
+            if not all(part.strip() for part in parts):
+                raise OutputError(f"key column {named} must not be empty"
                                   if len(key) == 1 else
-                                  f"the key columns {named} must together name each row "
-                                  f"once, with no empty values")
-            seen.add(value)
+                                  f"the key columns {named} must not be empty")
+            value = tuple(parts)
+            seen[value] = seen.get(value, 0) + 1
     except Exception as exc:
         raise OutputError(str(exc)) from exc
+    if len(seen) != len(rows):
+        said = "1 row" if len(seen) == 1 else f"{len(seen)} rows"
+        return (f"manifest and table valid ({len(rows)} lines printed, {said}: "
+                "lines sharing a name are merged into the row they name)")
     return f"manifest and table valid ({len(rows)} rows)"
