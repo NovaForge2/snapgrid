@@ -1,0 +1,43 @@
+# One line per pod, so a service being replaced has two of them.
+# Invented data; nothing is contacted. Copy this folder to keep it.
+
+[plugin]
+name        = "Pods per service"
+description = "One line per pod: two while a service is being replaced"
+group       = "Examples"
+
+[run]
+command = ["python", "main.py"]
+timeout = "30s"
+# A demo, so it moves while you watch it. A plugin that really asked a cluster
+# would ask every few minutes.
+every   = "1m"
+
+# What names a row. The pod name is new on every deployment and the image is
+# the thing that changed, so neither of them can name anything: the pair below
+# is what is still the same tomorrow. The two pods of a service being replaced
+# share that name, so they are merged into the row they name, and the cells
+# that differ hold both values - a line each.
+[table]
+key = ["Environment", "Service"]
+
+# The age of a pod is counted from the clock, so it is different on every
+# single run. Left in, every row would read as changed every run, every
+# comparison between two stored results would be empty, and the twenty slots
+# below would fill with readings of one table.
+[compare]
+ignore = ["Age"]
+
+# The question worth asking here is "when did this change?", so keep history.
+[history]
+keep = 20
+
+# The severe rule first: the first one that matches wins.
+[colour.Status]
+ImagePullBackOff = "red"
+CrashLoopBackOff = "red"
+Pending          = "amber"
+
+[colour.Restarts]
+"> 10" = "red"
+"> 0"  = "amber"

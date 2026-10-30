@@ -173,6 +173,12 @@ function groupByKey(columns, rows, keyName) {
 // the plugin printed it. Printed order rather than sorted: a cell is read
 // beside the cells next to it, and sorting each column on its own would put
 // one line's status next to another line's branch.
+//
+// An empty value is not a value here. Where one line of a group knows the
+// branch and another does not, the cell says the branch; written out, the one
+// that does not know it is an empty line in the middle of the table, which
+// reads as a fault in the table rather than as a fact about a pod. A group
+// where nothing is known is still one empty cell, as it always was.
 function valuesIn(group, index) {
   const out = [];
   const seen = new Set();
@@ -182,7 +188,8 @@ function valuesIn(group, index) {
     seen.add(value);
     out.push(value);
   }
-  return out;
+  const known = out.filter((value) => value !== "");
+  return known.length ? known : out.slice(0, 1);
 }
 
 // One row for the key, whatever the plugin printed under it. A cell holding
@@ -221,6 +228,40 @@ function changedValues(before, after, index) {
   for (const value of was) if (!now.has(value)) gone += 1;
   for (const value of now) if (!was.has(value)) fresh += 1;
   return Math.max(gone, fresh);
+}
+
+// What one cell of a compared row holds, as the lines to draw: the values it
+// has now, then the ones it had and has lost, each with what became of it.
+//
+// Here rather than in the page because it is the sentence the table says about
+// a cell, and a wrong one is read as fact. A row that has gone has no "now" to
+// read, so it is drawn from the run that last had it; left to fall back on
+// nothing, a column that is not compared came out as one empty line.
+function cellLines(over, index, lastSeen, ignored) {
+  const now = over[0] ? valuesIn(over[0], index) : linesOf(cellValue(lastSeen, index));
+  // The run before this one that had the row, and only that one. A stack of
+  // five runs puts run five on line five, which answers "when did it move?";
+  // a cell holding several values has no line to spare for that, because its
+  // lines are the values themselves. Taking every earlier run into it put
+  // eight pod names in one cell and made the table unreadable at five runs,
+  // which is the limit for the other kind of cell for the same reason. When it
+  // moved is answered by the cell's own history, on a click.
+  const earlier = over.slice(1).find((group) => group) || null;
+  const before = new Set(earlier ? valuesIn(earlier, index) : []);
+  const everBefore = Boolean(earlier);
+  // Nothing is marked where there is nothing to mark it against: a row that
+  // has only ever been in this run, or a column the comparison leaves alone.
+  const compared = everBefore && !(ignored && ignored.has(index));
+  const lines = now.map((value) => ({
+    value,
+    mark: compared && !before.has(value) ? "fresh" : "",
+  }));
+  if (compared) {
+    for (const value of before) {
+      if (!now.includes(value)) lines.push({ value, mark: "went" });
+    }
+  }
+  return lines;
 }
 
 // What each row looks like across the runs given, newest first, or a reason it
@@ -266,6 +307,11 @@ function compareRuns(runs, keyName, ignore) {
   let changedCells = 0;
   let added = 0;
   let removed = 0;
+  // Whether any row in this comparison holds several lines. The page marks a
+  // value in such a row as arrived or gone, and a mark nobody can read is
+  // worse than no mark, so the strip says what they mean - but only where
+  // there is one on screen to explain.
+  let several = false;
 
   for (const name of names) {
     // One entry per run: the lines printed under this name then, or null if
@@ -291,9 +337,10 @@ function compareRuns(runs, keyName, ignore) {
         }
       });
     }
+    if (overRuns.some((group) => group && group.length > 1)) several = true;
     rows.set(name, { overRuns, here, everBefore, moved });
   }
-  return { rows, names, runs, changedCells, added, removed, ignored, keys };
+  return { rows, names, runs, changedCells, added, removed, ignored, keys, several };
 }
 
 // In the browser these are already global, because this is an ordinary script
@@ -304,6 +351,7 @@ if (typeof module !== "undefined" && module.exports) {
     keyIndexIn, keyIndexesIn, keyNamesOf, keyTextOf,
     missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
     ignoredIndexes, compareRuns, compactRows, duplicateCount,
-    groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, LINES,
+    groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, cellLines,
+    LINES,
   };
 }

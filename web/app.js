@@ -618,14 +618,15 @@ function renderSnapshotPicker() {
     // apart read as the same entry, and the one thing anybody picks a stored
     // run by - when it was - is the part that was missing.
     //
-    // "Showing", because without it the closed dropdown reads as a label
-    // saying when the result is from rather than as the control that picks
-    // which result is on screen - and then the only thing anybody finds is
-    // the Compare dropdown beside it, which says what it does.
+    // The date and nothing else. It read "Showing 28 Oct 19:47", on the
+    // argument that a bare date reads as a label rather than as the control
+    // that picks a result - but the box has a border and an arrow, which is
+    // what says it is a control, and the word was in front of the one thing
+    // the list is read for on every line of it.
     const when = clockOf(snapshot.last_seen, seconds);
     option.textContent = index === 0
-      ? "Showing " + when + " (latest)"
-      : "Showing " + when + " - " + rowCount(snapshot.row_count);
+      ? when + " (latest)"
+      : when + " - " + rowCount(snapshot.row_count);
     if (state.snapshotId ? Number(state.snapshotId) === snapshot.id : index === 0) {
       option.selected = true;
     }
@@ -682,8 +683,10 @@ function renderComparePicker() {
     const seconds = clockNeedsSeconds(older);
     const pair = group("One earlier run, on its own");
     for (const snapshot of older) {
+      // The date alone here as well. What the list does is said by the
+      // heading above it and by the entries that are not dates.
       add(pair, "at:" + snapshot.id,
-          "Compare with " + clockOf(snapshot.last_seen, seconds)
+          clockOf(snapshot.last_seen, seconds)
           + " - " + rowCount(snapshot.row_count));
     }
   }
@@ -804,6 +807,25 @@ function renderDiffBar(diff) {
     key.append(dot, document.createTextNode("same as the run above"));
     key.title = "A cell written once did not change in any of these runs.";
     legend.appendChild(key);
+  }
+  // The same argument for the marks on a cell holding several values. A line
+  // with a green edge and a line struck through say opposite things, and
+  // neither says which without being told. Only where there is one to explain.
+  if (diff.several) {
+    const when = diff.runs[1] ? whenExactly(diff.runs[1].last_seen) : "then";
+    for (const [css, word, title] of [
+      ["fresh", "arrived", `A value this row did not have on ${when}.`],
+      ["went", "gone", `A value this row had on ${when} and does not have now.`],
+    ]) {
+      const key = document.createElement("span");
+      key.className = "key";
+      const sample = document.createElement("i");
+      sample.className = "markmark " + css;
+      sample.textContent = word;
+      key.append(sample);
+      key.title = title;
+      legend.appendChild(key);
+    }
   }
   tally.appendChild(legend);
 
@@ -1310,15 +1332,14 @@ function renderTable() {
     // A cell written as lines, one per value it holds. `marks` says what
     // became of a line since the run being compared with - nothing, or that it
     // arrived, or that it is not there any more.
-    const putLines = (td, column, values, marks) => {
+    const putLines = (td, column, lines) => {
       td.classList.add("stack");
-      for (const value of (values.length ? values : [""])) {
-        const line = document.createElement("span");
-        const mark = marks && marks.get(value);
-        line.className = "v now" + (mark ? " " + mark : "");
-        putValue(line, column, value);
-        line.title = value;
-        td.appendChild(line);
+      for (const line of (lines.length ? lines : [{ value: "", mark: "" }])) {
+        const span = document.createElement("span");
+        span.className = "v now" + (line.mark ? " " + line.mark : "");
+        putValue(span, column, line.value);
+        span.title = line.value;
+        td.appendChild(span);
       }
     };
 
@@ -1351,7 +1372,7 @@ function renderTable() {
         if (!over) {
           const values = linesOf(cellValue(row, index));
           if (values.length > 1) {
-            putLines(td, column, values, null);
+            putLines(td, column, values.map((value) => ({ value, mark: "" })));
           } else {
             putValue(td, column, values[0]);
             td.title = values[0];   // cells are clipped, keep the full value reachable
@@ -1405,26 +1426,26 @@ function renderTable() {
         }
 
         if (several) {
-          // What this column holds now, then what it held before and does not
-          // hold any more. A value that arrived is marked where it is; a value
-          // that went is kept on screen, because a version that disappeared is
-          // the thing worth seeing.
-          const now = over[0] ? valuesIn(over[0], index) : [];
-          const before = new Set();
-          for (const group of over.slice(1)) {
-            if (group) for (const value of valuesIn(group, index)) before.add(value);
+          // What this column holds now, then what it held and has lost. A
+          // value that arrived is marked where it is; a value that went is
+          // kept on screen, because a version that disappeared is the thing
+          // worth seeing. Worked out in compare.js, where it is tested.
+          const lines = cellLines(over, index, row, ignored);
+          if (lines.some((line) => line.mark)) td.classList.add("moved");
+          if (lines.length === 1) {
+            // One value, in a row as tall as its tallest cell. Written as the
+            // first of several lines it reads as "line one only", with the
+            // rest of the cell blank - which is what a column where every pod
+            // agrees looked like: two thirds empty. One value is one value,
+            // written beside the lines rather than against the first of them.
+            const line = document.createElement("span");
+            line.className = "v one" + (lines[0].mark ? " " + lines[0].mark : "");
+            putValue(line, column, lines[0].value);
+            line.title = lines[0].value;
+            td.appendChild(line);
+          } else {
+            putLines(td, column, lines);
           }
-          const compared = !ignored.has(index) && over.slice(1).some((group) => group);
-          const marks = new Map();
-          const went = [];
-          if (compared) {
-            for (const value of now) if (!before.has(value)) marks.set(value, "fresh");
-            for (const value of before) {
-              if (!now.includes(value)) { went.push(value); marks.set(value, "went"); }
-            }
-          }
-          if (marks.size) td.classList.add("moved");
-          putLines(td, column, now.concat(went), marks);
           openHistory();
           tr.appendChild(td);
           return;
@@ -1496,9 +1517,15 @@ function renderTable() {
     const movedCellsIn = (over) => {
       let moved = 0;
       const present = over.filter((group) => group !== null);
+      // A row holding several lines is drawn against the run before it and no
+      // further back, because its lines are its values rather than the runs.
+      // Counted over every run, the strip said "515 values changed" about a
+      // table whose cells show one step - a count of somebody else's table.
+      const steps = present.some((group) => group.length > 1)
+        ? Math.min(present.length, 2) : present.length;
       shownIndexes.forEach((index) => {
         if (keySet.has(index) || ignored.has(index)) return;
-        for (let at = 1; at < present.length; at += 1) {
+        for (let at = 1; at < steps; at += 1) {
           moved += changedValues(present[at], present[at - 1], index);
         }
       });

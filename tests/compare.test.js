@@ -25,7 +25,8 @@ const {
   keyIndexIn, keyIndexesIn, keyNamesOf, keyTextOf,
   missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
   ignoredIndexes, compareRuns, compactRows, duplicateCount,
-  groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, LINES,
+  groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, cellLines,
+  LINES,
 } = require(path.join(__dirname, "..", "web", "compare.js"));
 
 // A run, newest first when passed to compareRuns.
@@ -303,6 +304,20 @@ test("identical lines under one name are one value, written once", () => {
   assert.deepEqual(mergeGroup(VERSIONS, group), ["a", "1", "9"]);
 });
 
+test("a line that knows nothing does not put an empty line in the cell", () => {
+  // One pod knows its branch and the other does not. Written out, the one
+  // that does not is an empty line in the middle of the table, which reads as
+  // a fault in the table rather than as a fact about that pod.
+  const group = [["a", "release/sprint11", ""], ["a", "", ""]];
+  assert.deepEqual(valuesIn(group, 1), ["release/sprint11"]);
+  assert.deepEqual(mergeGroup(VERSIONS, group)[1], "release/sprint11");
+});
+
+test("a cell where nothing is known is still one empty cell", () => {
+  const group = [["a", "", ""], ["a", "", ""]];
+  assert.deepEqual(valuesIn(group, 1), [""]);
+});
+
 test("a merged cell holds its values as lines, in the order they were printed", () => {
   const group = [["a", "2", "9"], ["a", "1", "8"]];
   const merged = mergeGroup(VERSIONS, group);
@@ -325,6 +340,67 @@ test("groupByKey keeps every line, in the order it came", () => {
                             "repo");
   assert.equal(groups.size, 2);
   assert.deepEqual(groups.get("a").map((row) => row[1]), ["1", "2"]);
+});
+
+/* --- what one cell says ------------------------------------------------- */
+
+test("a value that arrived is marked, and one that went is kept", () => {
+  const now = [["a", "1", ""], ["a", "3", ""]];
+  const before = [["a", "1", ""], ["a", "2", ""]];
+  assert.deepEqual(cellLines([now, before], 1, now[0], new Set()), [
+    { value: "1", mark: "" },
+    { value: "3", mark: "fresh" },
+    { value: "2", mark: "went" },
+  ]);
+});
+
+test("nothing is marked where nothing moved", () => {
+  const group = [["a", "1", ""], ["a", "2", ""]];
+  assert.deepEqual(cellLines([group, group], 1, group[0], new Set()),
+                   [{ value: "1", mark: "" }, { value: "2", mark: "" }]);
+});
+
+test("a column that is not compared is never marked", () => {
+  const now = [["a", "9h", ""]];
+  const before = [["a", "8h", ""]];
+  assert.deepEqual(cellLines([now, before], 1, now[0], new Set([1])),
+                   [{ value: "9h", mark: "" }]);
+});
+
+test("a row only this run has is not marked as new in every cell", () => {
+  // The arrival is a fact about the row, said once by the chip on its name.
+  const now = [["a", "1", ""]];
+  assert.deepEqual(cellLines([now, null], 1, now[0], new Set()),
+                   [{ value: "1", mark: "" }]);
+});
+
+test("a cell holding several values looks one run back, however deep the stack", () => {
+  // Five runs of a service whose pod is replaced every time: taking all of
+  // them into the cell put eight pod names in it. The lines of this cell are
+  // its values, not the runs, so there is no line to spare for a fifth run.
+  const runs = ["e", "d", "c", "b", "a"].map((name) => [["svc", `pod-${name}`, ""]]);
+  const lines = cellLines(runs, 1, runs[0][0], new Set());
+  assert.deepEqual(lines, [{ value: "pod-e", mark: "fresh" },
+                           { value: "pod-d", mark: "went" }]);
+});
+
+test("a row missing from the run before is compared with the one before that", () => {
+  const now = [["svc", "2", ""]];
+  const earlier = [["svc", "1", ""]];
+  assert.deepEqual(cellLines([now, null, earlier], 1, now[0], new Set()),
+                   [{ value: "2", mark: "fresh" }, { value: "1", mark: "went" }]);
+});
+
+test("a row that has gone is drawn from the run that last had it", () => {
+  // The bug this replaced: with no run to read "now" from, a column that is
+  // not compared had nothing to fall back on, and the cell was drawn as one
+  // empty line - an empty line in the middle of a table, saying nothing.
+  const before = [["a", "9h", ""], ["a", "8h", ""]];
+  const lastSeen = ["a", "9h\u00008h", ""];
+  assert.deepEqual(cellLines([null, before], 1, lastSeen, new Set([1])),
+                   [{ value: "9h", mark: "" }, { value: "8h", mark: "" }]);
+  const compared = cellLines([null, before], 1, lastSeen, new Set());
+  assert.ok(compared.every((line) => line.value), "no line is empty");
 });
 
 test("changedValues counts what arrived and what went, whichever is larger", () => {

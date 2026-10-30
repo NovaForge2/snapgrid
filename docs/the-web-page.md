@@ -106,8 +106,8 @@ markers. An empty filtered table exports only its column headers.
   as the plugin printed it.
 - **The dropdown next to Run now picks which result is on screen.** It appears
   once there is more than one stored, and every entry says when that result is
-  from and how many rows it had: `Showing 28 Oct 19:47 (latest)`, `Showing 28
-  Oct 09:02 - 14 rows`. This is how you look at one earlier run on its own,
+  from and how many rows it had: `28 Oct 19:47 (latest)`, `28 Oct 09:02 - 14
+  rows`. This is how you look at one earlier run on its own,
   without comparing anything. The time is a date and a clock, to the minute,
   rather than "2h ago": in a list of runs to choose between, several of them
   are "2h ago" and the minutes are the only thing telling them apart. Where two
@@ -165,7 +165,7 @@ answer:
   see *when* a value moved. Five is the most, and that is a limit of height
   rather than arithmetic: five runs of a forty row table is a very tall page.
 - **One earlier run, on its own** - every stored run is listed by its date and
-  clock time, `Compare with 28 Oct 09:02 - 14 rows`. That compares exactly two
+  clock time, `28 Oct 09:02 - 14 rows`. That compares exactly two
   results, now and then, with nothing in between drawn. Reach is the point:
   with twenty runs kept, the run from this time last week is one choice, where
   stacking would need twenty lines in a cell and stops at five. Only results
@@ -272,8 +272,12 @@ Comparing marks the lines where they are, instead of the whole row arriving and
 leaving:
 
 - a value that **arrived** since the run being compared with is marked on its
-  left edge,
-- a value that **went** is kept on screen and struck through,
+  left edge, and one that **went** is kept on screen, quieter, with a thin
+  edge in the colour of a row that left - the strip above the table says so,
+  where a row like this is on screen,
+- a cell like this is compared with **the run before and no further back**,
+  whatever the first dropdown says, because its lines are its values and none
+  is left to name a run. A column where every line agrees is written once,
 - the cell's own history, on a click, shows what the whole cell was on each
   earlier run,
 - and the count under the toolbar says `4 rows - 6 lines printed`, so a key

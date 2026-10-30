@@ -553,10 +553,23 @@ td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent)
    of each of them where it is, rather than by the whole row arriving or
    leaving. The mark is on the left edge of the line, which is where the eye
    already is when it reads down a cell. */
-td.stack .v.fresh { box-shadow: inset 2px 0 0 var(--added); }
-td.stack .v.went {
-  color: var(--muted); box-shadow: inset 2px 0 0 var(--removed);
-  text-decoration: line-through; text-decoration-color: var(--removed);
+/* One value for the whole row, where the row is taller than one line because
+   another cell holds several. Not a line of a stack: it is beside them, not
+   above an empty space where the others have values. */
+td .v.one {
+  display: block; padding: .34em .77em;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+td.stack .v.fresh, td .v.one.fresh { box-shadow: inset 2px 0 0 var(--added); }
+/* A value the row does not have any more, written the way an older line in a
+   stacked cell is written: quieter, and quieter still for being older. Not
+   struck through - see the rule above, which this broke. It was not deleted;
+   the pod it belonged to has gone, which the edge says without crossing a
+   version number out as though it were a mistake. */
+td.stack .v.went, td .v.one.went {
+  color: var(--muted); font-size: .92em;
+  box-shadow: inset 2px 0 0 var(--removed);
 }
 /* The name is written once and sits at the top, beside its lines. */
 td.stack.name .v { border-bottom: 0; cursor: default; }
@@ -598,6 +611,19 @@ tr.removed td:first-child { box-shadow: inset 3px 0 0 var(--removed); }
 #diff-tally .legend .key .dotmark {
   font-weight: 700; color: var(--text); margin-right: 5px;
   display: inline-block; width: 15px; text-align: center;
+}
+
+/* The marks a cell holding several values carries, written the way the cell
+   writes them, because a word next to a colour swatch has to be matched up and
+   the mark itself does not. */
+#diff-tally .legend .markmark {
+  font-style: normal; padding-left: 7px; color: var(--muted);
+}
+#diff-tally .legend .markmark.fresh {
+  box-shadow: inset 2px 0 0 var(--added); color: var(--text);
+}
+#diff-tally .legend .markmark.went {
+  box-shadow: inset 2px 0 0 var(--removed);
 }
 
 #cell-history {

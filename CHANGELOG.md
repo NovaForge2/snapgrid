@@ -11,6 +11,13 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
 
 ### Added
 
+- **A new example: `pods-per-service`.** Invented data in the awkward shape -
+  one line per pod, two of them while a service is being replaced - so the
+  behaviour below can be seen without a cluster. It shows `[table] key` with
+  two columns, a cell holding several values, `[compare] ignore` on an age
+  counted from the clock, and a colour on the two columns where one is worth
+  having. `./server.py --dir examples`, then **Run now** a few times.
+
 - **`[compare] ignore`**, the columns a comparison does not look at. A column
   holding the time of the run, or a count of days remaining, is different on
   every run: left in, every row reads as changed every day, the tally counts
@@ -146,13 +153,60 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   with twenty runs kept, the version from last week could not be reached at
   all, because reaching it meant twenty lines in every cell and the limit is
   five. It now also lists every stored run by its date and clock time -
-  `Compare with 28 Oct 09:02 - 14 rows` - and comparing with one of those draws
+  `28 Oct 09:02 - 14 rows` - and comparing with one of those draws
   exactly two values in a cell, now and then, with the runs in between left
   out. The stack is still there, under its own heading, for the other
   question: not what is different, but when it moved. A link carries the
   choice as `against=<id>`.
 
 ### Table fixes
+
+- **The strip says what the marks on a cell mean.** A marked line and a quiet
+  one say opposite things, and the table said which was which nowhere: it
+  explained the dot and left these two to be guessed at. It now reads
+  `arrived` and `gone`, written the way a cell writes them, and only where a
+  row on screen has one.
+
+- **The two dropdowns that name a run say the date and nothing else.** They
+  read `Showing 28 Oct 19:47 (latest)` and `Compare with 28 Oct 09:02 - 14
+  rows`; the word was in front of the one thing each line is read for, on
+  every line. A box with a border and an arrow is what says a dropdown is a
+  control, which was the reason given for the word. The entries that are not
+  dates - `Compare: off`, `the one before`, `last 3 runs` - still say what
+  they do.
+
+- **A value that has gone is not struck through.** The rule had been in the
+  stylesheet from the first commit - *nothing is struck through, an older
+  version was not deleted, it is just older* - and the mark went in two lines
+  below it. A struck version number reads as a mistake being crossed out
+  rather than as a pod that has finished. It is written the way an older line
+  in a stacked cell is written, quieter, with a thin edge in the colour of a
+  row that left.
+
+- **A cell holding several values looks one run back, not five.** The lines of
+  such a cell are its values, so there is no line to spare for naming a run.
+  Taken against every run in the stack, a service whose pod is replaced every
+  deployment had eight pod names in one cell at five runs, and the strip
+  counted `515 values changed` over a table whose cells showed one step. Both
+  now stop at the run before, which is the question a cell like that can
+  answer; when it moved is answered by its own history, on a click.
+
+- **A single value in a row of several lines is written once.** Drawn as the
+  first of three lines with the rest of the cell blank, a column where every
+  pod agrees read as two thirds missing. It is written beside the lines
+  instead of against the first of them.
+
+- **An empty line in the middle of a cell.** Where one line of a merged row
+  knew its branch and another did not, the cell wrote the one that did not out
+  as an empty line between two values - which reads as a fault in the table
+  rather than as a fact about a pod. An empty value is no longer a value in a
+  merged cell. A row where nothing is known is still one empty cell.
+
+- **A row that has gone is drawn from the run that last had it.** Its cells
+  had nothing to read "now" from, so a column the comparison leaves alone -
+  the age, the clock - came out as a single empty line. What one cell says now
+  lives in `web/compare.js`, with the rest of the comparison, where it is
+  tested.
 
 - **The row count is readable.** It is the number the table is opened for -
   how many rows match what is filtered - and it was written in the quietest
@@ -166,8 +220,8 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
 - **The two dropdowns that name a stored run show the time in full.** Both were
   capped at 180px, and the clock - the one part anybody picks a run by - was
   what the cap cut off; the first of them said `2h ago`, which several stored
-  runs say at once. They now read `Showing 28 Oct 19:47 (latest)` and
-  `Compare with 28 Oct 09:02 - 14 rows`, on a 24 hour clock whatever the
+  runs say at once. They now read `28 Oct 19:47 (latest)` and
+  `28 Oct 09:02 - 14 rows`, on a 24 hour clock whatever the
   machine's locale prefers, because `07:47 PM` spends three more characters in
   the dropdown that had no room. Where two stored runs fall inside the same
   minute, every entry in that list gains its seconds. The cap is gone and a

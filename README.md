@@ -570,7 +570,7 @@ The rest is deliberate:
 - [SECURITY.md](SECURITY.md) - what snapgrid does and does not protect you from, and how to report something
 - [docs/secrets.md](docs/secrets.md) - `.env`, plugin-owned secrets, optional encryption and migration
 - [docs/where-the-table-comes-from.md](docs/where-the-table-comes-from.md) - stdout, a CSV file, a spreadsheet, or no script at all
-- [examples/](examples/) - seven plugins that run anywhere, each with its own explanation
+- [examples/](examples/) - eight plugins that run anywhere, each with its own explanation
 - [CHANGELOG.md](CHANGELOG.md) - what changed and why it might matter to you
 - [docs/the-web-page.md](docs/the-web-page.md) - what every control does: sorting, filters, showing and sizing columns, resizing and hiding the panels, following the log, light and dark
 - [AGENTS.md](AGENTS.md) - the plugin specification, written to hand to an AI assistant
