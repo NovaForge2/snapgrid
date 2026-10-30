@@ -154,6 +154,15 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
 
 ### Table fixes
 
+- **The row count is readable.** It is the number the table is opened for -
+  how many rows match what is filtered - and it was written in the quietest
+  grey on the row, at 11.5px, between the search box and a button. People
+  counted the rows by hand instead. The count itself is now in the text colour
+  at the toolbar's own size, and only the footnotes after it - `2 columns
+  hidden`, `6 lines printed`, `3 duplicates` - stay quiet. Where it is has not
+  changed: it was moved down beside the table once before, which read well in
+  a screenshot and failed the only test that counts.
+
 - **The two dropdowns that name a stored run show the time in full.** Both were
   capped at 180px, and the clock - the one part anybody picks a run by - was
   what the cap cut off; the first of them said `2h ago`, which several stored

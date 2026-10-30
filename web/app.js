@@ -1588,7 +1588,20 @@ function renderTable() {
   // to compact. That is deliberate: a button nobody notices is a button that
   // does not exist, and a popup announcing itself is worse.
   if (duplicates) said.push(counts ? `${duplicates} compacted` : `${duplicates} duplicates`);
-  el("row-note").textContent = said.join(" - ");
+  // The count itself is read, and the rest of the line is a footnote on it.
+  // Written in one quiet grey size, the number nobody could find was the one
+  // thing on the screen people came to the table for, and they counted the
+  // rows by hand instead.
+  const note = el("row-note");
+  note.textContent = "";
+  const count = document.createElement("b");
+  count.textContent = said[0];
+  note.appendChild(count);
+  if (said.length > 1) {
+    const rest = document.createElement("span");
+    rest.textContent = " - " + said.slice(1).join(" - ");
+    note.appendChild(rest);
+  }
   el("btn-columns").classList.toggle("active", missing > 0);
 
   const compact = el("btn-compact");
