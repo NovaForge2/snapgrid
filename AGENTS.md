@@ -83,7 +83,7 @@ keep = 20
 | `output.sheet` | string | first sheet | which sheet of a workbook to read |
 | `output.fresh_for` | string | none | if the file is younger than this, use it and do not run the plugin. Run now runs it anyway |
 | `run.command` | | | not required when `output.file` is set - a folder with a manifest and a file is a valid plugin |
-| `history.keep` | int | `0` | how many *differing* results to keep. Omit for latest only |
+| `history.keep` | int | `0` | how many *differing* results to keep, where differing means differing in a compared column - see `[compare] ignore`. Omit for latest only |
 | `colour.<column>` | section | none | a colour for named values in that column. See below |
 
 ### Colouring a value
@@ -133,6 +133,11 @@ ignore = ["checked_at", "days_left"]
 
 The column is still shown, filtered, sorted and exported exactly as before.
 It is only taken out of the question "did this row change?".
+
+It is taken out of "is this a new result?" as well, so a run where nothing but
+the clock moved does not spend one of the `[history] keep` slots. The newest
+values are still stored in the slot the result already holds, so the column
+reads as it is now.
 
 Two things follow:
 

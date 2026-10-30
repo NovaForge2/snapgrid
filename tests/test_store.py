@@ -20,11 +20,11 @@ class StoreTest(unittest.TestCase):
         self.store = Store(Path(self.tmp.name) / "test.db")
         self.addCleanup(self.store.close)
 
-    def record(self, rows, keep=10, status=OK):
+    def record(self, rows, keep=10, status=OK, ignore=()):
         """One complete run, the way the runner does it."""
         run_id = self.store.create_run("p", "manual")
         self.store.mark_running(run_id)
-        snapshot_id, changed = self.store.save_snapshot("p", COLUMNS, rows, keep)
+        snapshot_id, changed = self.store.save_snapshot("p", COLUMNS, rows, keep, ignore)
         self.store.finish_run(run_id, "p", status, exit_code=0, snapshot_id=snapshot_id,
                               row_count=len(rows), changed=changed)
         return snapshot_id, changed
@@ -52,6 +52,47 @@ class Snapshots(StoreTest):
         self.assertNotEqual(first, second)
         self.assertTrue(changed)
         self.assertEqual(len(self.store.list_snapshots("p")), 2)
+
+    def test_a_column_that_is_not_compared_does_not_spend_a_slot(self):
+        # The whole point of [history] keep: ten results somebody can tell
+        # apart. A plugin printing the age of a pod differs from itself on
+        # every run, and counting that filled the history with readings of one
+        # table - every comparison between them empty, the real changes
+        # thrown away to store them.
+        first, _ = self.record([["ENV1", "payments-api", "1h"]], ignore=["version"])
+        second, changed = self.record([["ENV1", "payments-api", "2h"]], ignore=["version"])
+        self.assertEqual(first, second)
+        self.assertFalse(changed)
+        self.assertEqual(len(self.store.list_snapshots("p")), 1)
+
+    def test_the_newest_values_are_kept_in_the_slot(self):
+        # The age is not compared; it is still read. The table on screen shows
+        # it as it is now, not as it was when the compared values last moved.
+        self.record([["ENV1", "payments-api", "1h"]], ignore=["version"])
+        self.record([["ENV1", "payments-api", "2h"]], ignore=["version"])
+        self.assertEqual(self.store.latest_snapshot("p")["rows"],
+                         [["ENV1", "payments-api", "2h"]])
+
+    def test_a_result_that_first_appeared_earlier_keeps_its_date(self):
+        self.record([["ENV1", "payments-api", "1h"]], ignore=["version"])
+        first_seen = self.store.list_snapshots("p")[0]["first_seen"]
+        self.record([["ENV1", "payments-api", "2h"]], ignore=["version"])
+        kept = self.store.list_snapshots("p")[0]
+        self.assertEqual(kept["first_seen"], first_seen,
+                         "the compared values have been these since the earlier run")
+        self.assertGreaterEqual(kept["last_seen"], first_seen)
+        self.assertEqual(kept["seen_count"], 2)
+
+    def test_a_change_beside_an_ignored_one_is_still_a_change(self):
+        first, _ = self.record([["ENV1", "payments-api", "1h"]], ignore=["image"])
+        second, changed = self.record([["ENV1", "orders-api", "2h"]], ignore=["image"])
+        self.assertNotEqual(first, second)
+        self.assertTrue(changed)
+
+    def test_a_name_that_is_not_a_column_is_harmless(self):
+        first, _ = self.record(ROWS_A, ignore=["nothing_called_this"])
+        _, changed = self.record(ROWS_B, ignore=["nothing_called_this"])
+        self.assertTrue(changed)
 
     def test_a_reordered_row_counts_as_a_change(self):
         self.record([["a", "b", "1"], ["c", "d", "2"]])

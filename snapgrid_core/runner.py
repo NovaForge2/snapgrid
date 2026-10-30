@@ -398,7 +398,7 @@ class Runner:
             return False       # unreadable, so run the plugin and find out why
 
         snapshot_id, changed = self.store.save_snapshot(
-            plugin.id, columns, rows, plugin.history_keep or 1)
+            plugin.id, columns, rows, plugin.history_keep or 1, plugin.compare_ignore)
         self.store.finish_run(
             run_id, plugin.id, store_module.OK, exit_code=0,
             log=f"{plugin.output_file} was written {describe_age(age)} ago, "
@@ -416,7 +416,7 @@ class Runner:
             return
 
         snapshot_id, changed = self.store.save_snapshot(
-            plugin.id, columns, rows, plugin.history_keep or 1)
+            plugin.id, columns, rows, plugin.history_keep or 1, plugin.compare_ignore)
         self.store.finish_run(
             run_id, plugin.id, store_module.OK, exit_code=0,
             log=f"read {plugin.output_file} ({len(rows)} rows)",
@@ -644,7 +644,8 @@ class Runner:
             )
             return
 
-        snapshot_id, changed = self.store.save_snapshot(plugin.id, columns, rows, plugin.history_keep or 1)
+        snapshot_id, changed = self.store.save_snapshot(
+            plugin.id, columns, rows, plugin.history_keep or 1, plugin.compare_ignore)
         self.store.finish_run(
             run_id, plugin_id, store_module.OK, exit_code=exit_code, log=log,
             snapshot_id=snapshot_id, row_count=len(rows), changed=changed,

@@ -384,7 +384,8 @@ file      = "report.csv"          # read the table from a file instead of stdout
 fresh_for = "30m"                 # and skip the run while the file is young
 
 [history]
-keep = 20                         # how many *differing* results to keep
+keep = 20                         # how many *differing* results to keep -
+                                  # differing in a column that is compared
 ```
 
 Four things worth knowing without reading further:

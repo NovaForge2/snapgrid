@@ -59,7 +59,7 @@ keep = 20
 | `output.file` | text | none | read the table from this file instead of stdout |
 | `output.sheet` | text | the first sheet | which sheet of an `.xlsx` |
 | `output.fresh_for` | duration | none | skip the run while the file is younger than this |
-| `history.keep` | whole number | `0` | how many **differing** results to keep |
+| `history.keep` | whole number | `0` | how many **differing** results to keep, where differing means differing in a compared column |
 | `colour.<column>` | section of text | none | a colour for values past a threshold, or matched whole |
 
 \* not required when `output.file` is set - a folder with a manifest and a file
@@ -373,20 +373,51 @@ comparison, every run differs from the one before, so every row stacks, the
 tally counts changes nobody made, and **Only what changed** stops narrowing
 anything - the answer to "what changed" becomes the clock.
 
-Naming those columns here takes them out of the comparison and nothing else.
-They are still shown, still filtered, sorted, searched and exported, and their
-current value is written in the row as usual. What changes is only what counts
-as a change:
+Naming those columns here takes them out of what counts as a change. They are
+still shown, still filtered, sorted, searched and exported, and their current
+value is written in the row as usual:
 
 - the row is not marked as having moved, so its cells are not stacked,
 - its values are not added to the tally in the strip above the table,
 - **Only what changed** does not show the row,
-- and where several lines share a name, the ignored columns are left out of
-  deciding whether those lines are the same lines, so the same two pods at two
-  different ages are the same two pods.
+- where several lines share a name, these columns are left out of deciding
+  whether those lines are the same lines, so the same two pods at two different
+  ages are the same two pods,
+- and a run where nothing else moved is **not a new result**, so it does not
+  spend a slot of `[history] keep`.
 
 The strip above the table says which columns these are, so a table reading
 "nothing changed" says why.
+
+### It decides what is kept, not only what is drawn
+
+`[history] keep = 10` asks for ten results somebody can tell apart. A plugin
+printing the time it looked differs from itself on every single run, so with
+that column counted, ten kept results were ten readings of one table: every
+comparison between them empty, and the ten real changes thrown away to make
+room for them.
+
+A run whose only movement is in an ignored column therefore updates the result
+that is already stored rather than storing another one:
+
+- the slot is not spent, and the ten kept results stay ten real changes,
+- **the newest values are stored** in that slot, so the age or the clock on
+  screen is the one from this run, not the one from when the compared values
+  last moved,
+- the date on the result stays the date those values first appeared, which is
+  what "result from 8h ago" above the table means,
+- and the run itself is recorded as a run, as always. Nothing is hidden: the
+  log and the run list show every run that happened.
+
+Two consequences worth knowing:
+
+- **A column that moves on its own and is not named here still fills the
+  history.** If the list of stored runs is full of results nobody can tell
+  apart, a column is moving that `[compare] ignore` has not been told about.
+- **One cell's history is as coarse as the column it is in.** An ignored
+  column's value is overwritten in place, so its popover shows what it is now
+  rather than every reading it has ever had. That is the column the plugin
+  declared to be noise.
 
 **A column hidden on screen is not compared either.** That is the same rule
 from the other end: what is being compared is what is being looked at, and a

@@ -122,6 +122,25 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   comparison now refuses exactly one thing, which it always should have: runs
   whose columns are not the same.
 
+- **`[compare] ignore` decides what is kept, not only what is drawn.**
+  `[history] keep = 10` asks for ten results somebody can tell apart, and a
+  plugin printing the time it looked - or the age of a pod - differs from
+  itself on every single run. With that column counted as a difference, the ten
+  kept results were ten readings of one table: every run spent a slot, every
+  comparison between them came back empty, and the ten real changes somebody
+  asked to keep had been thrown away to store them.
+
+  A run whose only movement is in an ignored column now updates the result that
+  is already stored instead of storing another one. The slot is not spent, and
+  the newest values go into that slot, so the age or the clock on screen is the
+  one from this run rather than the one from when the compared values last
+  moved. The date on the result stays the date those values first appeared,
+  which is what the line above the table means by "result from 8h ago", and the
+  run itself is recorded as a run as it always was.
+
+  Where a list of stored runs is still full of results nobody can tell apart,
+  a column is moving that `[compare] ignore` has not been told about.
+
 - **A comparison can name one earlier run instead of the last few.** The
   dropdown used to offer the last 3, 4 or 5 runs, stacked, and nothing else:
   with twenty runs kept, the version from last week could not be reached at

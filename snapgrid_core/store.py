@@ -21,6 +21,7 @@ import json
 import sqlite3
 import threading
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,30 @@ CANCELLED = "cancelled"
 def _hash(columns: list[str], rows: list[list[str]]) -> str:
     payload = json.dumps([columns, rows], separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _without(columns: list[str], rows: list[list[str]],
+             ignore: Iterable[str]) -> list[list[str]]:
+    """The rows with the named columns blanked out.
+
+    Used to ask whether two runs say the same thing. A column [compare] ignore
+    names - the time of the run, the age of a pod - is different on every run,
+    and a plugin that says so has said the column is not what it is reporting.
+    """
+    names = set(ignore or ())
+    if not names:
+        return rows
+    blank = [at for at, column in enumerate(columns) if column in names]
+    if not blank:
+        return rows
+    out = []
+    for row in rows:
+        copy = list(row)
+        for at in blank:
+            if at < len(copy):
+                copy[at] = ""
+        out.append(copy)
+    return out
 
 
 class Store:
@@ -218,10 +243,23 @@ class Store:
     # ----- snapshots ----------------------------------------------------
 
     def save_snapshot(
-        self, plugin_id: str, columns: list[str], rows: list[list[str]], keep: int
+        self, plugin_id: str, columns: list[str], rows: list[list[str]], keep: int,
+        ignore: Iterable[str] = (),
     ) -> tuple[int, bool]:
-        """Store a table. Returns the snapshot id and whether it differs from the last one."""
-        content_hash = _hash(columns, rows)
+        """Store a table. Returns the snapshot id and whether it differs from the last one.
+
+        Whether it differs is asked of the columns that are compared, so the
+        ones [compare] ignore names do not spend a slot of [history] keep. A
+        plugin printing the age of a pod differs from itself on every run: with
+        the age counted, ten kept results are ten readings of one table, every
+        comparison between them is empty, and the ten real changes somebody
+        asked to keep were thrown away to store them.
+
+        The newest values are still stored, in the slot the result already has,
+        so the table on screen shows the age as it is now rather than as it was
+        when the compared values last moved.
+        """
+        content_hash = _hash(columns, _without(columns, rows, ignore))
         now = time.time()
         with self._lock:
             latest = self._db.execute(
@@ -230,9 +268,15 @@ class Store:
             ).fetchone()
 
             if latest and latest["content_hash"] == content_hash:
+                # The same result again. first_seen stays where it is - it says
+                # when these values first appeared, which is what the page means
+                # by the age of a result - while the rows themselves are taken
+                # from this run, because a column that is not compared is still
+                # a column somebody reads.
                 self._db.execute(
-                    "UPDATE snapshots SET last_seen=?, seen_count=seen_count+1 WHERE id=?",
-                    (now, latest["id"]),
+                    """UPDATE snapshots SET rows_json=?, last_seen=?, seen_count=seen_count+1
+                        WHERE id=?""",
+                    (json.dumps(rows, ensure_ascii=False), now, latest["id"]),
                 )
                 self._db.commit()
                 return int(latest["id"]), False

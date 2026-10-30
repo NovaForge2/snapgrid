@@ -168,9 +168,10 @@ answer:
   clock time, `Compare with 28 Oct 09:02 - 14 rows`. That compares exactly two
   results, now and then, with nothing in between drawn. Reach is the point:
   with twenty runs kept, the run from this time last week is one choice, where
-  stacking would need twenty lines in a cell and stops at five. Only differing
-  results are stored, so the oldest entry in the list is the last time the
-  table said something else.
+  stacking would need twenty lines in a cell and stops at five. Only results
+  that differ in a compared column are stored, so every entry in the list is a
+  run where something somebody can see moved, and the oldest of them is the
+  last time the table said something else.
 
 It only offers as many runs as have been stored, and it is off until you ask.
 Which one is chosen is in the address, as `compare=<n>` for a stack and
