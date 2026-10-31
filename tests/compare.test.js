@@ -26,6 +26,7 @@ const {
   missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
   ignoredIndexes, compareRuns, compactRows, duplicateCount,
   groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, cellLines,
+  settleRuns,
   LINES,
 } = require(path.join(__dirname, "..", "web", "compare.js"));
 
@@ -629,4 +630,65 @@ test("duplicateCount says how many rows would go", () => {
 test("an empty table compacts to an empty table", () => {
   assert.deepEqual(compactRows([], [0]).rows, []);
   assert.equal(duplicateCount([], [0]), 0);
+});
+
+
+/* ------------------------------------------------------------------------
+   Which runs are ticked.
+
+   One control: every stored run with a tick against it, the newest ticked
+   one is the table, the rest are what it is compared with. The question
+   these answer is what a new result does to a set of ticks, which is the
+   part nobody can see by looking at the screen once.
+   ------------------------------------------------------------------------ */
+
+const runs = (...ids) => ids.map((id) => ({ id }));
+
+test('nothing ticked yet is the newest run', () => {
+  assert.deepEqual(settleRuns(runs(5, 4, 3), [], true, 0, 1), [5]);
+});
+
+test('nothing ticked and a depth asked for is that many in a row', () => {
+  assert.deepEqual(settleRuns(runs(5, 4, 3, 2), [], true, 0, 3), [5, 4, 3]);
+});
+
+test('nothing ticked, starting further back, is that many from there', () => {
+  assert.deepEqual(settleRuns(runs(5, 4, 3, 2), [], false, 1, 2), [4, 3]);
+});
+
+test('a depth longer than the history stops at the end of it', () => {
+  assert.deepEqual(settleRuns(runs(5, 4), [], true, 0, 5), [5, 4]);
+});
+
+test('a new result moves the ticks down when the newest one was ticked', () => {
+  // 0 and 1 were ticked; 6 has arrived, so 0 and 1 are now 6 and 5.
+  assert.deepEqual(settleRuns(runs(6, 5, 4, 3), [5, 4], true, 0, 2), [6, 5]);
+});
+
+test('a new result moves a set that is not consecutive by the same step', () => {
+  // 0 and 2 ticked, so they stay 0 and 2 rather than becoming 1 and 3.
+  assert.deepEqual(settleRuns(runs(6, 5, 4, 3, 2), [5, 3], true, 0, 2), [6, 4]);
+});
+
+test('a new result leaves the ticks alone when the newest was not ticked', () => {
+  // Particular runs somebody went and found. Moving them loses their place.
+  assert.deepEqual(settleRuns(runs(6, 5, 4, 3), [4, 3], false, 2, 2), [4, 3]);
+});
+
+test('a tick that falls off the end of the history goes', () => {
+  assert.deepEqual(settleRuns(runs(6, 5, 4), [5, 4, 1], false, 1, 3), [5, 4]);
+});
+
+test('ticks that have all fallen out start again at the newest', () => {
+  assert.deepEqual(settleRuns(runs(6, 5), [2, 1], true, 0, 1), [6]);
+});
+
+test('two results arriving at once move the ticks by two', () => {
+  assert.deepEqual(settleRuns(runs(8, 7, 6, 5), [6, 5], true, 0, 2), [8, 7]);
+});
+
+test('a tick whose run is no longer kept simply goes', () => {
+  // 0 and 3 were ticked. A result arrived and the run at 3 has fallen out of
+  // the kept history, so one tick is left and it is still on now.
+  assert.deepEqual(settleRuns(runs(9, 8, 7, 6), [7, 4], true, 0, 2), [9]);
 });

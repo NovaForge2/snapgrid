@@ -343,6 +343,25 @@ function compareRuns(runs, keyName, ignore) {
   return { rows, names, runs, changedCells, added, removed, ignored, keys, several };
 }
 
+// Which runs are ticked, given the stored history as it now stands. Pure, so
+// the rule about what a new result does to a set of ticks is testable: it is
+// the part of this that cannot be seen by looking at the screen once.
+//
+// A tick on the newest run is a tick on "now", so the whole set is positions
+// and it stays where it is as results arrive - which is what compare=<n>
+// always did. With the newest run left unticked, the ticks are particular
+// runs somebody went and found, and moving those would lose their place.
+function settleRuns(snapshots, chosen, following, from, depth) {
+  const ids = snapshots.map((one) => one.id);
+  const left = chosen.filter((id) => ids.includes(id));
+  if (!left.length) return ids.slice(from, from + Math.max(1, depth));
+  const arrived = ids.indexOf(left[0]);
+  if (!following || arrived <= 0) return left;
+  return left
+    .map((id) => ids[ids.indexOf(id) - arrived])
+    .filter((id) => id !== undefined);
+}
+
 // In the browser these are already global, because this is an ordinary script
 // and the page loads it before app.js. Under node the same file is required by
 // the tests, and this is the one line that makes that work.
@@ -352,6 +371,7 @@ if (typeof module !== "undefined" && module.exports) {
     missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
     ignoredIndexes, compareRuns, compactRows, duplicateCount,
     groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, cellLines,
+    settleRuns,
     LINES,
   };
 }

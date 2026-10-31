@@ -43,9 +43,11 @@ async function loadPlugins() {
       const known = state.plugins.some((plugin) => plugin.id === wanted);
       await select(known ? wanted : state.plugins[0].id);
       state.depth = Math.min(MAX_DEPTH, Math.max(1, Number(asked.get("compare")) || 1));
-      // A link can name one stored run to compare with instead of a depth.
-      // Checked against this plugin's own snapshots below, once the detail
-      // has arrived, for the same reason the snapshot parameter is.
+      // A link can name the ticked runs outright, which is the only way to
+      // say a set that is not a run of consecutive results. Older links name
+      // one run to compare with instead, and are still read.
+      const askedRuns = (asked.get("runs") || "").split(",")
+        .map((part) => Number(part)).filter((id) => id > 0).slice(0, MAX_DEPTH);
       const askedAgainst = Number(asked.get("against")) || 0;
       state.onlyChanged = asked.get("changed") === "1";
       el("diff-only-box").checked = state.onlyChanged;
@@ -58,16 +60,41 @@ async function loadPlugins() {
         state.snapshotId = askedSnapshot;
         await loadDetail();
       }
+      // What the link ticks. Checked against this plugin's own snapshots: an
+      // id from another plugin's link would otherwise compare two unrelated
+      // tables. The newest ticked run is the one on screen, so a link naming
+      // only older runs moves the page to the newest of them.
+      const snapshots = state.detail.snapshots || [];
+      const stored = new Set(snapshots.map((one) => one.id));
+      const showing = state.snapshotId
+        ? snapshots.findIndex((one) => String(one.id) === String(state.snapshotId))
+        : 0;
+      if (askedRuns.length && askedRuns.every((id) => stored.has(id))) {
+        state.chosen = snapshots
+          .filter((one) => askedRuns.includes(one.id)).map((one) => one.id);
+      } else if (askedAgainst && stored.has(askedAgainst)) {
+        state.chosen = [snapshots[Math.max(0, showing)].id, askedAgainst];
+      } else if (state.depth > 1) {
+        // compare=<n>: that many runs in a row, starting from the one on
+        // screen. What the address said before any of this was ticked.
+        state.chosen = snapshots
+          .slice(Math.max(0, showing), Math.max(0, showing) + state.depth)
+          .map((one) => one.id);
+      }
+      if (state.chosen.length) {
+        state.depth = state.chosen.length;
+        const newest = state.chosen[0] === (snapshots[0] || {}).id;
+        const want = newest ? null : String(state.chosen[0]);
+        const elsewhere = want !== state.snapshotId;   // not the result loaded
+        state.snapshotId = want;
+        if (elsewhere) await loadDetail();
+      }
       // The sort, the search and the filters the link asks for. After select()
       // cleared them, and before the table is drawn with them.
-      if (askedAgainst
-          && (state.detail.snapshots || []).some((one) => one.id === askedAgainst)) {
-        state.against = askedAgainst;
-        state.depth = 2;
-      }
       const view = viewFromTheAddress(asked);
       if (state.depth > 1) {
-        renderComparePicker();
+        settleChosen();
+        renderRunsButton();
         await loadComparison();
       }
       if (view || state.depth > 1) renderTable();
@@ -136,9 +163,11 @@ async function loadComparison() {
   // A named run that is no longer stored, or is not older than what is on
   // screen, leaves nothing to compare with rather than quietly comparing
   // something else.
-  const older = state.against
-    ? snapshots.slice(at + 1).filter((one) => one.id === state.against)
-    : snapshots.slice(at + 1, at + state.depth);
+  // Exactly the ticked runs older than the one on screen, in the order they
+  // were stored. A ticked run that is no longer kept leaves nothing to
+  // compare with rather than quietly comparing something else.
+  const ticked = new Set(state.chosen);
+  const older = snapshots.slice(at + 1).filter((one) => ticked.has(one.id));
 
   const loaded = [];
   let unreadable = 0;

@@ -56,8 +56,9 @@
         <button id="btn-refresh" type="button"
                 title="Run the plugin now, without waiting for the schedule">Run now</button>
         <button id="btn-cancel" type="button" hidden>Cancel</button>
-        <select id="snapshot-picker" hidden aria-label="Which result to show"></select>
-        <select id="compare-picker" hidden aria-label="Which result to compare with"></select>
+        <button id="btn-runs" type="button" hidden aria-haspopup="true"
+                aria-expanded="false"
+                title="Which runs to show and compare"></button>
         <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
         <span id="row-note"></span>
         <!-- Back on this row. Moved down beside the table, it read well in a

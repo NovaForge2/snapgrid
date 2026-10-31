@@ -778,6 +778,26 @@ td.num .shade {
 .value-row:hover { background: var(--hover); }
 .value-row .v { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .value-row .c { color: var(--muted); font-size: 11px; }
+/* The runs, each with a tick. The number is what the strip under the table
+   and this list both call the run, so it is drawn the same in both. */
+.values.runs .value-row { gap: 6px; }
+.values.runs .n {
+  display: inline-block; width: 15px; height: 15px; line-height: 15px; text-align: center;
+  border-radius: 3px; background: var(--hover); color: var(--muted);
+  font-size: 10px; font-style: normal; flex: none;
+}
+.values.runs .n.now { background: var(--accent-soft); color: var(--accent); }
+.values.runs .count { color: var(--muted); font-size: 11px; white-space: nowrap; }
+/* A tick that cannot be used says so by being pale, not by doing nothing. */
+.values.runs input:disabled { opacity: .4; }
+.values.runs input:disabled ~ * { opacity: .5; }
+/* How many more can be ticked. Without it the sixth tick reads as a control
+   that has broken. */
+.runs-foot {
+  justify-content: flex-end; color: var(--muted); font-size: 11px;
+  padding: 6px 2px 0; margin-top: 6px;
+}
+
 .popup-actions { display: flex; gap: 8px; margin-top: 8px; }
 .popup-actions button { flex: 1; padding: 4px 8px; }
 

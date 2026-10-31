@@ -10,13 +10,14 @@ const state = {
   plugins: [],
   selected: null,
   detail: null,
-  snapshotId: null,
+  snapshotId: null,   // derived from chosen[0]: null when that is the newest
   filters: new Map(), // column name -> Set of allowed values
   configFor: null,    // which plugin the config panel is currently showing
   side: null,         // null, "log" or "config"
-  depth: 1,           // how many runs are shown in each cell; 1 means off
-  against: 0,         // compare with this one stored run instead of the last
-                      // few: its snapshot id, or 0 for the stack above
+  chosen: [],         // the ticked runs, newest first, as snapshot ids. The
+                      // first is the table; the rest are what it is compared
+                      // with. Never empty once a plugin has been loaded.
+  depth: 1,           // derived: chosen.length; 1 means no comparison
   past: [],           // the older snapshots, newest first, once fetched
   unreadable: 0,      // how many of those could not be read
   pastFor: "",        // what those older snapshots were fetched for
@@ -375,6 +376,7 @@ async function select(id) {
     el("search").value = "";
     // A comparison belongs to one table; carrying it to another would compare
     // things that have nothing to do with each other.
+    state.chosen = [];
     state.depth = 1;
     state.past = [];
     state.onlyChanged = false;
@@ -403,9 +405,22 @@ function rememberInTheAddress() {
   if (state.selected) asked.set("plugin", state.selected);
   // Which result, not only which plugin: "this is what it said at nine" is a
   // thing to send somebody.
-  if (state.snapshotId) asked.set("snapshot", String(state.snapshotId));
-  if (state.against) asked.set("against", String(state.against));
-  else if (state.depth > 1) asked.set("compare", String(state.depth));
+  // The ticked runs. A run of them - the newest few, or a few in a row
+  // starting further back - is said as where it starts and how many, which is
+  // what the address said before this control existed, so every link already
+  // written still means what it meant. Any other set is named by its ids,
+  // because nothing shorter can say "the one before last and the one before
+  // that".
+  const snapshots = (state.detail && state.detail.snapshots) || [];
+  const from = snapshots.findIndex((one) => one.id === state.chosen[0]);
+  const inARow = from >= 0
+    && state.chosen.every((id, at) => snapshots[from + at] && snapshots[from + at].id === id);
+  if (inARow) {
+    if (from > 0) asked.set("snapshot", String(state.chosen[0]));
+    if (state.chosen.length > 1) asked.set("compare", String(state.chosen.length));
+  } else if (state.chosen.length) {
+    asked.set("runs", state.chosen.join(","));
+  }
   if (state.onlyChanged) asked.set("changed", "1");
   if (state.sort.column && state.sort.direction) {
     asked.set("sort", state.sort.column + (state.sort.direction > 0 ? ":asc" : ":desc"));
@@ -580,8 +595,8 @@ function renderDetail(redraw = true) {
     showMessage("", true);
   }
 
-  renderSnapshotPicker();
-  renderComparePicker();
+  settleChosen();
+  renderRunsButton();
   renderLog();
 
   // A plugin that cannot be loaded has nothing else to show, and its file is
@@ -601,101 +616,151 @@ function renderDetail(redraw = true) {
   if (redraw) renderTable();
 }
 
-function renderSnapshotPicker() {
-  const picker = el("snapshot-picker");
+// Where each ticked run sits in the stored history: 0 is the newest run the
+// plugin has, 1 the one before it. A number is a position rather than a name
+// - a new result pushes every number down by one - which is why the address
+// carries ids and the screen carries numbers.
+function chosenNumbers() {
+  const snapshots = (state.detail && state.detail.snapshots) || [];
+  return state.chosen
+    .map((id) => snapshots.findIndex((one) => one.id === id))
+    .filter((at) => at >= 0);
+}
+
+// The ticks against the history as it now stands, run before the button and
+// the table are drawn. The rule itself is settleRuns, in compare.js.
+function settleChosen() {
+  const snapshots = (state.detail && state.detail.snapshots) || [];
+  if (!snapshots.length) return;
+  // Where a run of ticks starts when there are none yet: the result the
+  // address named, or the newest. This is how snapshot=<id> and compare=<n>
+  // are read, so a link written before this control existed still opens the
+  // runs it named.
+  const from = state.snapshotId
+    ? Math.max(0, snapshots.findIndex((one) => String(one.id) === String(state.snapshotId)))
+    : 0;
+  state.chosen = settleRuns(snapshots, state.chosen, !state.snapshotId, from, state.depth);
+  state.depth = state.chosen.length;
+}
+
+function renderRunsButton() {
+  const button = el("btn-runs");
   const snapshots = state.detail.snapshots || [];
+  // One stored result is nothing to choose between and nothing to compare.
   if (snapshots.length < 2) {
-    picker.hidden = true;
+    button.hidden = true;
     return;
   }
-  picker.hidden = false;
-  picker.textContent = "";
+  button.hidden = false;
+  const ticked = chosenNumbers();
   const seconds = clockNeedsSeconds(snapshots);
-  snapshots.forEach((snapshot, index) => {
-    const option = document.createElement("option");
-    option.value = String(snapshot.id);
-    // The time in full, with its minutes. Said as "2h ago", two runs an hour
-    // apart read as the same entry, and the one thing anybody picks a stored
-    // run by - when it was - is the part that was missing.
-    //
-    // The date and nothing else. It read "Showing 28 Oct 19:47", on the
-    // argument that a bare date reads as a label rather than as the control
-    // that picks a result - but the box has a border and an arrow, which is
-    // what says it is a control, and the word was in front of the one thing
-    // the list is read for on every line of it.
-    const when = clockOf(snapshot.last_seen, seconds);
-    option.textContent = index === 0
-      ? when + " (latest)"
-      : when + " - " + rowCount(snapshot.row_count);
-    if (state.snapshotId ? Number(state.snapshotId) === snapshot.id : index === 0) {
-      option.selected = true;
-    }
-    picker.appendChild(option);
-  });
+  // One run: no comparison, so the button says which result is on screen, as
+  // the first of the two dropdowns used to. Several: their numbers, which is
+  // what the cells and the strip beneath the table are numbered by.
+  button.textContent = ticked.length === 1
+    ? clockOf(snapshots[ticked[0]].last_seen, seconds)
+      + (ticked[0] === 0 ? " (latest)" : "")
+    : "Runs " + ticked.join(", ");
+  button.classList.toggle("active", ticked.length > 1);
 }
 
-function renderComparePicker() {
-  const picker = el("compare-picker");
+// The one control: every stored run, each with a tick. What is ticked is
+// compared, and the newest ticked run is the table.
+//
+// It was two dropdowns - one for the result to show, one for what to compare
+// it with - which is the same question asked twice, and the pair could not
+// say "the run before last against the one before that" at all. A tick each
+// says it. Ticking is also why this is a panel and not a <select>: a native
+// list closes on the first choice, and choosing is the one thing here that
+// takes more than one click.
+function openRuns(anchor) {
+  const popup = el("filter-popup");
   const snapshots = state.detail.snapshots || [];
-  // Nothing to compare a single result with.
-  if (snapshots.length < 2) {
-    picker.hidden = true;
+  popup.textContent = "";
+  popup.hidden = false;
+
+  const list = document.createElement("div");
+  list.className = "values runs";
+  const foot = document.createElement("div");
+  foot.className = "popup-foot runs-foot";
+  const seconds = clockNeedsSeconds(snapshots);
+  const ticked = new Set(state.chosen);
+
+  // Five runs is a limit of height rather than of arithmetic: five runs of a
+  // forty row table is a very tall page. Saying what is left is what stops
+  // the sixth tick reading as a control that has broken.
+  const sayLeft = () => {
+    const spare = MAX_DEPTH - ticked.size;
+    foot.textContent = spare
+      ? `${spare} more of ${MAX_DEPTH}`
+      : `${MAX_DEPTH} is the most`;
+  };
+
+  snapshots.forEach((snapshot, at) => {
+    const row = document.createElement("label");
+    row.className = "value-row";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = ticked.has(snapshot.id);
+    box.disabled = !box.checked && ticked.size >= MAX_DEPTH;
+    box.addEventListener("change", () => {
+      // Something has to be on the screen, so the last tick cannot come off.
+      if (!box.checked && ticked.size === 1) {
+        box.checked = true;
+        return;
+      }
+      if (box.checked) ticked.add(snapshot.id);
+      else ticked.delete(snapshot.id);
+      for (const other of list.querySelectorAll("input")) {
+        other.disabled = !other.checked && ticked.size >= MAX_DEPTH;
+      }
+      sayLeft();
+      chooseRuns(snapshots.filter((one) => ticked.has(one.id)).map((one) => one.id));
+    });
+    const number = document.createElement("i");
+    number.className = at === 0 ? "n now" : "n";
+    number.textContent = String(at);
+    const when = document.createElement("span");
+    when.className = "v";
+    when.textContent = clockOf(snapshot.last_seen, seconds);
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = rowCount(snapshot.row_count);
+    row.append(box, number, when, count);
+    list.appendChild(row);
+  });
+
+  popup.appendChild(list);
+  sayLeft();
+  popup.appendChild(foot);
+
+  el("btn-runs").setAttribute("aria-expanded", "true");
+  placePopup(popup, anchor);
+}
+
+// Ticking is the whole of it: what is ticked decides both what is on screen
+// and what it is compared with.
+async function chooseRuns(ids) {
+  const snapshots = state.detail.snapshots || [];
+  state.chosen = ids;
+  state.depth = ids.length;
+  // The newest ticked run is the table. Null rather than its id when it is
+  // the newest run there is, so the page keeps following new results.
+  const showing = ids[0] === (snapshots[0] || {}).id ? null : String(ids[0]);
+  const moved = showing !== state.snapshotId;
+  state.snapshotId = showing;
+  // Narrowing to what changed belongs to one comparison, not to the next one.
+  state.onlyChanged = false;
+  el("diff-only-box").checked = false;
+  closeCellHistory();
+  renderRunsButton();
+  rememberInTheAddress();
+  if (moved) {
+    await loadDetail();          // a different result's rows
     return;
   }
-  picker.hidden = false;
-  picker.textContent = "";
-
-  const chosen = pickerValue();
-  const add = (into, value, label) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    if (value === chosen) option.selected = true;
-    into.appendChild(option);
-  };
-  const group = (label) => {
-    const holder = document.createElement("optgroup");
-    holder.label = label;
-    picker.appendChild(holder);
-    return holder;
-  };
-
-  add(picker, "1", "Compare: off");
-
-  // Stacking every run in between answers "when did this move?". Five is the
-  // most, and it is a limit of height rather than of arithmetic: five runs of
-  // a forty row table is a very tall page.
-  const stack = group("The last few runs, stacked");
-  add(stack, "2", "Compare with: the one before");
-  for (let depth = 3; depth <= Math.min(MAX_DEPTH, snapshots.length); depth += 1) {
-    add(stack, String(depth), `Compare: last ${depth} runs`);
-  }
-
-  // A pair instead, which answers the other question: what is different now
-  // from how it was then. Every stored run is reachable, not only the last
-  // five, and the runs in between are not drawn - two lines in a cell, now
-  // and then. Only differing results are stored, so the oldest entry here is
-  // the last time the table said something else.
-  const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
-  const at = snapshots.findIndex((snapshot) => snapshot.id === showing);
-  const older = snapshots.slice(at + 1);
-  if (older.length) {
-    const seconds = clockNeedsSeconds(older);
-    const pair = group("One earlier run, on its own");
-    for (const snapshot of older) {
-      // The date alone here as well. What the list does is said by the
-      // heading above it and by the entries that are not dates.
-      add(pair, "at:" + snapshot.id,
-          clockOf(snapshot.last_seen, seconds)
-          + " - " + rowCount(snapshot.row_count));
-    }
-  }
-}
-
-// What the compare dropdown should have selected: a stored run if one was
-// named, otherwise the depth of the stack.
-function pickerValue() {
-  return state.against ? "at:" + state.against : String(state.depth);
+  await loadComparison();
+  renderTable();
 }
 
 const MAX_DEPTH = 5;
@@ -720,7 +785,7 @@ function keyIndex(columns) {
 // Every run being shown, newest first: what is on screen, then the older ones.
 // Each becomes one line inside every cell.
 function comparedRuns(current) {
-  return [current, ...state.past].slice(0, state.depth);
+  return [current, ...state.past];
 }
 
 // The columns a comparison leaves alone: the ones [compare] ignore names, and
@@ -742,7 +807,7 @@ function comparisonFor(current) {
 function comparisonSignature() {
   const snapshots = (state.detail && state.detail.snapshots) || [];
   const showing = state.snapshotId ? Number(state.snapshotId) : (snapshots[0] || {}).id;
-  return `${state.selected}|${showing}|${state.depth}|${state.against}`;
+  return `${state.selected}|${showing}|${state.chosen.join(",")}`;
 }
 
 // Bumped on every request, so a slow answer cannot land after a newer one and
@@ -779,20 +844,28 @@ function renderDiffBar(diff) {
   const left = named.length
     ? ` - ${named.join(", ")} ${named.length > 1 ? "are" : "is"} not compared`
     : "";
-  const against = state.against && diff.runs.length === 2
-    ? `Comparing with the run of ${clockOf(diff.runs[1].last_seen)}`
-    : `Showing the last ${diff.runs.length} runs`;
-  what.textContent = against + left + short;
+  // Which runs, by the numbers they are ticked with. "The last three" is only
+  // true when they are the last three, and the point of ticking them one at a
+  // time is that they need not be.
+  const numbers = chosenNumbers();
+  const inARow = numbers.every((at, index) => at === index);
+  const said = inARow
+    ? `Showing the last ${diff.runs.length} runs`
+    : `Comparing runs ${numbers.join(", ")}`;
+  what.textContent = said + left + short;
 
   // The runs are the same for every cell, so they are named once, here.
   // There is no room for a date inside a cell.
   const legend = document.createElement("span");
   legend.className = "legend";
+  // The same numbers the runs are ticked with, so the strip and the panel
+  // name a run the same way. They start at 0 because 0 is now.
+  const ticked = chosenNumbers();
   diff.runs.forEach((run, at) => {
     const item = document.createElement("span");
     const number = document.createElement("i");
     number.className = at === 0 ? "n now" : "n";
-    number.textContent = String(at + 1);
+    number.textContent = String(ticked[at] === undefined ? at : ticked[at]);
     item.append(number, document.createTextNode(at === 0 ? "now" : whenExactly(run.last_seen)));
     legend.appendChild(item);
   });
@@ -1887,6 +1960,7 @@ function columnGrip(table, shownColumns, column, th) {
 }
 
 function openColumns(anchor) {
+  el("btn-runs").setAttribute("aria-expanded", "false");
   const popup = el("filter-popup");
   const columns = (state.detail && state.detail.snapshot && state.detail.snapshot.columns) || [];
   const hidden = hiddenColumns();
@@ -1966,12 +2040,14 @@ el("btn-columns").addEventListener("click", (event) => {
 
 function closeFilter() {
   el("btn-columns").setAttribute("aria-expanded", "false");
+  el("btn-runs").setAttribute("aria-expanded", "false");
   const popup = el("filter-popup");
   popup.hidden = true;
   popup.textContent = "";
 }
 
 function openFilter(column, anchor) {
+  el("btn-runs").setAttribute("aria-expanded", "false");
   // The same popup serves the Columns button, which is no longer what is in
   // it the moment a heading opens a filter in it.
   el("btn-columns").setAttribute("aria-expanded", "false");
@@ -2124,38 +2200,17 @@ el("btn-cancel").addEventListener("click", async () => {
   }
 });
 
-el("snapshot-picker").addEventListener("change", (event) => {
-  const picker = event.target;
-  state.snapshotId = picker.selectedIndex === 0 ? null : picker.value;
-  // A run named to compare with is named relative to what is on screen. Move
-  // the screen to an older result and that run may now be the newer of the
-  // two, which is not a comparison anybody asked for.
-  state.against = 0;
-  if (state.depth > 1) state.depth = 2;
-  loadDetail();
+el("btn-runs").addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!el("filter-popup").hidden) {
+    closeFilter();
+    return;
+  }
+  openRuns(el("btn-runs"));
 });
 
 el("search").addEventListener("input", (event) => {
   state.search = event.target.value;
-  renderTable();
-});
-
-el("compare-picker").addEventListener("change", async (event) => {
-  const chosen = String(event.target.value);
-  if (chosen.startsWith("at:")) {
-    // A pair: this result and that one run. Two runs deep, so everything
-    // downstream that asks "is the comparison on?" keeps working unchanged.
-    state.against = Number(chosen.slice(3));
-    state.depth = 2;
-  } else {
-    state.against = 0;
-    state.depth = Number(chosen) || 1;
-  }
-  state.onlyChanged = false;
-  el("diff-only-box").checked = false;
-  closeCellHistory();
-  rememberInTheAddress();
-  await loadComparison();
   renderTable();
 });
 

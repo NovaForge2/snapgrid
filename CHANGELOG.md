@@ -167,13 +167,32 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   `arrived` and `gone`, written the way a cell writes them, and only where a
   row on screen has one.
 
-- **The two dropdowns that name a run say the date and nothing else.** They
-  read `Showing 28 Oct 19:47 (latest)` and `Compare with 28 Oct 09:02 - 14
-  rows`; the word was in front of the one thing each line is read for, on
-  every line. A box with a border and an arrow is what says a dropdown is a
-  control, which was the reason given for the word. The entries that are not
-  dates - `Compare: off`, `the one before`, `last 3 runs` - still say what
-  they do.
+- **One list of runs with a tick against each, in place of the two
+  dropdowns.** There was one dropdown for the result to show and another for
+  what to compare it with, which is the same question asked twice, and between
+  them they could not say "the run before last against the one before that" at
+  all. Now every stored run is one line with a tick: what is ticked is
+  compared, and the newest ticked run is the table. Untick 0, tick 1 and 2,
+  and that is the comparison the pair could not express.
+
+  Each run carries the number it is known by - **0 is now**, 1 the one before
+  it - and the strip under the table numbers its lines the same way, so a line
+  in a cell and a line in the list are called the same thing. The number is a
+  position rather than a name, which decides what a new result does to the
+  ticks: with 0 ticked you are watching now, so the ticks stay where they are
+  and the page follows the new run, exactly as `compare=<n>` always did; with
+  0 unticked you went and found particular runs, so those stay the runs you
+  found. Five is still the most, the foot of the list says how many more can
+  be ticked, and the last tick cannot come off.
+
+  The address keeps every link already written: a run of consecutive results
+  is still `compare=<n>` with `snapshot=<id>`, and only a set that is not
+  consecutive needs the new `runs=<id>,<id>`. Ids rather than numbers, since
+  the numbers move.
+
+  Before this, both dropdowns lost the words in front of their dates -
+  `Showing 28 Oct 19:47`, `Compare with 28 Oct 09:02` - which stood in front
+  of the one thing each line is read for.
 
 - **A value that has gone is not struck through.** The rule had been in the
   stylesheet from the first commit - *nothing is struck through, an older

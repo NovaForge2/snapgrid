@@ -104,23 +104,49 @@ markers. An empty filtered table exports only its column headers.
   whole column is made of numbers that come back **identical** - so figures
   you might want to add up stay addable, and everything else arrives exactly
   as the plugin printed it.
-- **The dropdown next to Run now picks which result is on screen.** It appears
-  once there is more than one stored, and every entry says when that result is
-  from and how many rows it had: `28 Oct 19:47 (latest)`, `28 Oct 09:02 - 14
-  rows`. This is how you look at one earlier run on its own,
-  without comparing anything. The time is a date and a clock, to the minute,
-  rather than "2h ago": in a list of runs to choose between, several of them
-  are "2h ago" and the minutes are the only thing telling them apart. Where two
-  stored runs fall in the same minute, every entry gains its seconds. The
-  dropdown is wide enough for the whole line - capped narrower, the clock is
-  what got cut, which is the one part anybody picks a run by. The table, the sort, the filters, the search and the
-  Excel export all then work on that result exactly as they do on the latest.
-  It says `Showing` because without it a closed dropdown reads as a label
-  saying when the result is from rather than as the control that changes it.
-  Which result you are looking at is in the address, as `snapshot=<id>`, so the
-  view can be sent to somebody.
-- **The second dropdown compares runs** - see below. The two are independent:
-  you can look at an earlier result and compare it with the ones before it.
+- **The button next to Run now picks which runs you are looking at.** It
+  appears once there is more than one stored result, and it opens a list of
+  every run kept, each with a tick against it: the number it is known by, when
+  it is from, and how many rows it had.
+
+  ```
+  [x] 0   31 Oct 11:30     50 rows
+  [x] 1   31 Oct 11:29     47 rows
+  [ ] 2   31 Oct 11:28     49 rows
+                                      3 more of 5
+  ```
+
+  **What is ticked is compared, and the newest ticked run is the table.** One
+  tick is one result on screen and no comparison. Two or more are compared,
+  and they need not be consecutive: untick 0 and tick 1 and 2 to compare the
+  run before last with the one before that, which the two dropdowns this
+  replaced could not say at all.
+
+  **0 is now**, 1 the run before it, and so on down the stored history. The
+  number is a position rather than a name, so a new result pushes every number
+  down by one. That is also the rule for what a new result does to the ticks:
+  with 0 ticked you are watching now, so the ticks stay where they are and the
+  page follows the new run; with 0 unticked you went and found particular
+  runs, so they stay the runs you found. The strip under the table numbers its
+  lines the same way.
+
+  Five runs is the most, and that is a limit of height rather than arithmetic:
+  five runs of a forty row table is a very tall page. The foot of the list
+  says how many more can be ticked, and the rest of the ticks go pale at five
+  rather than silently doing nothing. The last tick cannot come off - there
+  would be nothing on screen.
+
+  The time is a date and a clock, to the minute, rather than "2h ago": in a
+  list of runs to choose between, several of them are "2h ago" and the minutes
+  are the only thing telling them apart. Where two stored runs fall in the same
+  minute, every entry gains its seconds. The table, the sort, the filters, the
+  search and the Excel export all work on the result shown exactly as they do
+  on the latest.
+
+  It is a panel rather than a dropdown because a native list closes on the
+  first choice, and choosing is the one thing here that takes more than one
+  click.
+
 - **Log** and **Config** are at the foot of the **More** menu. They open a
   panel over the right of the table, with a tab for each and a close button, so
   a panel you are not using costs the grid no space at all. Escape closes the
@@ -157,27 +183,28 @@ markers. An empty filtered table exports only its column headers.
   </picture>
 </p>
 
-The second dropdown chooses what to compare with, and it offers two kinds of
-answer:
+Ticking more than one run compares them, and two kinds of answer come out of
+the same list:
 
-- **The last few runs, stacked** - **the one before**, or the **last 3, 4 or 5
-  runs**. Every run in between is drawn, one line per run, which is the way to
-  see *when* a value moved. Five is the most, and that is a limit of height
-  rather than arithmetic: five runs of a forty row table is a very tall page.
-- **One earlier run, on its own** - every stored run is listed by its date and
-  clock time, `28 Oct 09:02 - 14 rows`. That compares exactly two
-  results, now and then, with nothing in between drawn. Reach is the point:
-  with twenty runs kept, the run from this time last week is one choice, where
-  stacking would need twenty lines in a cell and stops at five. Only results
-  that differ in a compared column are stored, so every entry in the list is a
-  run where something somebody can see moved, and the oldest of them is the
-  last time the table said something else.
+- **A few runs in a row** - 0 and 1, or 0 through 4. Every run in between is
+  drawn, one line per run, which is the way to see *when* a value moved.
+- **Two runs far apart** - tick 0 and 12 and nothing between them is drawn:
+  now and then, two lines in a cell. Reach is the point. With twenty runs
+  kept, the run from this time last week is one tick, where stacking every run
+  in between would need twenty lines in a cell and stops at five. Only results
+  that differ in a compared column are stored, so every run in the list is one
+  where something somebody can see moved, and the oldest is the last time the
+  table said something else.
 
-It only offers as many runs as have been stored, and it is off until you ask.
-Which one is chosen is in the address, as `compare=<n>` for a stack and
-`against=<id>` for a single run. Moving the first dropdown to an earlier result
-clears the choice, because a run named to compare with is named relative to
-what is on screen.
+It only lists as many runs as have been stored, and comparing is off until a
+second run is ticked.
+
+The ticks are in the address. A run of consecutive results is said as it
+always was - `compare=<n>`, with `snapshot=<id>` when it does not start at the
+newest - so every link written before this control existed opens the runs it
+named. Any other set is named by its ids, `runs=<id>,<id>`, because nothing
+shorter can say "the one before last and the one before that". Ids rather than
+numbers: a link opened tomorrow would otherwise mean two different runs.
 
 With it on, a cell whose value moved holds one line per run, newest on top. A
 cell that never moved is written once, as it always is.
@@ -276,8 +303,8 @@ leaving:
   edge in the colour of a row that left - the strip above the table says so,
   where a row like this is on screen,
 - a cell like this is compared with **the run before and no further back**,
-  whatever the first dropdown says, because its lines are its values and none
-  is left to name a run. A column where every line agrees is written once,
+  however many runs are ticked, because its lines are its values and none is
+  left to name a run. A column where every line agrees is written once,
 - the cell's own history, on a click, shows what the whole cell was on each
   earlier run,
 - and the count under the toolbar says `4 rows - 6 lines printed`, so a key
