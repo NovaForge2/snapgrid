@@ -194,9 +194,17 @@ function valuesIn(group, index) {
 
 // One row for the key, whatever the plugin printed under it. A cell holding
 // several values holds them as lines, and the table draws a line each.
+//
+// One line per line the plugin printed, not per distinct value. Dropping the
+// repeats made each column of a row its own height - three pods, two of them
+// with no restarts, gave Pod three lines and Restarts two - and a line then
+// pointed at nothing. Lining them up is what lets a row be read across. A
+// column where every line says the same thing is written once by the table,
+// which is where that belongs: it is about what is on the screen.
 function mergeGroup(columns, group) {
   if (group.length === 1) return group[0];
-  return columns.map((_, index) => valuesIn(group, index).join(LINES));
+  return columns.map((_, index) =>
+    group.map((row) => cellValue(row, index)).join(LINES));
 }
 
 // A cell as the lines it holds. Every cell has at least one.
@@ -230,38 +238,65 @@ function changedValues(before, after, index) {
   return Math.max(gone, fresh);
 }
 
-// What one cell of a compared row holds, as the lines to draw: the values it
-// has now, then the ones it had and has lost, each with what became of it.
+// Which lines a merged row has, as the members that printed them: the lines
+// here now, then the ones the earlier run had and this one does not.
+//
+// Every column draws one line per member, in this order, which is the whole
+// point: line two of Pod and line two of Restarts are then the same pod. Each
+// column used to work its own lines out from its own values, with the repeats
+// dropped, so the columns of one row came out different heights and a line
+// meant nothing - two pods with no restarts shared one line while their names
+// had two, and nothing said which pod the one line was about.
+//
+// A member is matched to the earlier run by everything it says, leaving out
+// the columns that are not compared. Unmatched here means it arrived;
+// unmatched there means it has gone.
+function memberText(row, ignored) {
+  if (!ignored || !ignored.size) return rowText(row);
+  return JSON.stringify(row.map((_, index) =>
+    (ignored.has(index) ? "" : cellValue(row, index))));
+}
+
+function slotsOf(over, ignored) {
+  const now = over[0] || [];
+  // The run before this one that had the row, and only that one. A stack of
+  // five runs puts run five on line five, which answers "when did it move?";
+  // a cell holding several values has no line to spare for that, because its
+  // lines are its own members. When it moved is answered by the cell's own
+  // history, on a click.
+  const earlier = over.slice(1).find((group) => group) || null;
+  const slots = now.map((row) => ({ row, mark: "" }));
+  if (!earlier) return slots;
+  const textOf = (row) => memberText(row, ignored);
+  const here = new Set(now.map(textOf));
+  const before = new Set(earlier.map(textOf));
+  for (const slot of slots) {
+    if (!before.has(textOf(slot.row))) slot.mark = "fresh";
+  }
+  for (const row of earlier) {
+    if (!here.has(textOf(row))) slots.push({ row, mark: "went" });
+  }
+  return slots;
+}
+
+// What one cell of a compared row holds, as the lines to draw: one per member
+// of the row, each with what became of it.
 //
 // Here rather than in the page because it is the sentence the table says about
 // a cell, and a wrong one is read as fact. A row that has gone has no "now" to
 // read, so it is drawn from the run that last had it; left to fall back on
 // nothing, a column that is not compared came out as one empty line.
 function cellLines(over, index, lastSeen, ignored) {
-  const now = over[0] ? valuesIn(over[0], index) : linesOf(cellValue(lastSeen, index));
-  // The run before this one that had the row, and only that one. A stack of
-  // five runs puts run five on line five, which answers "when did it move?";
-  // a cell holding several values has no line to spare for that, because its
-  // lines are the values themselves. Taking every earlier run into it put
-  // eight pod names in one cell and made the table unreadable at five runs,
-  // which is the limit for the other kind of cell for the same reason. When it
-  // moved is answered by the cell's own history, on a click.
-  const earlier = over.slice(1).find((group) => group) || null;
-  const before = new Set(earlier ? valuesIn(earlier, index) : []);
-  const everBefore = Boolean(earlier);
-  // Nothing is marked where there is nothing to mark it against: a row that
-  // has only ever been in this run, or a column the comparison leaves alone.
-  const compared = everBefore && !(ignored && ignored.has(index));
-  const lines = now.map((value) => ({
-    value,
-    mark: compared && !before.has(value) ? "fresh" : "",
-  }));
-  if (compared) {
-    for (const value of before) {
-      if (!now.includes(value)) lines.push({ value, mark: "went" });
-    }
+  if (!over[0]) {
+    return linesOf(cellValue(lastSeen, index)).map((value) => ({ value, mark: "" }));
   }
-  return lines;
+  // Nothing is marked in a column that is not compared: a value that moves on
+  // its own has not arrived and has not gone.
+  const marked = !(ignored && ignored.has(index));
+  return slotsOf(over, ignored).map((slot) => ({
+    value: cellValue(slot.row, index),
+    mark: marked ? slot.mark : "",
+  }));
 }
 
 // What each row looks like across the runs given, newest first, or a reason it
@@ -371,6 +406,7 @@ if (typeof module !== "undefined" && module.exports) {
     missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
     ignoredIndexes, compareRuns, compactRows, duplicateCount,
     groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, cellLines,
+    slotsOf, memberText,
     settleRuns,
     LINES,
   };

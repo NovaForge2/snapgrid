@@ -26,7 +26,7 @@ const {
   missingKeyColumn, missingKeyColumns, cellValue, sameRow, rowText, rowTextIgnoring,
   ignoredIndexes, compareRuns, compactRows, duplicateCount,
   groupByKey, valuesIn, mergeGroup, linesOf, sameGroup, changedValues, cellLines,
-  settleRuns,
+  settleRuns, slotsOf,
   LINES,
 } = require(path.join(__dirname, "..", "web", "compare.js"));
 
@@ -299,19 +299,33 @@ test("a name that goes entirely is still a row that left", () => {
   assert.equal(entry(diff, "b").here, false);
 });
 
-test("identical lines under one name are one value, written once", () => {
+test("identical lines under one name are still a line each", () => {
+  // Written once on the screen, not merged away here: the lines are the
+  // members of the row, and every column has to have the same ones or a line
+  // in one column is not the line beside it in the next.
   const group = [["a", "1", "9"], ["a", "1", "9"], ["a", "1", "9"]];
+  const merged = mergeGroup(VERSIONS, group);
+  assert.equal(linesOf(merged[1]).length, 3);
+  assert.deepEqual(linesOf(merged[1]), ["1", "1", "1"]);
+  // The tally still asks what distinct values a column holds.
   assert.deepEqual(valuesIn(group, 1), ["1"]);
-  assert.deepEqual(mergeGroup(VERSIONS, group), ["a", "1", "9"]);
 });
 
-test("a line that knows nothing does not put an empty line in the cell", () => {
-  // One pod knows its branch and the other does not. Written out, the one
-  // that does not is an empty line in the middle of the table, which reads as
-  // a fault in the table rather than as a fact about that pod.
+test("a line that knows nothing keeps its line", () => {
+  // One pod knows its branch and the other does not. The empty line is that
+  // pod's line and sits beside its name, rather than being an empty line in
+  // the middle of a column that is one shorter than the one next to it.
   const group = [["a", "release/sprint11", ""], ["a", "", ""]];
-  assert.deepEqual(valuesIn(group, 1), ["release/sprint11"]);
-  assert.deepEqual(mergeGroup(VERSIONS, group)[1], "release/sprint11");
+  assert.deepEqual(linesOf(mergeGroup(VERSIONS, group)[1]), ["release/sprint11", ""]);
+});
+
+test("every column of a merged row has the same number of lines", () => {
+  // The whole of it: a row can be read across only if line two means the same
+  // member in every column of it.
+  const group = [["a", "1", "9"], ["a", "1", "8"], ["a", "2", "8"]];
+  const merged = mergeGroup(VERSIONS, group);
+  const heights = merged.map((cell) => linesOf(cell).length);
+  assert.deepEqual(heights, [3, 3, 3]);
 });
 
 test("a cell where nothing is known is still one empty cell", () => {
@@ -324,7 +338,9 @@ test("a merged cell holds its values as lines, in the order they were printed", 
   const merged = mergeGroup(VERSIONS, group);
   assert.deepEqual(linesOf(merged[1]), ["2", "1"]);
   assert.deepEqual(linesOf(merged[2]), ["9", "8"]);
-  assert.equal(merged[0], "a", "the name itself is written once");
+  // The name is a line each here too; the table writes it once because every
+  // line of it says the same thing.
+  assert.deepEqual(linesOf(merged[0]), ["a", "a"]);
 });
 
 test("a value holding a newline is one value, not two lines", () => {
@@ -402,6 +418,49 @@ test("a row that has gone is drawn from the run that last had it", () => {
                    [{ value: "9h", mark: "" }, { value: "8h", mark: "" }]);
   const compared = cellLines([null, before], 1, lastSeen, new Set());
   assert.ok(compared.every((line) => line.value), "no line is empty");
+});
+
+test("every column of a compared row draws the same lines", () => {
+  // The fault this fixes, in the shape it was found in: one pod now, two
+  // before, and both of the older ones with no restarts. Restarts came out
+  // two lines tall while Pod was three, so the third name had nothing beside
+  // it and the one "0" did not say which pod it was about.
+  const now = [["svc", "pod-c", "3"]];
+  const before = [["svc", "pod-a", "0"], ["svc", "pod-b", "0"]];
+  const pods = cellLines([now, before], 1, now[0], new Set());
+  const restarts = cellLines([now, before], 2, now[0], new Set());
+  assert.equal(pods.length, restarts.length, "the columns are the same height");
+  assert.deepEqual(pods.map((line) => line.value), ["pod-c", "pod-a", "pod-b"]);
+  assert.deepEqual(restarts.map((line) => line.value), ["3", "0", "0"]);
+  assert.deepEqual(restarts.map((line) => line.mark), ["fresh", "went", "went"]);
+});
+
+test("a member is matched by everything it says, not by one column", () => {
+  const group = [["svc", "pod-a", "1"], ["svc", "pod-b", "2"]];
+  assert.deepEqual(slotsOf([group, group], new Set()).map((slot) => slot.mark),
+                   ["", ""]);
+});
+
+test("a member that differs only in a column nobody compares has not moved", () => {
+  // Age is counted from the clock, so it is different every run. Compared, it
+  // would make every pod arrive and leave on every run.
+  const now = [["svc", "pod-a", "9h"]];
+  const before = [["svc", "pod-a", "8h"]];
+  assert.deepEqual(slotsOf([now, before], new Set([2])).map((slot) => slot.mark), [""]);
+  assert.deepEqual(slotsOf([now, before], new Set()).map((slot) => slot.mark),
+                   ["fresh", "went"]);
+});
+
+test("a column nobody compares still draws a line for every member", () => {
+  // Its lines are not marked, but they are there: the line belongs to the
+  // member, and taking it out would make this column shorter than the rest.
+  const now = [["svc", "pod-c", "9h"]];
+  const before = [["svc", "pod-a", "1h"], ["svc", "pod-b", "2h"]];
+  assert.deepEqual(cellLines([now, before], 2, now[0], new Set([2])), [
+    { value: "9h", mark: "" },
+    { value: "1h", mark: "" },
+    { value: "2h", mark: "" },
+  ]);
 });
 
 test("changedValues counts what arrived and what went, whichever is larger", () => {

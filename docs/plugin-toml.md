@@ -46,7 +46,7 @@ keep = 20
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `plugin.name` | text | the folder name | shown in the left panel and at the top of the table |
-| `plugin.description` | text | none | one line under the title |
+| `plugin.description` | text | none | one line, on the plugin's name above the table: shown on hover and in Config |
 | `plugin.group` | text | none | heading it is listed under. Same string, same heading |
 | `plugin.enabled` | `true` / `false` | `true` | `false` hides it and stops it running |
 | `run.command` | list of text | **required**\* | the program and its arguments. No shell |

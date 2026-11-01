@@ -79,3 +79,56 @@ test('unchanged snapshots update status without rebuilding the table', async () 
   await second;
   assert.deepEqual(redraws,[false,true]);
 });
+
+/* ------------------------------------------------------------------------
+   Reading the ticked runs.
+
+   Changing a tick starts a fetch and the fetches overlap, so the answer to
+   an older set of ticks can arrive after a newer set is on screen. It must
+   not land: the strip would name one run over another run's values, which
+   is a wrong answer told confidently.
+   ------------------------------------------------------------------------ */
+
+function comparing(chosen, snapshots) {
+  const x = setup();
+  x.state.chosen = chosen.slice();
+  x.state.depth = chosen.length;
+  x.state.past = [];
+  x.state.snapshotId = null;
+  x.state.detail = { id: 'a', snapshots: snapshots.map((id) => ({ id })) };
+  // The signature is app.js's; here it only has to move when the ticks do.
+  x.context.comparisonSignature = () =>
+    `${x.state.selected}|${x.state.chosen[0]}|${x.state.chosen.join(',')}`;
+  return x;
+}
+
+test('the runs that are ticked are the runs that are read', async () => {
+  const x = comparing([3, 1], [3, 2, 1]);
+  const done = x.context.loadComparison();
+  assert.equal(x.pending[0].url, '/api/snapshots/1');
+  x.pending.shift().resolve({ snapshot: { id: 1 } });
+  await done;
+  assert.equal(x.state.past.map((one) => one.id).join(','), '1');
+});
+
+test('an answer for ticks that have since changed does not land', async () => {
+  const x = comparing([3, 1], [3, 2, 1]);
+  const done = x.context.loadComparison();
+  // The tick moved from run 1 to run 2 while run 1 was being read.
+  x.state.chosen = [3, 2];
+  x.pending.shift().resolve({ snapshot: { id: 1 } });
+  await done;
+  assert.equal(x.state.past.length, 0);
+});
+
+test('a slow answer cannot overwrite the ticks asked for after it', async () => {
+  const x = comparing([3, 1], [3, 2, 1]);
+  const first = x.context.loadComparison();
+  x.state.chosen = [3, 2];
+  const second = x.context.loadComparison();
+  x.pending.find((one) => one.url.endsWith('/2')).resolve({ snapshot: { id: 2 } });
+  await second;
+  x.pending.find((one) => one.url.endsWith('/1')).resolve({ snapshot: { id: 1 } });
+  await first;
+  assert.equal(x.state.past.map((one) => one.id).join(','), '2');
+});

@@ -185,6 +185,10 @@ async function loadComparison() {
     }
   }
   if (mine !== comparisonRequest || wanted !== comparisonSignature()) return;
+  // And that what was read is exactly what is ticked now. The signature is
+  // the same string again after a tick is taken off and put back, so it alone
+  // would let an older answer land on a newer set of ticks.
+  if (older.map((one) => one.id).join(",") !== state.chosen.slice(1).join(",")) return;
   state.past = loaded;
   state.pastFor = wanted;
   state.unreadable = unreadable;

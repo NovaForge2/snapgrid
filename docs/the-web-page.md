@@ -2,15 +2,27 @@
 
 # The web page
 
-**The toolbar holds what is done to this table** - Run now, which result to
-show, what to compare it with, search, Export Excel - and ends with **More**,
-which holds the rest: the size of the text, the theme, and the Log and Config
-panels. The split is between acting on the data and setting up snapgrid, and
-it is there because thirteen controls of equal weight on one line is a wall
-rather than a toolbar.
+**One bar above the table** holds the name of the plugin, the facts about the
+result - when it last ran, how often it runs, how far back it is kept, and how
+many rows it has - and then everything that is done to this table, at the far
+end. It reads left to right: which table, how fresh, how big, and then the
+things to press. One bar rather than four lines, because four stood 144px
+above the first row: three rows of the data the page exists to show, given
+over to things that are read once a day.
 
-**Columns** and **Clear filters** are not in it. They sit with the table,
-below the comparison strip, because they are about what this table shows.
+**The controls are marks, not words.** Run now, Columns, Compact, Clear
+filters, Export Excel and More are each a drawn mark; the name is on hover,
+and it is what a screen reader reads. A hairline separates what fetches the
+data from what shapes the table. **More** holds the rest: the size of the
+text, the theme, and the Log and Config panels.
+
+**The run picker keeps its lettering**, because what it says is a date and a
+clock - that is data, not the name of a button.
+
+**What the plugin is for** - `[plugin] description` - is on the name, on
+hover, and in Config. It explains the shape of the table and is read once,
+when the table is new to somebody; on the bar it was a sentence standing
+where rows could be.
 
 **Light or dark:** the button under **More** - `◑ auto`, `☀ light`,
 `☾ dark` - cycles through the three. `auto` follows your operating system
@@ -33,8 +45,10 @@ whatever the machine prefers, and pressing the button still wins.
   asking by hand means wanting new data. You can go to another plugin while it works. **Cancel** stops it,
   including anything it started, and the previous good table stays.
 - **The table** does what a spreadsheet does: click a heading to sort, click the
-  small arrow next to it for a checkbox list of every value in that column with
-  counts, and use the search box to search everything at once. Columns holding
+  funnel next to it for a checkbox list of every value in that column with
+  counts, and use the search box to search everything at once. A column that
+  is being filtered keeps its funnel lit, so it can be seen from across the
+  table rather than only when looked for. Columns holding
   only numbers sort as numbers, and columns holding only version numbers sort so
   that `2.9.0` comes before `2.14.1`.
 - **Columns** chooses which columns to show. Unticking one takes it off the
@@ -302,12 +316,16 @@ leaving:
   left edge, and one that **went** is kept on screen, quieter, with a thin
   edge in the colour of a row that left - the strip above the table says so,
   where a row like this is on screen,
+- **a row is a grid**: one line per pod, the same order in every column of
+  that row, so line two of `Pod` and line two of `Restarts` are the same pod.
+  A column where every pod says the same thing is written once, in the middle
+  of the row,
 - a cell like this is compared with **the run before and no further back**,
-  however many runs are ticked, because its lines are its values and none is
-  left to name a run. A column where every line agrees is written once,
+  however many runs are ticked, because its lines are its members and none is
+  left to name a run,
 - the cell's own history, on a click, shows what the whole cell was on each
   earlier run,
-- and the count under the toolbar says `4 rows - 6 lines printed`, so a key
+- and the count beside the plugin's own facts says `4 rows - 6 lines printed`, so a key
   that merged more than expected is visible.
 
 A filter applies inside the cell too: filtering `Status` to `Running` takes the

@@ -167,6 +167,78 @@ The version lives in one place, `snapgrid_core/__init__.py`, and `./server.py
   `arrived` and `gone`, written the way a cell writes them, and only where a
   row on screen has one.
 
+- **One bar above the table, where there were four lines.** The name, the
+  description and the facts about the result each had a line of their own, and
+  the toolbar had another: 144px above the first row, more than four rows of
+  the data the page exists to show, on every table, all day. It is now 47px -
+  one line: the name, then the facts, then the controls at the far end. Three
+  rows of data back.
+
+  What made the difference, in order: the description came off the bar and on
+  to the name, where it is one hover away and still in Config - it is a
+  sentence read once, when a table is new to somebody; the controls became
+  marks rather than words; and the bar no longer folds itself up, which it had
+  been doing while 200px of it stood empty.
+
+  On a narrow window the bar wraps as a whole, into two lines rather than six.
+
+- **The toolbar is two groups, and the row count is not in it.** Eight
+  controls stood in one undivided line, all with the same border, so the
+  button that fetches the data looked like the one that hides a column - and
+  between them sat `42 rows - 47 lines printed`, a number with no box, reading
+  as a label somebody had dropped in a row of things to press. The count is a
+  fact about the result, so it has moved up beside the other facts - `every
+  1m`, `history 20`, `result from just now` - where it is the one bold thing
+  on that line. What is left is what fetches data on the left, a hairline, the
+  search box, and everything that shapes the table in a group at the end: the
+  slack is now the gap between the two halves rather than a hole in front of
+  More.
+
+  Each of those buttons is a mark rather than a word: a triangle on Run now,
+  three columns, two arrows meeting, a funnel with a cross, a sheet with an
+  arrow, three dots. The name is on hover, and it is what a screen reader
+  reads - every one of them carries an aria-label, and the tooltip says the
+  name and then what it does. The run picker keeps its lettering, because its
+  label is a date, which is data rather than a name. On a narrow window the
+  hairlines go and the groups stack.
+
+- **A row of several lines is a grid.** Each column worked its own lines out
+  from its own values, with the repeats dropped, so the columns of one row
+  came out different heights: three pods, two of them with no restarts, gave
+  `Pod` three lines and `Restarts` two. A line then pointed at nothing - the
+  one `0` did not say which pod it was about, and the third name had nothing
+  beside it at all. Now the lines of a row are its members: one line per pod,
+  in the same order in every column, so a row can be read across. A column
+  where every pod says the same thing is still written once, in the middle of
+  the row, and a column that is not compared draws its line for every pod
+  rather than only for the ones that are still here.
+
+  Rows get taller where pods disagree: a service with four pods, three of
+  them with no restarts, now draws four lines in that column instead of two.
+  That is the price of a line meaning something.
+
+- **The strip can no longer name one run over another run's values.**
+  Changing a tick starts a read, the reads overlap, and the answer to an
+  older set of ticks could arrive after a newer set was on screen: the strip
+  said *comparing runs 0, 2* above the values of run 1, with the date beside
+  it being run 1's. Both were drawn from the same moment, so nothing on the
+  page contradicted anything - it was a wrong answer told confidently, which
+  is the worst kind. The table now draws uncompared, and says *reading the
+  runs*, until what has been read is what is ticked; an answer that is no
+  longer the one asked for is dropped rather than stored. Taking a tick off
+  and putting it straight back makes the same request twice, so the request
+  itself is now checked against the ticks, not only the request before it.
+
+- **The filter in a column heading is a funnel, and a button.** It was a small
+  `▾` standing next to the sort mark `▼`: two triangles of almost the same
+  shape, one of them a control and the other the state of the column, with
+  nothing but their weight telling them apart. The funnel is the sign everyone
+  already reads as a filter, and it is not a triangle. The button it sits in
+  is 20 by 20 with a border on hover and a focus ring, rather than a glyph
+  with four pixels of padding and no edge at all, so there is something to aim
+  at and something saying it can be pressed. A column being filtered keeps the
+  funnel lit.
+
 - **One list of runs with a tick against each, in place of the two
   dropdowns.** There was one dropdown for the result to show and another for
   what to compare it with, which is the same question asked twice, and between

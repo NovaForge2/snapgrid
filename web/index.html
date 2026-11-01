@@ -41,12 +41,26 @@
     </div>
 
     <section id="panel" hidden>
+      <!-- One bar above the table, not four lines: the name, the controls,
+           and the facts about the result. Four lines cost 144px of every
+           screen - more than four rows of the data the page exists to show.
+           It wraps on a narrow window, which is the only place it needs
+           more than one line. -->
+      <div id="top-bar">
       <header id="panel-head">
         <h1 id="p-name"></h1>
         <p id="p-desc"></p>
-        <div id="p-meta"></div>
         <div id="p-paused" hidden></div>
       </header>
+
+      <!-- Beside the name, before anything to press: when it ran, how often,
+           how far back it is kept, and how many rows it has. They are read
+           left to right with the name - which table, how fresh, how big - and
+           the controls start after them. -->
+      <div id="p-facts">
+        <div id="p-meta"></div>
+        <span id="row-note"></span>
+      </div>
 
       <!-- What is done to the data and to the table: run it, pick a result,
            compare, search, choose columns, take it away. Everything that is a
@@ -59,17 +73,25 @@
         <button id="btn-runs" type="button" hidden aria-haspopup="true"
                 aria-expanded="false"
                 title="Which runs to show and compare"></button>
+        <span class="bar" aria-hidden="true"></span>
         <input id="search" type="search" placeholder="Search all columns" autocomplete="off">
-        <span id="row-note"></span>
-        <!-- Back on this row. Moved down beside the table, it read well in a
-             screenshot and failed the only test that counts: the person who
-             uses this every day went looking for it and did not find it. -->
-        <button id="btn-columns" type="button" aria-haspopup="true"
-                aria-expanded="false" title="Choose which columns to show">Columns</button>
-        <button id="btn-compact" type="button"
-                title="Show rows that are identical in the visible columns once, with a count">Compact</button>
-        <button id="btn-clear" type="button" class="quiet" hidden>Clear filters</button>
-        <button id="btn-xlsx" class="quiet" type="button" title="Download the current view: visible columns and rows, in their displayed order">Export Excel</button>
+
+        <!-- What shapes the table, as a group of its own at the end of the
+             row. Eight controls in one undivided line put the button that
+             fetches the data beside the one that hides a column, at the same
+             weight: the rule and the gap say which half you are in.
+             Columns is on this row rather than beside the table, where it
+             read well in a screenshot and failed the only test that counts:
+             the person who uses this every day went looking for it and did
+             not find it. -->
+        <div id="view-tools">
+          <span class="bar" aria-hidden="true"></span>
+          <button id="btn-columns" type="button" aria-haspopup="true"
+                  aria-expanded="false" title="Choose which columns to show">Columns</button>
+          <button id="btn-compact" type="button"
+                  title="Show rows that are identical in the visible columns once, with a count">Compact</button>
+          <button id="btn-clear" type="button" class="quiet" hidden>Clear filters</button>
+          <button id="btn-xlsx" class="quiet" type="button" title="Download the current view: visible columns and rows, in their displayed order">Export Excel</button>
 
         <!-- A disclosure button rather than a role=menu: what is inside is a
              pair of stepper buttons and a three-way switch, not a list of
@@ -78,8 +100,7 @@
         <div id="view-wrap">
           <button id="btn-view" type="button" class="quiet" aria-haspopup="true"
                   aria-expanded="false" aria-controls="view-popup"
-                  title="Text size, theme, log and configuration">More
-            <span class="caret" aria-hidden="true">&#9662;</span></button>
+                  title="Text size, theme, log and configuration">More</button>
           <div id="view-popup" hidden aria-label="View and preferences">
             <div class="menu-row">
               <span class="menu-label" id="text-size-label">Text in the table</span>
@@ -102,7 +123,10 @@
             <button id="btn-log" type="button" class="menu-item">Log</button>
             <button id="btn-config" type="button" class="menu-item">Config</button>
           </div>
+          </div>
         </div>
+      </div>
+
       </div>
 
       <div id="message" hidden></div>

@@ -69,7 +69,7 @@ keep = 20
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `plugin.name` | string | **required** | shown in the left panel |
-| `plugin.description` | string | `""` | one line, shown above the table |
+| `plugin.description` | string | `""` | one line, on the plugin's name above the table: shown on hover and in Config, so keep it to what somebody seeing the table for the first time needs |
 | `plugin.group` | string | `""` | plugins giving the same string are listed under one heading. Groups and the plugins in them are ordered alphabetically; those with no group appear together under "Plugins" |
 | `plugin.enabled` | bool | `true` | `false` hides it completely and stops it running |
 | `run.command` | list of strings | **required** | argument list. A bare `python` or `python3` means the interpreter running snapgrid |

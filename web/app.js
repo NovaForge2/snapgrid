@@ -515,8 +515,14 @@ function renderDetail(redraw = true) {
   el("empty").hidden = true;
   el("panel").hidden = false;
 
-  el("p-name").textContent = detail.name;
-  el("p-desc").textContent = detail.description || "";
+  const title = el("p-name");
+  title.textContent = detail.name;
+  // What the plugin is for, on the name rather than beside it. It is a
+  // sentence read once, when a table is new to somebody, and it was standing
+  // across the bar where rows of data could be. Config shows it in full.
+  title.title = detail.description || "";
+  const desc = el("p-desc");
+  desc.textContent = detail.description || "";
 
   const live = detail.live;
   const meta = [];
@@ -569,8 +575,12 @@ function renderDetail(redraw = true) {
 
 
   const busy = Boolean(live);
-  el("btn-refresh").disabled = busy;
-  el("btn-refresh").textContent = busy ? "Running..." : "Run now";
+  const refresh = el("btn-refresh");
+  refresh.disabled = busy;
+  // Nothing is written on it, so running is said by its name and by the mark
+  // going quiet - and by Cancel appearing beside it.
+  nameOn(refresh, busy ? "Running..." : "Run now");
+  refresh.classList.toggle("busy", busy);
   el("btn-cancel").hidden = !busy;
 
   // A failed run is not announced above the table. The table under it is the
@@ -759,7 +769,11 @@ async function chooseRuns(ids) {
     await loadDetail();          // a different result's rows
     return;
   }
+  const mine = state.chosen.join(",");
   await loadComparison();
+  // A tick changed while this was reading, and its own call is on its way.
+  // Drawing here would draw the older answer over the newer ticks.
+  if (state.chosen.join(",") !== mine) return;
   renderTable();
 }
 
@@ -788,6 +802,15 @@ function comparedRuns(current) {
   return [current, ...state.past];
 }
 
+// Whether the runs that have been read are the runs that are ticked. Changing
+// a tick starts a fetch, so for a moment they are not, and drawing that moment
+// puts one run's number over another run's lines: the strip said "comparing
+// runs 0, 2" over the values of run 1, which is a wrong answer told
+// confidently. The table draws uncompared until the two agree.
+function loadedWhatIsTicked() {
+  return state.past.map((one) => one.id).join(",") === state.chosen.slice(1).join(",");
+}
+
 // The columns a comparison leaves alone: the ones [compare] ignore names, and
 // the ones taken off the screen. A hidden column is out of the comparison for
 // the same reason it is out of the table - what is being compared is what is
@@ -799,6 +822,7 @@ function notCompared() {
 }
 
 function comparisonFor(current) {
+  if (!loadedWhatIsTicked()) return { waiting: true };
   return compareRuns(comparedRuns(current), state.detail && state.detail.key, notCompared());
 }
 
@@ -832,13 +856,21 @@ function renderDiffBar(diff) {
     return;
   }
 
+  // The ticks have moved and the runs they name are still being read. Said
+  // rather than left blank, so the strip emptying for a moment reads as work
+  // in progress and not as "nothing changed".
+  if (diff.waiting) {
+    what.textContent = "reading the runs...";
+    return;
+  }
+
   const short = state.unreadable
     ? ` - ${state.unreadable} earlier result${state.unreadable > 1 ? "s" : ""} could not be read`
     : "";
   // The columns plugin.toml takes out of the comparison are said here, once.
   // Without it a table where the only thing that moved is the time of the run
   // reads as "nothing changed" and looks broken. Hidden columns are not named:
-  // the row count beneath already says how many are off the screen.
+  // the row count beside the plugin's facts already says how many are off.
   const named = ((state.detail && state.detail.compare_ignore) || [])
     .filter((column) => diff.runs[0].columns.includes(column));
   const left = named.length
@@ -1364,8 +1396,15 @@ function renderTable() {
     const filterButton = document.createElement("button");
     filterButton.type = "button";
     filterButton.className = "filter-btn" + (state.filters.has(column) ? " active" : "");
-    filterButton.textContent = "▾";
+    // A funnel rather than the small triangle this was. Beside the sort mark
+    // it was two triangles of almost the same shape, one of them a control
+    // and the other the state of the column, and at this size the only thing
+    // telling them apart was their weight. Drawn rather than written because
+    // no character in a font is a funnel.
+    filterButton.appendChild(funnel());
     filterButton.title = "Filter this column";
+    // The button has no text of its own now, so it needs a name said outright.
+    filterButton.setAttribute("aria-label", "Filter " + column);
     filterButton.addEventListener("click", (event) => {
       event.stopPropagation();
       openFilter(column, filterButton);
@@ -1444,7 +1483,9 @@ function renderTable() {
 
         if (!over) {
           const values = linesOf(cellValue(row, index));
-          if (values.length > 1) {
+          // The same rule without a comparison: one line per member, unless
+          // every member of this row says the same thing in this column.
+          if (values.length > 1 && values.some((value) => value !== values[0])) {
             putLines(td, column, values.map((value) => ({ value, mark: "" })));
           } else {
             putValue(td, column, values[0]);
@@ -1505,14 +1546,25 @@ function renderTable() {
           // worth seeing. Worked out in compare.js, where it is tested.
           const lines = cellLines(over, index, row, ignored);
           if (lines.some((line) => line.mark)) td.classList.add("moved");
-          if (lines.length === 1) {
+          // A column where every member says the same thing is one value, not
+          // the same value written three times. Said here rather than in the
+          // comparison because it is about what is on the screen: the lines
+          // are still one per member, and the moment one of them differs they
+          // are all drawn, in line with every other column of the row.
+          const agree = lines.every((line) => line.value === lines[0].value);
+          if (agree) {
             // One value, in a row as tall as its tallest cell. Written as the
             // first of several lines it reads as "line one only", with the
             // rest of the cell blank - which is what a column where every pod
             // agrees looked like: two thirds empty. One value is one value,
             // written beside the lines rather than against the first of them.
+            // The marks belong to the members, not to this value: where every
+            // member says the same thing, nothing here arrived or went, and
+            // marking it would say a value moved that did not. The arrival is
+            // said by the column that tells the members apart.
+            const alike = lines.every((line) => line.mark === lines[0].mark);
             const line = document.createElement("span");
-            line.className = "v one" + (lines[0].mark ? " " + lines[0].mark : "");
+            line.className = "v one" + (alike && lines[0].mark ? " " + lines[0].mark : "");
             putValue(line, column, lines[0].value);
             line.title = lines[0].value;
             td.appendChild(line);
@@ -1707,10 +1759,13 @@ function renderTable() {
   const compact = el("btn-compact");
   compact.disabled = Boolean(usable);
   compact.classList.toggle("active", Boolean(counts));
-  compact.title = usable
-    ? "Not while runs are being compared: a compacted row is not one the plugin "
+  // The reason, under the name: the button says nothing on screen now, so the
+  // tooltip is the only place either of them can be read.
+  compact.dataset.why = usable
+    ? "not while runs are being compared: a compacted row is not one the plugin "
       + "printed, so there is nothing to line it up with in an earlier run"
-    : "Show rows that are identical in the visible columns once, with a count";
+    : "show rows that are identical in the visible columns once, with a count";
+  nameOn(compact, "Compact");
   el("btn-clear").hidden = state.filters.size === 0 && !state.search;
 
   // Here rather than in each of the handlers - sorting, searching, filtering,
@@ -1894,6 +1949,105 @@ const MIN_COLUMN = 48;   // narrower than this and a heading cannot be read
 // the pointer. renderTable records that it wanted to run, and runs on pointerup.
 let draggingColumn = false;
 let redrawWanted = false;
+
+// The marks on the controls, each in the colour of whatever it sits in.
+// Built as nodes rather than as a string of markup, because nothing on this
+// page is built out of markup.
+//
+// Every one of them keeps its word beside it. An icon is what the eye lands
+// on once the row is familiar; the word is what makes the row readable on the
+// first day, and half of these - Columns, Compact - have no sign anybody has
+// met before. Drawn rather than written because no character in a font is a
+// funnel or a sheet with an arrow.
+const MARKS = {
+  funnel:  [["path", "M1.5 2.5 L10.5 2.5 L7 6.5 L7 10 L5 8.8 L5 6.5 Z", "fill"]],
+  play:    [["path", "M3.5 2.5 L10 6 L3.5 9.5 Z", "fill"]],
+  stop:    [["path", "M3 3 H9 V9 H3 Z", "fill"]],
+  columns: [["path", "M1.4 1.8 H3.6 V10.2 H1.4 Z", "fill"],
+            ["path", "M4.9 1.8 H7.1 V10.2 H4.9 Z", "fade"],
+            ["path", "M8.4 1.8 H10.6 V10.2 H8.4 Z", "fill"]],
+  compact: [["path", "M1 1.6 H11 V2.9 H1 Z", "fill"],
+            ["path", "M6 3.9 L8 6 H4 Z", "fill"],
+            ["path", "M6 8.1 L4 6 H8 Z", "fill"],
+            ["path", "M1 9.1 H11 V10.4 H1 Z", "fill"]],
+  clear:   [["path", "M1 2 L8.4 2 L5.6 5.4 L5.6 8.6 L3.8 7.5 L3.8 5.4 Z", "fill"],
+            ["path", "M7.8 7.2 L11.4 10.8 M11.4 7.2 L7.8 10.8", "stroke"]],
+  export:  [["path", "M2.2 1.2 H7 L9.8 3.9 V7 H2.2 Z", "line"],
+            ["path", "M6 7.4 V11.2 M3.9 9.3 L6 11.4 L8.1 9.3", "stroke"]],
+  more:    [["circle", "2.2", "dot"], ["circle", "6", "dot"], ["circle", "9.8", "dot"]],
+};
+
+const NS = "http://www.w3.org/2000/svg";
+
+function mark(name) {
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("width", "12");
+  svg.setAttribute("height", "12");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("class", "ico");
+  for (const [shape, d, how] of MARKS[name]) {
+    const node = document.createElementNS(NS, shape);
+    if (shape === "circle") {
+      node.setAttribute("cx", d);
+      node.setAttribute("cy", "6");
+      node.setAttribute("r", "1.15");
+    } else {
+      node.setAttribute("d", d);
+    }
+    if (how === "stroke" || how === "line") {
+      node.setAttribute("fill", "none");
+      node.setAttribute("stroke", "currentColor");
+      node.setAttribute("stroke-width", how === "stroke" ? "1.4" : "1.2");
+      node.setAttribute("stroke-linecap", "round");
+      node.setAttribute("stroke-linejoin", "round");
+    } else {
+      node.setAttribute("fill", "currentColor");
+      if (how === "fade") node.setAttribute("opacity", ".45");
+    }
+    svg.appendChild(node);
+  }
+  return svg;
+}
+
+// The funnel in a column heading. Its own function because it is drawn for
+// every column of every table, and the heading has no word to put beside it.
+function funnel() {
+  return mark("funnel");
+}
+
+// The name of a button that is drawn as a mark. It is not written on the
+// button, so it is said in three places that all have to agree: the tooltip,
+// the accessible name, and nothing else on screen.
+function nameOn(button, words) {
+  button.title = button.dataset.why ? words + " \u2014 " + button.dataset.why : words;
+  button.setAttribute("aria-label", words);
+  button.dataset.says = words;
+}
+
+// The buttons are marks rather than words, which is what was asked for. The
+// word is one hover away and is what a screen reader reads, and the two that
+// are pressed by people who have never seen the page - Run now, and the run
+// picker - keep their lettering: Run now by its colour, the picker because
+// its label is a date, which is data and not a name.
+for (const [id, name, words] of [
+  ["btn-refresh", "play", "Run now"],
+  ["btn-cancel", "stop", "Cancel"],
+  ["btn-columns", "columns", "Columns"],
+  ["btn-compact", "compact", "Compact"],
+  ["btn-clear", "clear", "Clear filters"],
+  ["btn-xlsx", "export", "Export Excel"],
+  ["btn-view", "more", "More"],
+]) {
+  const button = el(id);
+  if (!button) continue;
+  button.dataset.why = (button.title || "").replace(/^[A-Z]/, (c) => c.toLowerCase());
+  button.textContent = "";
+  button.appendChild(mark(name));
+  button.classList.add("ico-only");
+  nameOn(button, words);
+}
 
 function columnGrip(table, shownColumns, column, th) {
   const grip = document.createElement("span");
