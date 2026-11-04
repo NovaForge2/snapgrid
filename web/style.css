@@ -3,13 +3,14 @@
   --bg: #f6f7f8;
   --panel: #ffffff;
   --text: #1c2024;
-  --muted: #6b7480;
+  --muted: #646d78;
   --line: #dfe3e8;
   --accent: #2f6f4e;
   --accent-soft: #e6f1eb;
+  --on-accent: #ffffff;
   --ok: #2e8b57;
   --fail: #c0392b;
-  --warn: #c98a12;
+  --warn: #b07a0c;
   --run: #2b6cb0;
   --hover: #eef2f5;
   --zebra: #fafbfc;
@@ -33,6 +34,7 @@
     --line: #2b3238;
     --accent: #5fb98c;
     --accent-soft: #23312b;
+    --on-accent: #14171a;
     --ok: #5fb98c;
     --fail: #e8776a;
     --warn: #e0b24b;
@@ -57,6 +59,7 @@
     --line: #2b3238;
     --accent: #5fb98c;
     --accent-soft: #23312b;
+    --on-accent: #14171a;
     --ok: #5fb98c;
     --fail: #e8776a;
     --warn: #e0b24b;
@@ -191,7 +194,7 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   /* 24x24: the smallest a pointer target is allowed to be. The mark inside
      is 10px, so it looks the same and is easier to hit. */
   width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px;
-  background: none; color: var(--muted); cursor: pointer; opacity: .7;
+  background: none; color: var(--muted); cursor: pointer; opacity: .8;
 }
 .icon-btn:hover { opacity: 1; }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
@@ -207,8 +210,9 @@ body:has(#banner:not([hidden])) #layout { height: calc(100% - var(--banner-heigh
   /* Always there, so the control is where you expect it rather than appearing
      under the pointer - but quiet, so ten plugins read as a list of names with
      something beside them rather than as a row of buttons. Not quieter than
-     .6, which is where it stops meeting the 3:1 a control has to have. */
-  color: var(--muted); opacity: .6;
+     .8, which is where it stops meeting the 3:1 a control has to have in the
+     light theme. */
+  color: var(--muted); opacity: .8;
 }
 .pause-btn svg { width: 9px; height: 9px; fill: currentColor; }
 .plugin:hover .pause-btn { opacity: .85; }
@@ -378,7 +382,8 @@ a:focus-visible, .th-label:focus-visible, .value-row:focus-visible {
    to press, and Log and Config disappeared altogether. */
 .quiet { color: var(--muted); }
 .quiet:hover { color: var(--text); }
-#btn-refresh { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* Dark lettering in the dark theme: white on the lighter green there is 2.4:1. */
+#btn-refresh { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 #btn-refresh:hover { filter: brightness(1.08); }
 #btn-refresh[disabled] { opacity: .55; cursor: default; filter: none; }
 /* Wide enough to read a search term in and no wider. It used to take all the
@@ -595,8 +600,8 @@ td.stack .v.now { font-weight: 600; }
 td.stack .v.old { color: var(--muted); font-size: .92em; }
 /* It says "the same as the line above", which is information, so it is not
    allowed to fade into the background the way a decoration could. */
-td.stack .v.same { color: var(--muted); opacity: .6; }
-td.stack .v.gap { color: var(--muted); opacity: .55; font-size: .92em; }
+td.stack .v.same { color: var(--muted); opacity: .8; }
+td.stack .v.gap { color: var(--muted); opacity: .8; font-size: .92em; }
 td.stack.moved { background: color-mix(in srgb, var(--changed) 12%, transparent); }
 /* A cell holding several values - two pods of one service - says what became
    of each of them where it is, rather than by the whole row arriving or
